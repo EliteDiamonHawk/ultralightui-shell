@@ -9,6 +9,7 @@ internal static class UltralightNative
 
     internal const uint WindowFlagsBorderless = 1u << 0;
     internal const uint WindowFlagsHidden = 1u << 4;
+    internal const uint WindowFlagsTransparent = 1u << 5;
 
     [DllImport(AppCore, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr ulCreateSettings();
@@ -98,6 +99,11 @@ internal static class UltralightNative
     internal static extern void ulViewConfigSetEnableHiddenTimerThrottling(
         IntPtr config,
         [MarshalAs(UnmanagedType.I1)] bool enabled);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewConfigSetIsTransparent(
+        IntPtr config,
+        [MarshalAs(UnmanagedType.I1)] bool isTransparent);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ulViewSetVisible(

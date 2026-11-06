@@ -40,7 +40,7 @@ public sealed class UltralightRuntime : IDisposable
             throw new InvalidOperationException("Ultralight AppCore could not be initialized.");
     }
 
-    public AppWindow CreateWindow(WallpaperWindowSpec spec, TimeSpan timeout)
+    public AppWindow CreateWindow(WallpaperWindowSpec spec, TimeSpan timeout, bool transparent = false)
     {
         IntPtr monitor = ResolveMonitor(spec.LogicalId);
         double scale = Math.Max(0.01, UltralightNative.ulMonitorGetScale(monitor));
@@ -51,7 +51,9 @@ public sealed class UltralightRuntime : IDisposable
             width,
             height,
             false,
-            UltralightNative.WindowFlagsBorderless | UltralightNative.WindowFlagsHidden);
+            UltralightNative.WindowFlagsBorderless |
+            UltralightNative.WindowFlagsHidden |
+            (transparent ? UltralightNative.WindowFlagsTransparent : 0));
 
         if (window == IntPtr.Zero)
             throw new InvalidOperationException($"Ultralight window could not be created: {spec.LogicalId}");
@@ -72,6 +74,8 @@ public sealed class UltralightRuntime : IDisposable
             try
             {
                 UltralightNative.ulViewConfigSetEnableHiddenTimerThrottling(viewConfig, true);
+                if (transparent)
+                    UltralightNative.ulViewConfigSetIsTransparent(viewConfig, true);
                 panel = UltralightNative.ulWindowAddPanel(window, IntPtr.Zero, viewConfig);
             }
             finally

@@ -300,7 +300,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         {
             foreach (WallpaperWindowSpec spec in specs)
             {
-                AppWindow appWindow = _runtime.CreateWindow(spec, _options.StartupTimeout);
+                AppWindow appWindow = _runtime.CreateWindow(spec, _options.StartupTimeout, _options.Transparent);
                 appWindow.MonitorHandle = ResolveWallpaperMonitor(spec);
                 registry.Add(appWindow);
                 windows.Add(new WallpaperWindow(appWindow));

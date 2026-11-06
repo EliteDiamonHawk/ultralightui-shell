@@ -143,11 +143,13 @@ internal static class Program
         {
             "--reconcile-ms=100",
             "--startup-timeout-ms", "5000",
-            "--verbose"
+            "--verbose",
+            "--transparent"
         });
         AssertEqual(100, options.ReconcileIntervalMs);
         AssertEqual(TimeSpan.FromSeconds(5), options.StartupTimeout);
         AssertTrue(options.Verbose);
+        AssertTrue(options.Transparent);
     }
 
     private static void HelpTextUsesUltralightWall()

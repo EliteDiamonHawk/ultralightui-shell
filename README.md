@@ -47,6 +47,9 @@ Options:
 - `--window <id>`: explicit logical window ID; repeatable.
 - `--reconcile-ms <n>`: desktop geometry/lifecycle reconciliation interval.
 - `--startup-timeout-ms <n>`: replacement startup timeout.
+- `--transparent`: enable per-pixel transparent wallpaper windows. The webpage must also
+  use a transparent background where it should reveal the desktop, for example:
+  `html, body { background: transparent; }`.
 - `--verbose`: embedding diagnostics.
 - `--help`, `-h`: show help.
 

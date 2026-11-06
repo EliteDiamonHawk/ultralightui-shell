@@ -55,6 +55,7 @@ public sealed class HostOptions
     public int ReconcileIntervalMs { get; private init; } = 250;
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
     public bool Verbose { get; private init; }
+    public bool Transparent { get; private init; }
     public bool ShowHelp { get; private init; }
 
     public static HostOptions Parse(string[] args)
@@ -67,6 +68,7 @@ public sealed class HostOptions
         int reconcileMs = 250;
         int startupTimeoutMs = 30_000;
         bool verbose = false;
+        bool transparent = false;
 
         for (int index = 0; index < args.Length; index++)
         {
@@ -77,6 +79,12 @@ public sealed class HostOptions
             if (argument == "--verbose")
             {
                 verbose = true;
+                continue;
+            }
+
+            if (argument == "--transparent")
+            {
+                transparent = true;
                 continue;
             }
 
@@ -145,7 +153,8 @@ public sealed class HostOptions
             SelectedMonitor = selectedMonitor,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
-            Verbose = verbose
+            Verbose = verbose,
+            Transparent = transparent
         };
     }
 
@@ -231,6 +240,7 @@ public sealed class HostOptions
           --monitor <number>              1-based monitor for single mode. Default: 1.
           --reconcile-ms <n>              Desktop reconciliation interval. Default: 250.
           --startup-timeout-ms <n>        Replacement startup timeout. Default: 30000.
+          --transparent                   Enable per-pixel transparent wallpaper windows.
           --verbose                       Log embedding diagnostics.
           --help, -h                     Show this help.
         """;
