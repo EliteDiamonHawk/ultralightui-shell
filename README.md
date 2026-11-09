@@ -2,6 +2,10 @@
 
 UltraLightWidgetWall hosts JSON-defined web widgets as Windows desktop wallpaper windows using Ultralight AppCore. Each entry in the configuration creates one borderless native window, positions it on a selected monitor, and embeds it behind desktop icons.
 
+## BrowserWall Collection
+
+see [BrowserWall.md](https://github.com/EliteDiamonHawk/browserwall)
+
 ## Requirements
 
 - Windows 10/11
