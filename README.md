@@ -4,7 +4,7 @@ UltralightWall hosts web pages as Windows desktop wallpapers using Ultralight Ap
 
 ## BrowserWall Collection
 
-see [BrowserWall.md](https://github.com/EliteDiamonHawk/wv2wall/blob/main/BrowserWall.md)
+see [BrowserWall.md](https://github.com/EliteDiamonHawk/browserwall)
 
 ## Requirements
 
