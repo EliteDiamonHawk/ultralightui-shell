@@ -1,4 +1,4 @@
-namespace UltralightWall;
+namespace UltraLightWidgetWall;
 
 public sealed class UltralightRuntime : IDisposable
 {
@@ -40,9 +40,9 @@ public sealed class UltralightRuntime : IDisposable
             throw new InvalidOperationException("Ultralight AppCore could not be initialized.");
     }
 
-    public AppWindow CreateWindow(WallpaperWindowSpec spec, TimeSpan timeout, bool transparent = false)
+    public AppWindow CreateWindow(WallpaperWindowSpec spec, TimeSpan timeout)
     {
-        IntPtr monitor = ResolveMonitor(spec.LogicalId);
+        IntPtr monitor = ResolveMonitor(spec);
         double scale = Math.Max(0.01, UltralightNative.ulMonitorGetScale(monitor));
         double width = Math.Max(1, Math.Ceiling(spec.Bounds.Width / scale));
         double height = Math.Max(1, Math.Ceiling(spec.Bounds.Height / scale));
@@ -53,7 +53,7 @@ public sealed class UltralightRuntime : IDisposable
             false,
             UltralightNative.WindowFlagsBorderless |
             UltralightNative.WindowFlagsHidden |
-            (transparent ? UltralightNative.WindowFlagsTransparent : 0));
+            (spec.Transparent ? UltralightNative.WindowFlagsTransparent : 0));
 
         if (window == IntPtr.Zero)
             throw new InvalidOperationException($"Ultralight window could not be created: {spec.LogicalId}");
@@ -66,7 +66,7 @@ public sealed class UltralightRuntime : IDisposable
             if (hwnd == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight window has no native handle: {spec.LogicalId}");
 
-            UltralightNative.ulWindowSetTitle(window, $"UltralightWall - {spec.LogicalId}");
+            UltralightNative.ulWindowSetTitle(window, $"UltraLightWidgetWall - {spec.LogicalId}");
             IntPtr viewConfig = UltralightNative.ulCreateViewConfig();
             if (viewConfig == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight view configuration could not be created: {spec.LogicalId}");
@@ -74,7 +74,7 @@ public sealed class UltralightRuntime : IDisposable
             try
             {
                 UltralightNative.ulViewConfigSetEnableHiddenTimerThrottling(viewConfig, true);
-                if (transparent)
+                if (spec.Transparent)
                     UltralightNative.ulViewConfigSetIsTransparent(viewConfig, true);
                 panel = UltralightNative.ulWindowAddPanel(window, IntPtr.Zero, viewConfig);
             }
@@ -154,15 +154,11 @@ public sealed class UltralightRuntime : IDisposable
         _app = IntPtr.Zero;
     }
 
-    private IntPtr ResolveMonitor(string logicalId)
+    private IntPtr ResolveMonitor(WallpaperWindowSpec spec)
     {
-        if (logicalId == "virtual-screen")
-            return UltralightNative.ulAppGetMainMonitor(_app);
-
-        if (logicalId.StartsWith("monitor-", StringComparison.Ordinal) &&
-            uint.TryParse(logicalId[8..], out uint oneBased))
+        if (spec.MonitorNumber > 0)
         {
-            IntPtr monitor = UltralightNative.ulAppGetMonitor(_app, oneBased - 1);
+            IntPtr monitor = UltralightNative.ulAppGetMonitor(_app, (uint)(spec.MonitorNumber - 1));
             if (monitor != IntPtr.Zero)
                 return monitor;
         }

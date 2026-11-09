@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace UltralightWall;
+namespace UltraLightWidgetWall;
 
 public sealed class WallpaperHostContext : ApplicationContext
 {
@@ -14,24 +14,18 @@ public sealed class WallpaperHostContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
     private readonly InputRouter _input;
-    private readonly List<ToolStripMenuItem> _monitorItems = new();
     private readonly List<ToolStripMenuItem> _reloadItems = new();
     private readonly List<IntPtr> _winEventHooks = new();
 
     private WindowRegistry _registry = new();
     private List<WallpaperWindow> _windows = new();
     private ReplacementBatch? _pending;
-    private string _baseUrl;
-    private readonly Dictionary<int, string> _monitorUrls;
-    private WallpaperMode _mode;
-    private int _selectedMonitor;
+    private readonly WidgetConfiguration _configuration;
     private bool _exiting;
     private bool _closeCheckLogged;
     private bool _allWindowsMissingLogged;
     private string _topologySignature;
     private DateTimeOffset _nextReconcile = DateTimeOffset.MinValue;
-    private ToolStripMenuItem? _spanItem;
-    private ToolStripMenuItem? _allItem;
     private ToolStripMenuItem? _pauseWhenFullscreenItem;
     private ToolStripMenuItem? _suspendWallpaperItem;
     private bool _manualSuspendEnabled;
@@ -51,19 +45,16 @@ public sealed class WallpaperHostContext : ApplicationContext
     public WallpaperHostContext(HostOptions options)
     {
         _options = options;
+        _configuration = options.LoadConfiguration();
         _runtime = new UltralightRuntime();
         _embedder = new DesktopEmbedder(options.Verbose);
-        _baseUrl = options.Url;
-        _monitorUrls = new Dictionary<int, string>(options.MonitorUrls);
-        _mode = options.Mode;
-        _selectedMonitor = options.SelectedMonitor;
         _topologySignature = GetTopologySignature();
 
         _menu = new ContextMenuStrip();
         _tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "UltralightWall",
+            Text = "UltraLightWidgetWall",
             Visible = true,
             ContextMenuStrip = _menu
         };
@@ -90,7 +81,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         _timer.Start();
         _timerStarted = true;
 
-        BeginReplacement(options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), Array.Empty<WallpaperWindow>());
+        BeginReplacement(_configuration.ResolveWindowSpecs(), Array.Empty<WallpaperWindow>());
     }
 
     private void Tick()
@@ -113,34 +104,7 @@ public sealed class WallpaperHostContext : ApplicationContext
     private void BuildMenu()
     {
         _menu.Items.Clear();
-        _monitorItems.Clear();
         _reloadItems.Clear();
-
-        _menu.Items.Add(new ToolStripMenuItem("Set base URL...", null, (_, _) => AskForBaseUrl()));
-
-        var monitorUrlMenu = new ToolStripMenuItem("Set monitor URL...");
-        for (int index = 0; index < Screen.AllScreens.Length; index++)
-        {
-            int monitor = index;
-            monitorUrlMenu.DropDownItems.Add(new ToolStripMenuItem($"Monitor {index + 1}", null, (_, _) => AskForMonitorUrl(monitor)));
-        }
-        _menu.Items.Add(monitorUrlMenu);
-        _menu.Items.Add(new ToolStripSeparator());
-
-        _spanItem = new ToolStripMenuItem("Span (virtual screen)", null, (_, _) => SetMode(WallpaperMode.Span));
-        _allItem = new ToolStripMenuItem("All monitors", null, (_, _) => SetMode(WallpaperMode.All));
-        _menu.Items.Add(_spanItem);
-        _menu.Items.Add(_allItem);
-
-        var singleMenu = new ToolStripMenuItem("Single monitor");
-        for (int index = 0; index < Screen.AllScreens.Length; index++)
-        {
-            int monitor = index;
-            var item = new ToolStripMenuItem($"Monitor {index + 1}", null, (_, _) => SetSingleMonitor(monitor));
-            _monitorItems.Add(item);
-            singleMenu.DropDownItems.Add(item);
-        }
-        _menu.Items.Add(singleMenu);
         _menu.Items.Add(new ToolStripSeparator());
 
         _pauseWhenFullscreenItem = new ToolStripMenuItem("Pause when fullscreen")
@@ -201,7 +165,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         if (GetTopologySignature() != _topologySignature)
         {
             _topologySignature = GetTopologySignature();
-            BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
+            BeginReplacement(_configuration.ResolveWindowSpecs(), _windows);
             return;
         }
 
@@ -219,7 +183,7 @@ public sealed class WallpaperHostContext : ApplicationContext
             {
                 _registry.MarkUnexpectedClose(appWindow);
                 Console.Error.WriteLine($"[Lifecycle] Ultralight window lost: {appWindow.LogicalId}");
-                BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
+                BeginReplacement(_configuration.ResolveWindowSpecs(), _windows);
                 return;
             }
 
@@ -300,7 +264,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         {
             foreach (WallpaperWindowSpec spec in specs)
             {
-                AppWindow appWindow = _runtime.CreateWindow(spec, _options.StartupTimeout, _options.Transparent);
+                AppWindow appWindow = _runtime.CreateWindow(spec, _options.StartupTimeout);
                 appWindow.MonitorHandle = ResolveWallpaperMonitor(spec);
                 registry.Add(appWindow);
                 windows.Add(new WallpaperWindow(appWindow));
@@ -354,68 +318,29 @@ public sealed class WallpaperHostContext : ApplicationContext
         Console.Error.WriteLine("[Replace] aborted; existing windows retained; host remains running.");
     }
 
-    private void SetMode(WallpaperMode mode)
+    private void ReloadAll()
     {
-        if (_mode == mode)
-            return;
-        _mode = mode;
-        BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
-        UpdateChecks();
-    }
-
-    private void SetSingleMonitor(int monitor)
-    {
-        _selectedMonitor = monitor;
-        _mode = WallpaperMode.Single;
-        BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
-        UpdateChecks();
-    }
-
-    private void AskForBaseUrl()
-    {
-        using var input = new InputBox("Set base URL", "Enter URL:", _baseUrl);
-        if (input.ShowDialog() != DialogResult.OK)
-            return;
-
         try
         {
-            _baseUrl = UrlBuilder.Normalize(input.InputText);
-            BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
+            BeginReplacement(_configuration.ResolveWindowSpecs(), _windows);
         }
-        catch (Exception ex)
+        catch (WidgetConfigurationException ex)
         {
-            MessageBox.Show(ex.Message, "UltralightWall - Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Console.Error.WriteLine($"[Config] reload rejected: {ex.Message}");
+            MessageBox.Show(ex.Message, "UltraLightWidgetWall - Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
-
-    private void AskForMonitorUrl(int monitor)
-    {
-        string current = _monitorUrls.TryGetValue(monitor, out string? url) ? url : _baseUrl;
-        using var input = new InputBox($"Set monitor {monitor + 1} URL", "Enter URL:", current);
-        if (input.ShowDialog() != DialogResult.OK)
-            return;
-
-        try
-        {
-            _monitorUrls[monitor] = UrlBuilder.Normalize(input.InputText);
-            BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "UltralightWall - Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void ReloadAll() =>
-        BeginReplacement(_options.ResolveWindowSpecs(_baseUrl, _mode, _selectedMonitor, _monitorUrls), _windows);
 
     private void ReloadOne(WallpaperWindow window)
     {
+        WallpaperWindowSpec oldSpec = window.AppWindow.Spec;
         var spec = new WallpaperWindowSpec(
-            window.AppWindow.LogicalId,
-            window.AppWindow.Spec.Url,
-            window.AppWindow.Spec.Bounds,
-            window.AppWindow.Spec.VirtualBounds);
+            oldSpec.LogicalId,
+            oldSpec.Url,
+            oldSpec.Bounds,
+            oldSpec.VirtualBounds,
+            oldSpec.Transparent,
+            oldSpec.MonitorNumber);
         BeginReplacement(new[] { spec }, new[] { window });
     }
 
@@ -432,12 +357,8 @@ public sealed class WallpaperHostContext : ApplicationContext
 
     private void UpdateChecks()
     {
-        if (_spanItem != null) _spanItem.Checked = _mode == WallpaperMode.Span;
-        if (_allItem != null) _allItem.Checked = _mode == WallpaperMode.All;
         if (_pauseWhenFullscreenItem != null) _pauseWhenFullscreenItem.Checked = _pauseWhenFullscreenEnabled;
         if (_suspendWallpaperItem != null) _suspendWallpaperItem.Checked = _manualSuspendEnabled;
-        for (int index = 0; index < _monitorItems.Count; index++)
-            _monitorItems[index].Checked = _mode == WallpaperMode.Single && index == _selectedMonitor;
     }
 
     private IEnumerable<AppWindow> KnownWindows()
@@ -689,18 +610,16 @@ public sealed class WallpaperHostContext : ApplicationContext
 
     private static IntPtr ResolveWallpaperMonitor(WallpaperWindowSpec spec)
     {
-        if (spec.LogicalId == "virtual-screen" ||
-            !spec.LogicalId.StartsWith("monitor-", StringComparison.Ordinal))
-        {
+        if (spec.MonitorNumber <= 0 || spec.MonitorNumber > Screen.AllScreens.Length)
             return IntPtr.Zero;
-        }
 
+        Screen screen = Screen.AllScreens[spec.MonitorNumber - 1];
         NativeMethods.RECT rect = new()
         {
-            Left = spec.Bounds.Left,
-            Top = spec.Bounds.Top,
-            Right = spec.Bounds.Right,
-            Bottom = spec.Bounds.Bottom
+            Left = screen.Bounds.Left,
+            Top = screen.Bounds.Top,
+            Right = screen.Bounds.Right,
+            Bottom = screen.Bounds.Bottom
         };
         return NativeMethods.MonitorFromRect(ref rect, NativeMethods.MONITOR_DEFAULTTONEAREST);
     }

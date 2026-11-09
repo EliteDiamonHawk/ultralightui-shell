@@ -1,4 +1,4 @@
-namespace UltralightWall;
+namespace UltraLightWidgetWall;
 
 internal static class WallpaperSuspensionPolicy
 {

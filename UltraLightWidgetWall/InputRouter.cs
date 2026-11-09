@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace UltralightWall;
+namespace UltraLightWidgetWall;
 
 public sealed class WallpaperWindow
 {

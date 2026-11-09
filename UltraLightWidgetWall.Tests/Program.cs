@@ -1,7 +1,7 @@
 using System.Drawing;
-using UltralightWall;
+using UltraLightWidgetWall;
 
-namespace UltralightWall.Tests;
+namespace UltraLightWidgetWall.Tests;
 
 internal static class Program
 {
@@ -10,16 +10,24 @@ internal static class Program
     {
         var tests = new (string Name, Action Test)[]
         {
+            (nameof(ConfigurationLoadsRequiredFields), ConfigurationLoadsRequiredFields),
+            (nameof(ConfigurationDefaultsTransparency), ConfigurationDefaultsTransparency),
+            (nameof(ConfigurationRejectsMissingFields), ConfigurationRejectsMissingFields),
+            (nameof(ConfigurationRejectsInvalidAnchor), ConfigurationRejectsInvalidAnchor),
+            (nameof(ConfigurationRejectsInvalidGeometry), ConfigurationRejectsInvalidGeometry),
+            (nameof(ConfigurationRejectsUnsupportedUrl), ConfigurationRejectsUnsupportedUrl),
+            (nameof(GeometryResolvesPixelTopLeft), GeometryResolvesPixelTopLeft),
+            (nameof(GeometryResolvesScaledCenter), GeometryResolvesScaledCenter),
+            (nameof(GeometryResolvesNegativeMonitorCoordinates), GeometryResolvesNegativeMonitorCoordinates),
             (nameof(UrlBuilderNormalizesHost), UrlBuilderNormalizesHost),
             (nameof(UrlBuilderPreservesQueryAndFragment), UrlBuilderPreservesQueryAndFragment),
             (nameof(UrlBuilderRejectsUnsupportedScheme), UrlBuilderRejectsUnsupportedScheme),
             (nameof(RegistryTracksStatesAndHwndOwnership), RegistryTracksStatesAndHwndOwnership),
             (nameof(RegistryTracksCloseIntent), RegistryTracksCloseIntent),
             (nameof(CloseCheckRequiresAllWindows), CloseCheckRequiresAllWindows),
-            (nameof(OptionsParseMonitorUrlOverrides), OptionsParseMonitorUrlOverrides),
+            (nameof(OptionsRequireConfig), OptionsRequireConfig),
             (nameof(OptionsParseUltralightArguments), OptionsParseUltralightArguments),
-            (nameof(HelpTextUsesUltralightWall), HelpTextUsesUltralightWall),
-            (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
+            (nameof(HelpTextUsesUltraLightWidgetWall), HelpTextUsesUltraLightWidgetWall),
             (nameof(NonClientInsetsAreDerived), NonClientInsetsAreDerived),
             (nameof(ClientBoundsExpandByMeasuredInsets), ClientBoundsExpandByMeasuredInsets),
             (nameof(BorderlessStyleTransformationIsIdempotent), BorderlessStyleTransformationIsIdempotent),
@@ -43,7 +51,7 @@ internal static class Program
             }
         }
 
-        if (Environment.GetEnvironmentVariable("ULTRALIGHTWALL_RUN_INTEGRATION") == "1")
+        if (Environment.GetEnvironmentVariable("ULTRALIGHTWIDGETWALL_RUN_INTEGRATION") == "1")
         {
             try
             {
@@ -58,20 +66,74 @@ internal static class Program
         }
         else
         {
-            Console.WriteLine("SKIP RuntimeSmokeTest (set ULTRALIGHTWALL_RUN_INTEGRATION=1 to enable).");
+            Console.WriteLine("SKIP RuntimeSmokeTest (set ULTRALIGHTWIDGETWALL_RUN_INTEGRATION=1 to enable).");
         }
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} unit tests passed.");
         return failures == 0 ? 0 : 1;
     }
 
+    private static void ConfigurationLoadsRequiredFields()
+    {
+        WidgetConfiguration configuration = Load("""
+            {"widgets":[{"x":50,"y":50,"scaled":true,"anchor":"center","width":25,"height":20,"monitor":1,"url":"example.test"}]}
+            """);
+        AssertEqual(1, configuration.Widgets.Count);
+        WidgetDefinition widget = configuration.Widgets[0];
+        AssertEqual(WidgetAnchor.Center, widget.Anchor);
+        AssertEqual("https://example.test/", widget.Url);
+        AssertTrue(widget.Transparent);
+    }
+
+    private static void ConfigurationDefaultsTransparency()
+    {
+        WidgetConfiguration configuration = Load("""
+            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"top-left","width":100,"height":100,"monitor":1,"url":"https://example.test","transparent":false}]}
+            """);
+        AssertFalse(configuration.Widgets[0].Transparent);
+    }
+
+    private static void ConfigurationRejectsMissingFields() =>
+        AssertThrows<WidgetConfigurationException>(() => Load("{\"widgets\":[{\"url\":\"https://example.test\"}]}"));
+
+    private static void ConfigurationRejectsInvalidAnchor() =>
+        AssertThrows<WidgetConfigurationException>(() => Load("""
+            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"diagonal","width":100,"height":100,"monitor":1,"url":"https://example.test"}]}
+            """));
+
+    private static void ConfigurationRejectsInvalidGeometry() =>
+        AssertThrows<WidgetConfigurationException>(() => Load("""
+            {"widgets":[{"x":0,"y":0,"scaled":true,"anchor":"center","width":101,"height":10,"monitor":1,"url":"https://example.test"}]}
+            """));
+
+    private static void ConfigurationRejectsUnsupportedUrl() =>
+        AssertThrows<WidgetConfigurationException>(() => Load("""
+            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"center","width":10,"height":10,"monitor":1,"url":"javascript:alert(1)"}]}
+            """));
+
+    private static void GeometryResolvesPixelTopLeft()
+    {
+        var widget = new WidgetDefinition(20, 30, false, WidgetAnchor.TopLeft, 400, 200, 1, "https://example.test/", true);
+        AssertEqual(new Rectangle(120, 230, 400, 200), WidgetGeometry.Resolve(widget, new Rectangle(100, 200, 1920, 1080)));
+    }
+
+    private static void GeometryResolvesScaledCenter()
+    {
+        var widget = new WidgetDefinition(0, 0, true, WidgetAnchor.Center, 25, 20, 1, "https://example.test/", true);
+        AssertEqual(new Rectangle(720, 432, 480, 216), WidgetGeometry.Resolve(widget, new Rectangle(0, 0, 1920, 1080)));
+    }
+
+    private static void GeometryResolvesNegativeMonitorCoordinates()
+    {
+        var widget = new WidgetDefinition(10, 20, false, WidgetAnchor.BottomRight, 100, 50, 2, "https://example.test/", true);
+        AssertEqual(new Rectangle(-90, -30, 100, 50), WidgetGeometry.Resolve(widget, new Rectangle(-1920, -1200, 1920, 1200)));
+    }
+
     private static void UrlBuilderNormalizesHost() =>
         AssertEqual("https://example.test/", UrlBuilder.Normalize("example.test"));
 
     private static void UrlBuilderPreservesQueryAndFragment() =>
-        AssertEqual(
-            "https://example.test/wallpaper?theme=dark#scene",
-            UrlBuilder.Normalize("https://example.test/wallpaper?theme=dark#scene"));
+        AssertEqual("https://example.test/wallpaper?theme=dark#scene", UrlBuilder.Normalize("https://example.test/wallpaper?theme=dark#scene"));
 
     private static void UrlBuilderRejectsUnsupportedScheme() =>
         AssertThrows<OptionException>(() => UrlBuilder.Normalize("javascript:alert(1)"));
@@ -125,60 +187,35 @@ internal static class Program
         AssertTrue(CloseCheck.AllClosed(new[] { closed, open }));
     }
 
-    private static void OptionsParseMonitorUrlOverrides()
-    {
-        HostOptions options = HostOptions.Parse(new[]
-        {
-            "--url", "https://base.example",
-            "--monitor-url", "2=https://monitor.example",
-            "--mode", "all"
-        });
-        AssertEqual("https://monitor.example/", options.MonitorUrls[1]);
-        AssertEqual(WallpaperMode.All, options.Mode);
-    }
+    private static void OptionsRequireConfig() =>
+        AssertThrows<OptionException>(() => HostOptions.Parse(Array.Empty<string>()));
 
     private static void OptionsParseUltralightArguments()
     {
         HostOptions options = HostOptions.Parse(new[]
         {
+            "--config", "widgets.json",
             "--reconcile-ms=100",
             "--startup-timeout-ms", "5000",
-            "--verbose",
-            "--transparent"
+            "--verbose"
         });
         AssertEqual(100, options.ReconcileIntervalMs);
         AssertEqual(TimeSpan.FromSeconds(5), options.StartupTimeout);
         AssertTrue(options.Verbose);
-        AssertTrue(options.Transparent);
+        AssertTrue(options.ConfigPath.EndsWith("widgets.json", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void HelpTextUsesUltralightWall()
-    {
-        AssertTrue(HostOptions.HelpText.Contains("UltralightWall", StringComparison.Ordinal));
-    }
-
-    private static void GeometryPreservesNegativeCoordinates()
-    {
-        Rectangle monitor = new(-1920, -1200, 1920, 1200);
-        Rectangle mapped = DesktopEmbedder.ToParentClient(monitor, new Point(-2000, -1300));
-        AssertEqual(new Rectangle(80, 100, 1920, 1200), mapped);
-    }
+    private static void HelpTextUsesUltraLightWidgetWall() =>
+        AssertTrue(HostOptions.HelpText.Contains("UltraLightWidgetWall", StringComparison.Ordinal));
 
     private static void NonClientInsetsAreDerived()
     {
-        AssertTrue(DesktopEmbedder.TryCalculateNonClientInsets(
-            new Rectangle(-8, -31, 1936, 1119),
-            new Rectangle(0, 0, 1920, 1080),
-            out NonClientInsets insets));
+        AssertTrue(DesktopEmbedder.TryCalculateNonClientInsets(new Rectangle(-8, -31, 1936, 1119), new Rectangle(0, 0, 1920, 1080), out NonClientInsets insets));
         AssertEqual(new NonClientInsets(8, 31, 8, 8), insets);
     }
 
-    private static void ClientBoundsExpandByMeasuredInsets()
-    {
-        Rectangle outer = DesktopEmbedder.CalculateOuterBounds(
-            new Rectangle(-1920, -1200, 1920, 1200), new NonClientInsets(8, 31, 8, 8));
-        AssertEqual(new Rectangle(-1928, -1231, 1936, 1239), outer);
-    }
+    private static void ClientBoundsExpandByMeasuredInsets() =>
+        AssertEqual(new Rectangle(-1928, -1231, 1936, 1239), DesktopEmbedder.CalculateOuterBounds(new Rectangle(-1920, -1200, 1920, 1200), new NonClientInsets(8, 31, 8, 8)));
 
     private static void BorderlessStyleTransformationIsIdempotent()
     {
@@ -219,7 +256,7 @@ internal static class Program
         {
             using var runtime = new UltralightRuntime();
             stage = "window creation";
-            var spec = new WallpaperWindowSpec("virtual-screen", "file:///probe.html", new Rectangle(0, 0, 640, 480), new Rectangle(0, 0, 640, 480));
+            var spec = new WallpaperWindowSpec("widget-1", "file:///probe.html", new Rectangle(0, 0, 640, 480), new Rectangle(0, 0, 640, 480), true, 1);
             AppWindow window = runtime.CreateWindow(spec, TimeSpan.FromSeconds(5));
             stage = "native handle validation";
             AssertTrue(window.Hwnd != IntPtr.Zero);
@@ -231,6 +268,21 @@ internal static class Program
         catch (Exception ex)
         {
             throw new InvalidOperationException($"{stage}: {ex.Message}", ex);
+        }
+    }
+
+    private static WidgetConfiguration Load(string json)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"ultralight-widget-wall-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, json);
+            return WidgetConfiguration.Load(path);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
         }
     }
 

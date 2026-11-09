@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace UltralightWall;
+namespace UltraLightWidgetWall;
 
 internal static class UltralightNative
 {

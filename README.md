@@ -1,10 +1,6 @@
-# UltralightWall
+# UltraLightWidgetWall
 
-UltralightWall hosts web pages as Windows desktop wallpapers using Ultralight AppCore. It creates native Ultralight windows in-process, embeds them behind desktop icons, and keeps tray controls plus low-level desktop input routing.
-
-## BrowserWall Collection
-
-see [BrowserWall.md](https://github.com/EliteDiamonHawk/wv2wall/blob/main/BrowserWall.md)
+UltraLightWidgetWall hosts JSON-defined web widgets as Windows desktop wallpaper windows using Ultralight AppCore. Each entry in the configuration creates one borderless native window, positions it on a selected monitor, and embeds it behind desktop icons.
 
 ## Requirements
 
@@ -19,51 +15,62 @@ Install the pinned SDK into `third_party\ultralight`:
 powershell -ExecutionPolicy Bypass -File scripts\setup-ultralight.ps1
 ```
 
-The SDK is ignored by Git. Builds also accept `ULTRALIGHT_SDK_ROOT`.
+Builds also accept `ULTRALIGHT_SDK_ROOT`.
 
 ## Build and test
 
 ```powershell
-dotnet build UltralightWall\UltralightWall.sln -c Release
-dotnet build UltralightWall.Tests\UltralightWall.Tests.csproj -c Release
-dotnet run --project UltralightWall.Tests\UltralightWall.Tests.csproj -c Release
+dotnet build UltraLightWidgetWall\UltraLightWidgetWall.sln -c Release
+dotnet build UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
+dotnet run --project UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
 ```
 
-## Run
+## Configuration
 
-Without `--url`, UltralightWall loads its copied `assets\probe.html` page.
+Start the application with a required JSON file:
 
 ```powershell
-UltralightWall\bin\Release\net9.0-windows\win-x64\UltralightWall.exe `
-  --mode all
+UltraLightWidgetWall.exe --config widgets.json
 ```
 
-Options:
+Example:
 
-- `--url <url>`: HTTP, HTTPS, or file URL.
-- `--monitor-url N=<url>`: per-monitor URL override; repeatable.
-- `--mode span|all|single`: one virtual-screen window, one per monitor, or one selected monitor.
-- `--monitor <number>`: 1-based monitor for `single` mode.
-- `--window <id>`: explicit logical window ID; repeatable.
-- `--reconcile-ms <n>`: desktop geometry/lifecycle reconciliation interval.
-- `--startup-timeout-ms <n>`: replacement startup timeout.
-- `--transparent`: enable per-pixel transparent wallpaper windows. The webpage must also
-  use a transparent background where it should reveal the desktop, for example:
-  `html, body { background: transparent; }`.
-- `--verbose`: embedding diagnostics.
-- `--help`, `-h`: show help.
+```json
+{
+  "widgets": [
+    {
+      "x": 50,
+      "y": 50,
+      "scaled": true,
+      "anchor": "center",
+      "width": 25,
+      "height": 20,
+      "monitor": 1,
+      "url": "https://example.com",
+      "transparent": true
+    }
+  ]
+}
+```
+
+Every widget requires `x`, `y`, `scaled`, `anchor`, `width`, `height`, `monitor`, and `url`. `transparent` is optional and defaults to `true`.
+
+When `scaled` is `true`, position and size values are percentages of the selected monitor from 0 to 100. Otherwise they are screen pixels. Monitor numbers are 1-based and use full monitor bounds, including the taskbar area. Anchors are `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`.
+
+The application reads the configuration at startup. Tray controls can reload the current configuration-derived windows, but the file is not watched automatically.
 
 ## Behavior
 
-- WorkerW/Progman desktop embedding.
-- Span, all-monitor, and selected-monitor modes.
-- Borderless, taskbar-hidden wallpaper windows.
-- Runtime URL changes and per-monitor links.
-- Fresh-window reload and transactional replacement.
-- Tray controls and CLI help.
-- Mouse, button, double-click, movement, wheel, keyboard, modifier, and web-shortcut forwarding.
-- Desktop icon selection, desktop context menu, critical system keys, and Alt+Tab pass-through.
-- Initialization retries, startup timeout, lifecycle tracking, topology reconciliation, and graceful shutdown.
+- One Ultralight window per widget entry.
+- Borderless, non-activating desktop wallpaper windows.
+- WorkerW/Progman desktop embedding behind desktop icons.
+- Per-widget transparency.
+- Mouse, keyboard, wheel, modifier, and web-shortcut forwarding.
+- Desktop icon selection and context-menu pass-through.
+- Fullscreen and manual suspension controls.
+- Startup timeout, lifecycle tracking, transactional replacement, and monitor-topology reconciliation.
+
+Malformed configuration, invalid geometry or URLs, unsupported anchors, and unavailable monitors reject the complete replacement while preserving existing windows.
 
 Desktop embedding depends on Windows Shell behavior. Explorer restart recovery, display hotplug/reconfiguration, and platform-specific focus/DPI quirks remain outside current scope.
 
