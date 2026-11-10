@@ -235,8 +235,12 @@ public sealed class DesktopEmbedder
         if (!NativeMethods.GetMonitorInfoW(monitor, ref info))
             throw new InvalidOperationException($"Could not read monitor geometry: {FormatWin32Error(Marshal.GetLastPInvokeError())}");
 
+        // The monitor is only used to identify the desktop host and to provide
+        // diagnostics. The widget itself must retain the bounds resolved from
+        // the configuration; using info.Monitor here makes every widget fill
+        // the entire monitor.
         return new MonitorGeometry(monitor,
-            Rectangle.FromLTRB(info.Monitor.Left, info.Monitor.Top, info.Monitor.Right, info.Monitor.Bottom),
+            requested,
             Rectangle.FromLTRB(info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom));
     }
 
