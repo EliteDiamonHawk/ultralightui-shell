@@ -21,17 +21,24 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-ultralight.ps1
 
 Builds also accept `ULTRALIGHT_SDK_ROOT`.
 
-## Build and test
+## Build, test and run
 
 ```powershell
 dotnet build UltraLightWidgetWall\UltraLightWidgetWall.sln -c Release
 dotnet build UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
 dotnet run --project UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
+dotnet run --project UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release -- --config .\widgets.json
 ```
 
 ## Configuration
 
 Start the application with a required JSON file:
+
+```powershell
+dotnet run --project UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release -- --config .\widgets.json
+```
+
+or as standalone executable:
 
 ```powershell
 UltraLightWidgetWall.exe --config widgets.json
