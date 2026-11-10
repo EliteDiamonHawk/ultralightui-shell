@@ -11,13 +11,16 @@ internal static class Program
         var tests = new (string Name, Action Test)[]
         {
             (nameof(ConfigurationLoadsRequiredFields), ConfigurationLoadsRequiredFields),
+            (nameof(ConfigurationSupportsDimensionAliases), ConfigurationSupportsDimensionAliases),
             (nameof(ConfigurationDefaultsTransparency), ConfigurationDefaultsTransparency),
             (nameof(ConfigurationRejectsMissingFields), ConfigurationRejectsMissingFields),
             (nameof(ConfigurationRejectsInvalidAnchor), ConfigurationRejectsInvalidAnchor),
             (nameof(ConfigurationRejectsInvalidGeometry), ConfigurationRejectsInvalidGeometry),
             (nameof(ConfigurationRejectsUnsupportedUrl), ConfigurationRejectsUnsupportedUrl),
             (nameof(GeometryResolvesPixelTopLeft), GeometryResolvesPixelTopLeft),
-            (nameof(GeometryResolvesScaledCenter), GeometryResolvesScaledCenter),
+            (nameof(GeometryScalesPositionWithoutScalingSize), GeometryScalesPositionWithoutScalingSize),
+            (nameof(GeometryScalesSizeIndependently), GeometryScalesSizeIndependently),
+            (nameof(GeometryScalesPositionFromSelectedMonitor), GeometryScalesPositionFromSelectedMonitor),
             (nameof(GeometryResolvesNegativeMonitorCoordinates), GeometryResolvesNegativeMonitorCoordinates),
             (nameof(UrlBuilderNormalizesHost), UrlBuilderNormalizesHost),
             (nameof(UrlBuilderPreservesQueryAndFragment), UrlBuilderPreservesQueryAndFragment),
@@ -76,21 +79,33 @@ internal static class Program
     private static void ConfigurationLoadsRequiredFields()
     {
         WidgetConfiguration configuration = Load("""
-            {"widgets":[{"x":50,"y":50,"scaled":true,"anchor":"center","width":25,"height":20,"monitor":1,"url":"example.test"}]}
+            {"widgets":[{"x":50,"y":50,"pos-scaled":true,"size-scaled":false,"anchor":"center","width":400,"height":200,"monitor":1,"url":"example.test"}]}
             """);
         AssertEqual(1, configuration.Widgets.Count);
         WidgetDefinition widget = configuration.Widgets[0];
         AssertEqual(WidgetAnchor.Center, widget.Anchor);
         AssertEqual("https://example.test/", widget.Url);
+        AssertTrue(widget.PosScaled);
+        AssertFalse(widget.SizeScaled);
         AssertTrue(widget.Transparent);
     }
 
     private static void ConfigurationDefaultsTransparency()
     {
         WidgetConfiguration configuration = Load("""
-            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"top-left","width":100,"height":100,"monitor":1,"url":"https://example.test","transparent":false}]}
+            {"widgets":[{"x":0,"y":0,"pos-scaled":false,"size-scaled":false,"anchor":"top-left","width":100,"height":100,"monitor":1,"url":"https://example.test","transparent":false}]}
             """);
         AssertFalse(configuration.Widgets[0].Transparent);
+    }
+
+    private static void ConfigurationSupportsDimensionAliases()
+    {
+        WidgetConfiguration configuration = Load("""
+            {"widgets":[{"x":50,"y":50,"pos-scaled":true,"size-scaled":false,"anchor":"center","w":400,"h":200,"monitor":1,"url":"example.test"}]}
+            """);
+        WidgetDefinition widget = configuration.Widgets[0];
+        AssertEqual(400d, widget.Width);
+        AssertEqual(200d, widget.Height);
     }
 
     private static void ConfigurationRejectsMissingFields() =>
@@ -98,34 +113,46 @@ internal static class Program
 
     private static void ConfigurationRejectsInvalidAnchor() =>
         AssertThrows<WidgetConfigurationException>(() => Load("""
-            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"diagonal","width":100,"height":100,"monitor":1,"url":"https://example.test"}]}
+            {"widgets":[{"x":0,"y":0,"pos-scaled":false,"size-scaled":false,"anchor":"diagonal","width":100,"height":100,"monitor":1,"url":"https://example.test"}]}
             """));
 
     private static void ConfigurationRejectsInvalidGeometry() =>
         AssertThrows<WidgetConfigurationException>(() => Load("""
-            {"widgets":[{"x":0,"y":0,"scaled":true,"anchor":"center","width":101,"height":10,"monitor":1,"url":"https://example.test"}]}
+            {"widgets":[{"x":101,"y":0,"pos-scaled":true,"size-scaled":false,"anchor":"center","width":400,"height":200,"monitor":1,"url":"https://example.test"}]}
             """));
 
     private static void ConfigurationRejectsUnsupportedUrl() =>
         AssertThrows<WidgetConfigurationException>(() => Load("""
-            {"widgets":[{"x":0,"y":0,"scaled":false,"anchor":"center","width":10,"height":10,"monitor":1,"url":"javascript:alert(1)"}]}
+            {"widgets":[{"x":0,"y":0,"pos-scaled":false,"size-scaled":false,"anchor":"center","width":10,"height":10,"monitor":1,"url":"javascript:alert(1)"}]}
             """));
 
     private static void GeometryResolvesPixelTopLeft()
     {
-        var widget = new WidgetDefinition(20, 30, false, WidgetAnchor.TopLeft, 400, 200, 1, "https://example.test/", true);
+        var widget = new WidgetDefinition(20, 30, false, false, WidgetAnchor.TopLeft, 400, 200, 1, "https://example.test/", true);
         AssertEqual(new Rectangle(120, 230, 400, 200), WidgetGeometry.Resolve(widget, new Rectangle(100, 200, 1920, 1080)));
     }
 
-    private static void GeometryResolvesScaledCenter()
+    private static void GeometryScalesPositionWithoutScalingSize()
     {
-        var widget = new WidgetDefinition(0, 0, true, WidgetAnchor.Center, 25, 20, 1, "https://example.test/", true);
-        AssertEqual(new Rectangle(720, 432, 480, 216), WidgetGeometry.Resolve(widget, new Rectangle(0, 0, 1920, 1080)));
+        var widget = new WidgetDefinition(50, 50, true, false, WidgetAnchor.Center, 400, 200, 1, "https://example.test/", true);
+        AssertEqual(new Rectangle(760, 440, 400, 200), WidgetGeometry.Resolve(widget, new Rectangle(0, 0, 1920, 1080)));
+    }
+
+    private static void GeometryScalesSizeIndependently()
+    {
+        var widget = new WidgetDefinition(0, 0, false, true, WidgetAnchor.TopLeft, 25, 25, 1, "https://example.test/", true);
+        AssertEqual(new Rectangle(0, 0, 270, 270), WidgetGeometry.Resolve(widget, new Rectangle(0, 0, 1920, 1080)));
+    }
+
+    private static void GeometryScalesPositionFromSelectedMonitor()
+    {
+        var widget = new WidgetDefinition(10, 20, true, false, WidgetAnchor.TopLeft, 100, 50, 2, "https://example.test/", true);
+        AssertEqual(new Rectangle(-1728, -984, 100, 50), WidgetGeometry.Resolve(widget, new Rectangle(-1920, -1200, 1920, 1080)));
     }
 
     private static void GeometryResolvesNegativeMonitorCoordinates()
     {
-        var widget = new WidgetDefinition(10, 20, false, WidgetAnchor.BottomRight, 100, 50, 2, "https://example.test/", true);
+        var widget = new WidgetDefinition(10, 20, false, false, WidgetAnchor.BottomRight, 100, 50, 2, "https://example.test/", true);
         AssertEqual(new Rectangle(-90, -30, 100, 50), WidgetGeometry.Resolve(widget, new Rectangle(-1920, -1200, 1920, 1200)));
     }
 

@@ -76,17 +76,21 @@ public sealed class WidgetConfiguration
     private static WidgetDefinition Validate(WidgetFileEntry? entry, int index)
     {
         string prefix = $"Widget {index + 1}";
+        double? width = entry?.Width ?? entry?.WidthAlias;
+        double? height = entry?.Height ?? entry?.HeightAlias;
+        bool? posScaled = entry?.PosScaled ?? entry?.PosScaleAlias;
+        bool? sizeScaled = entry?.SizeScaled ?? entry?.SizeScaleAlias;
         if (entry == null)
             throw new WidgetConfigurationException($"{prefix} must be an object.");
-        if (entry.X == null || entry.Y == null || entry.Scaled == null || entry.Width == null ||
-            entry.Height == null || entry.Monitor == null || string.IsNullOrWhiteSpace(entry.Anchor) ||
+        if (entry.X == null || entry.Y == null || posScaled == null || sizeScaled == null || width == null ||
+            height == null || entry.Monitor == null || string.IsNullOrWhiteSpace(entry.Anchor) ||
             string.IsNullOrWhiteSpace(entry.Url))
             throw new WidgetConfigurationException($"{prefix} is missing one or more required fields.");
         if (double.IsNaN(entry.X.Value) || double.IsInfinity(entry.X.Value) ||
             double.IsNaN(entry.Y.Value) || double.IsInfinity(entry.Y.Value))
             throw new WidgetConfigurationException($"{prefix} x and y must be finite numbers.");
-        if (double.IsNaN(entry.Width.Value) || double.IsInfinity(entry.Width.Value) || entry.Width.Value <= 0 ||
-            double.IsNaN(entry.Height.Value) || double.IsInfinity(entry.Height.Value) || entry.Height.Value <= 0)
+        if (double.IsNaN(width.Value) || double.IsInfinity(width.Value) || width.Value <= 0 ||
+            double.IsNaN(height.Value) || double.IsInfinity(height.Value) || height.Value <= 0)
             throw new WidgetConfigurationException($"{prefix} width and height must be positive finite numbers.");
         if (entry.Monitor.Value <= 0)
             throw new WidgetConfigurationException($"{prefix} monitor must be a positive 1-based number.");
@@ -95,9 +99,10 @@ public sealed class WidgetConfiguration
             throw new WidgetConfigurationException(
                 $"{prefix} anchor '{entry.Anchor}' is invalid. Use top-left, top, top-right, left, center, right, bottom-left, bottom, or bottom-right.");
 
-        if (entry.Scaled.Value && (entry.X.Value < -100 || entry.X.Value > 100 || entry.Y.Value < -100 || entry.Y.Value > 100 ||
-            entry.Width.Value > 100 || entry.Height.Value > 100))
-            throw new WidgetConfigurationException($"{prefix} scaled geometry must use values between -100 and 100.");
+        if (posScaled.Value && (entry.X.Value < -100 || entry.X.Value > 100 || entry.Y.Value < -100 || entry.Y.Value > 100))
+            throw new WidgetConfigurationException($"{prefix} pos-scaled x and y must use values between -100 and 100.");
+        if (sizeScaled.Value && (width.Value > 100 || height.Value > 100))
+            throw new WidgetConfigurationException($"{prefix} size-scaled width and height must use values between 0 and 100.");
 
         string normalizedUrl;
         try
@@ -112,10 +117,11 @@ public sealed class WidgetConfiguration
         return new WidgetDefinition(
             entry.X.Value,
             entry.Y.Value,
-            entry.Scaled.Value,
+            posScaled.Value,
+            sizeScaled.Value,
             anchor,
-            entry.Width.Value,
-            entry.Height.Value,
+            width.Value,
+            height.Value,
             entry.Monitor.Value,
             normalizedUrl,
             entry.Transparent ?? true);
@@ -136,10 +142,21 @@ public sealed class WidgetConfiguration
     {
         public double? X { get; set; }
         public double? Y { get; set; }
-        public bool? Scaled { get; set; }
+        [JsonPropertyName("pos-scaled")]
+        public bool? PosScaled { get; set; }
+        [JsonPropertyName("pos-scale")]
+        public bool? PosScaleAlias { get; set; }
+        [JsonPropertyName("size-scaled")]
+        public bool? SizeScaled { get; set; }
+        [JsonPropertyName("size-scale")]
+        public bool? SizeScaleAlias { get; set; }
         public string? Anchor { get; set; }
         public double? Width { get; set; }
+        [JsonPropertyName("w")]
+        public double? WidthAlias { get; set; }
         public double? Height { get; set; }
+        [JsonPropertyName("h")]
+        public double? HeightAlias { get; set; }
         public int? Monitor { get; set; }
         public string? Url { get; set; }
         public bool? Transparent { get; set; }
@@ -149,7 +166,8 @@ public sealed class WidgetConfiguration
 public sealed record WidgetDefinition(
     double X,
     double Y,
-    bool Scaled,
+    bool PosScaled,
+    bool SizeScaled,
     WidgetAnchor Anchor,
     double Width,
     double Height,
@@ -174,16 +192,21 @@ public static class WidgetGeometry
 {
     public static Rectangle Resolve(WidgetDefinition widget, Rectangle monitor)
     {
-        double unitX = widget.Scaled ? monitor.Width / 100d : 1d;
-        double unitY = widget.Scaled ? monitor.Height / 100d : 1d;
-        int width = ToDimension(widget.Width * unitX);
-        int height = ToDimension(widget.Height * unitY);
-        double offsetX = widget.X * unitX;
-        double offsetY = widget.Y * unitY;
+        // Position and size scaling are independent so either coordinate system
+        // can be selected without changing the other one.
+        double positionUnitX = widget.PosScaled ? monitor.Width / 100d : 1d;
+        double positionUnitY = widget.PosScaled ? monitor.Height / 100d : 1d;
+        double sizeUnit = widget.SizeScaled ? Math.Min(monitor.Width, monitor.Height) / 100d : 1d;
+        int width = ToDimension(widget.Width * sizeUnit);
+        int height = ToDimension(widget.Height * sizeUnit);
+        double offsetX = widget.X * positionUnitX;
+        double offsetY = widget.Y * positionUnitY;
         Point monitorAnchor = GetMonitorAnchor(widget.Anchor, monitor);
+        double placementX = (widget.PosScaled ? monitor.Left : monitorAnchor.X) + offsetX;
+        double placementY = (widget.PosScaled ? monitor.Top : monitorAnchor.Y) + offsetY;
         Point widgetAnchor = GetWidgetAnchor(widget.Anchor, width, height);
-        int left = checked((int)Math.Round(monitorAnchor.X + offsetX - widgetAnchor.X, MidpointRounding.AwayFromZero));
-        int top = checked((int)Math.Round(monitorAnchor.Y + offsetY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
+        int left = checked((int)Math.Round(placementX - widgetAnchor.X, MidpointRounding.AwayFromZero));
+        int top = checked((int)Math.Round(placementY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
         return new Rectangle(left, top, width, height);
     }
 
