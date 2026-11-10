@@ -82,6 +82,10 @@ The application reads the configuration at startup. Tray controls can reload the
 - Fullscreen and manual suspension controls.
 - Startup timeout, lifecycle tracking, transactional replacement, and monitor-topology reconciliation.
 
+Keyboard input is safe by default. A widget becomes a pending keyboard candidate after a left click and becomes the single active owner only when its native Ultralight view has input focus and the foreground window is the widget, one of its children, or an allowed desktop shell window (`Progman`, `WorkerW`, `SHELLDLL_DefView`, or `SysListView32`). UltralightWidgetWall uses native renderer focus as its `RendererFallback` focus mode because it has no DOM-focus bridge. Ordinary web keys are forwarded as native Ultralight raw, character, modifier, repeat, and Unicode events; Windows/system keys, Alt+Tab, Ctrl+Esc, Escape, PrintScreen, Apps, Pause, function keys, and lock keys remain system pass-through. Context-switching keys revoke ownership, while lock-key toggles do not. Any held forwarded keys receive synthesized key-up events when focus is revoked, a widget is suspended/reloaded/closed, or the host shuts down.
+
+Overlapping widgets route to the smallest widget bounds first. `transparent` controls rendering only; transparent widgets remain interactive within their bounds.
+
 Malformed configuration, invalid geometry or URLs, unsupported anchors, and unavailable monitors reject the complete replacement while preserving existing windows.
 
 Desktop embedding depends on Windows Shell behavior. Explorer restart recovery, display hotplug/reconfiguration, and platform-specific focus/DPI quirks remain outside current scope.

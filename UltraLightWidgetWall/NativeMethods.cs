@@ -24,6 +24,23 @@ internal static class NativeMethods
     internal const int WM_SYSKEYUP = 0x0105;
     internal const int WM_SPAWN_WORKERW = 0x052C;
 
+    internal const int VK_TAB = 0x09;
+    internal const int VK_ESCAPE = 0x1B;
+    internal const int VK_SHIFT = 0x10;
+    internal const int VK_CONTROL = 0x11;
+    internal const int VK_MENU = 0x12;
+    internal const int VK_LMENU = 0xA4;
+    internal const int VK_RMENU = 0xA5;
+    internal const int VK_CAPITAL = 0x14;
+    internal const int VK_LWIN = 0x5B;
+    internal const int VK_RWIN = 0x5C;
+    internal const int VK_APPS = 0x5D;
+    internal const int VK_SNAPSHOT = 0x2C;
+    internal const int VK_PAUSE = 0x13;
+    internal const int VK_NUMLOCK = 0x90;
+    internal const int VK_SCROLL = 0x91;
+    internal const int GA_ROOT = 2;
+
     internal const int WH_KEYBOARD_LL = 13;
     internal const int WH_MOUSE_LL = 14;
     internal const int GWL_STYLE = -16;
@@ -256,6 +273,22 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern short GetKeyState(int key);
 
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetKeyboardLayout(uint threadId);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    internal static extern uint MapVirtualKeyExW(uint code, uint mapType, IntPtr keyboardLayout);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    internal static extern int ToUnicodeEx(
+        uint virtualKey,
+        uint scanCode,
+        byte[] keyboardState,
+        [Out] StringBuilder receivingBuffer,
+        int bufferLength,
+        uint flags,
+        IntPtr keyboardLayout);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, uint size, uint allocationType, uint protection);
 
@@ -320,8 +353,19 @@ internal static class NativeMethods
         return false;
     }
 
-    internal static bool IsDescendantOrSelf(IntPtr hwnd, IntPtr ancestor) =>
-        hwnd == ancestor || GetAncestor(hwnd, 2) == ancestor;
+    internal static bool IsDescendantOrSelf(IntPtr hwnd, IntPtr ancestor)
+    {
+        if (hwnd == IntPtr.Zero || ancestor == IntPtr.Zero)
+            return false;
+
+        for (IntPtr current = hwnd; current != IntPtr.Zero; current = GetParent(current))
+        {
+            if (current == ancestor)
+                return true;
+        }
+
+        return false;
+    }
 
     internal static bool TryClearDesktopSelection(IntPtr desktopList)
     {

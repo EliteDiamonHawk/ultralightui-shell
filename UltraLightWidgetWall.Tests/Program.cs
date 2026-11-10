@@ -36,7 +36,11 @@ internal static class Program
             (nameof(BorderlessStyleTransformationIsIdempotent), BorderlessStyleTransformationIsIdempotent),
             (nameof(MonitorHostStyleClipsChildrenAndSiblings), MonitorHostStyleClipsChildrenAndSiblings),
             (nameof(SuspensionPolicyCombinesManualAndFullscreenState), SuspensionPolicyCombinesManualAndFullscreenState),
-            (nameof(SuspensionPolicyDisablingAutomaticPauseRestoresVisibleWallpaper), SuspensionPolicyDisablingAutomaticPauseRestoresVisibleWallpaper)
+            (nameof(SuspensionPolicyDisablingAutomaticPauseRestoresVisibleWallpaper), SuspensionPolicyDisablingAutomaticPauseRestoresVisibleWallpaper),
+            (nameof(KeyboardOwnershipRequiresValidatedFocus), KeyboardOwnershipRequiresValidatedFocus),
+            (nameof(KeyboardOwnershipEndsOnForegroundAndSystemKeys), KeyboardOwnershipEndsOnForegroundAndSystemKeys),
+            (nameof(KeyboardPolicyUsesStrictSystemPassThrough), KeyboardPolicyUsesStrictSystemPassThrough),
+            (nameof(KeyboardOwnershipStartsSafeAndCanBeReused), KeyboardOwnershipStartsSafeAndCanBeReused)
         };
 
         int failures = 0;
@@ -274,6 +278,65 @@ internal static class Program
         AssertTrue(WallpaperSuspensionPolicy.ShouldSuspend(true, false, false));
         AssertFalse(WallpaperSuspensionPolicy.ShouldSuspend(false, false, true));
         AssertTrue(WallpaperSuspensionPolicy.ShouldSuspend(false, true, true));
+    }
+
+    private static void KeyboardOwnershipRequiresValidatedFocus()
+    {
+        var policy = new KeyboardOwnershipPolicy();
+        AssertEqual(KeyboardOwnershipState.NoBackgroundKeyboardInput, policy.State);
+        policy.Arm();
+        AssertFalse(policy.TryBegin(false, true, KeyboardFocusKind.RendererFallback));
+        AssertFalse(policy.ShouldForward);
+        AssertFalse(policy.TryBegin(true, false, KeyboardFocusKind.RendererFallback));
+        AssertFalse(policy.ShouldForward);
+        AssertTrue(policy.TryBegin(true, true, KeyboardFocusKind.RendererFallback));
+        AssertEqual(KeyboardOwnershipState.BackgroundKeyboardInteraction, policy.State);
+        AssertTrue(policy.ShouldForward);
+    }
+
+    private static void KeyboardOwnershipEndsOnForegroundAndSystemKeys()
+    {
+        var policy = new KeyboardOwnershipPolicy();
+        policy.Arm();
+        AssertTrue(policy.TryBegin(true, true, KeyboardFocusKind.RendererFallback));
+        AssertTrue(policy.ShouldEndForForegroundChange(false));
+        AssertFalse(policy.ShouldEndForForegroundChange(true));
+        policy.End();
+        AssertFalse(policy.ShouldForward);
+    }
+
+    private static void KeyboardPolicyUsesStrictSystemPassThrough()
+    {
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_LWIN, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_RWIN, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_SYSKEYDOWN, 0x46, true, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_TAB, true, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_ESCAPE, false, false, true));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_SNAPSHOT, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_APPS, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_PAUSE, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, 0x70, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, 0x87, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_CAPITAL, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_NUMLOCK, false, false, false));
+        AssertTrue(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, NativeMethods.VK_SCROLL, false, false, false));
+        AssertFalse(KeyboardInputPolicy.IsSystemOwnedKey(NativeMethods.WM_KEYDOWN, 0x41, false, false, false));
+        AssertFalse(KeyboardInputPolicy.EndsOwnership(NativeMethods.WM_KEYDOWN, NativeMethods.VK_CAPITAL, false, false, false));
+        AssertTrue(KeyboardInputPolicy.EndsOwnership(NativeMethods.WM_KEYDOWN, NativeMethods.VK_ESCAPE, false, false, false));
+        AssertTrue(KeyboardInputPolicy.EndsOwnership(NativeMethods.WM_KEYDOWN, NativeMethods.VK_ESCAPE, false, false, true));
+    }
+
+    private static void KeyboardOwnershipStartsSafeAndCanBeReused()
+    {
+        var policy = new KeyboardOwnershipPolicy();
+        AssertFalse(policy.ShouldForward);
+        policy.Arm();
+        AssertTrue(policy.TryBegin(true, true, KeyboardFocusKind.RendererFallback));
+        policy.End();
+        AssertEqual(KeyboardOwnershipState.NoBackgroundKeyboardInput, policy.State);
+        policy.Arm();
+        AssertTrue(policy.TryBegin(true, true, KeyboardFocusKind.RendererFallback));
+        AssertTrue(policy.ShouldForward);
     }
 
     private static void RuntimeSmokeTest()

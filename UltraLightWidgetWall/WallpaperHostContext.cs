@@ -73,9 +73,9 @@ public sealed class WallpaperHostContext : ApplicationContext
         InstallWinEventHooks();
         _fullscreenMonitoringStarted = true;
         _fullscreenFallbackTimer.Start();
-        ReconcileFullscreenState();
 
         _input = new InputRouter(() => _windows);
+        ReconcileFullscreenState();
         _timer = new System.Windows.Forms.Timer { Interval = ActivePumpIntervalMs };
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
@@ -181,6 +181,7 @@ public sealed class WallpaperHostContext : ApplicationContext
 
             if (!NativeMethods.IsWindow(appWindow.Hwnd))
             {
+                _input.EndForWindow(appWindow, "renderer window lost");
                 _registry.MarkUnexpectedClose(appWindow);
                 Console.Error.WriteLine($"[Lifecycle] Ultralight window lost: {appWindow.LogicalId}");
                 BeginReplacement(_configuration.ResolveWindowSpecs(), _windows);
@@ -255,6 +256,8 @@ public sealed class WallpaperHostContext : ApplicationContext
             Console.WriteLine("[Replace] request ignored while another replacement is pending.");
             return;
         }
+
+        _input.EndForWindows(targets, "widget replacement");
 
         ReconcileFullscreenState();
 
@@ -409,6 +412,9 @@ public sealed class WallpaperHostContext : ApplicationContext
                         _pauseWhenFullscreenEnabled,
                         appWindow.FullscreenOccluded);
                     appWindow.DesiredSuspended = shouldSuspend;
+
+                    if (shouldSuspend)
+                        _input.EndForWindow(appWindow, "background widget suspended");
 
                     if (shouldSuspend == appWindow.RendererSuspended)
                         continue;
@@ -630,6 +636,7 @@ public sealed class WallpaperHostContext : ApplicationContext
             return;
 
         _exiting = true;
+        _input.EndAll("host shutdown");
         DisposeFullscreenMonitoring();
         if (_pending != null)
         {
@@ -653,6 +660,7 @@ public sealed class WallpaperHostContext : ApplicationContext
 
     private void CloseTracked(WallpaperWindow window)
     {
+        _input.EndForWindow(window.AppWindow, "background widget closed");
         _registry.MarkIntentionalClose(window.AppWindow);
         _embedder.Close(window.AppWindow);
         _runtime.DestroyWindow(window.AppWindow);
