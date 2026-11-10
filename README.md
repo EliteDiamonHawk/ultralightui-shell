@@ -67,6 +67,8 @@ Options:
 
 Desktop embedding depends on Windows Shell behavior. Explorer restart recovery, display hotplug/reconfiguration, and platform-specific focus/DPI quirks remain outside current scope.
 
+Keyboard input starts in a safe pass-through state. A click arms a renderer candidate, and forwarding begins only after `ulViewHasInputFocus` and the desktop foreground checks succeed. Ultralight exposes no DOM-focus bridge here, so native view focus is an explicit `RendererFallback`; lifecycle changes, outside clicks, foreground changes, system keys, suspension, replacement, and shutdown revoke ownership. Win, Alt/system shortcuts, Alt+Tab, Ctrl+Esc, Escape, PrintScreen, Apps, Pause, function keys, and lock keys remain Windows-owned.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

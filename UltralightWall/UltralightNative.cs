@@ -11,6 +11,14 @@ internal static class UltralightNative
     internal const uint WindowFlagsHidden = 1u << 4;
     internal const uint WindowFlagsTransparent = 1u << 5;
 
+    internal const int KeyEventTypeKeyUp = 1;
+    internal const int KeyEventTypeRawKeyDown = 2;
+    internal const int KeyEventTypeChar = 3;
+    internal const uint KeyEventModifierAlt = 1u << 0;
+    internal const uint KeyEventModifierCtrl = 1u << 1;
+    internal const uint KeyEventModifierMeta = 1u << 2;
+    internal const uint KeyEventModifierShift = 1u << 3;
+
     [DllImport(AppCore, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr ulCreateSettings();
 
@@ -109,6 +117,34 @@ internal static class UltralightNative
     internal static extern void ulViewSetVisible(
         IntPtr view,
         [MarshalAs(UnmanagedType.I1)] bool visible);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewFocus(IntPtr view);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewUnfocus(IntPtr view);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulViewHasInputFocus(IntPtr view);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateKeyEvent(
+        int type,
+        uint modifiers,
+        int virtualKeyCode,
+        int nativeKeyCode,
+        IntPtr text,
+        IntPtr unmodifiedText,
+        [MarshalAs(UnmanagedType.I1)] bool isKeypad,
+        [MarshalAs(UnmanagedType.I1)] bool isAutoRepeat,
+        [MarshalAs(UnmanagedType.I1)] bool isSystemKey);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyKeyEvent(IntPtr keyEvent);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewFireKeyEvent(IntPtr view, IntPtr keyEvent);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ulDestroyView(IntPtr view);

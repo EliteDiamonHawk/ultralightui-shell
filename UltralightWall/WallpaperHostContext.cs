@@ -82,9 +82,9 @@ public sealed class WallpaperHostContext : ApplicationContext
         InstallWinEventHooks();
         _fullscreenMonitoringStarted = true;
         _fullscreenFallbackTimer.Start();
-        ReconcileFullscreenState();
 
         _input = new InputRouter(() => _windows);
+        ReconcileFullscreenState();
         _timer = new System.Windows.Forms.Timer { Interval = ActivePumpIntervalMs };
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
@@ -292,6 +292,8 @@ public sealed class WallpaperHostContext : ApplicationContext
             return;
         }
 
+        _input.EndAll("window replacement");
+
         ReconcileFullscreenState();
 
         var registry = new WindowRegistry();
@@ -488,6 +490,9 @@ public sealed class WallpaperHostContext : ApplicationContext
                         _pauseWhenFullscreenEnabled,
                         appWindow.FullscreenOccluded);
                     appWindow.DesiredSuspended = shouldSuspend;
+
+                    if (shouldSuspend)
+                        _input.EndForWindow(appWindow, "background renderer suspended");
 
                     if (shouldSuspend == appWindow.RendererSuspended)
                         continue;
@@ -734,6 +739,7 @@ public sealed class WallpaperHostContext : ApplicationContext
 
     private void CloseTracked(WallpaperWindow window)
     {
+        _input.EndForWindow(window.AppWindow, "background window closed");
         _registry.MarkIntentionalClose(window.AppWindow);
         _embedder.Close(window.AppWindow);
         _runtime.DestroyWindow(window.AppWindow);
