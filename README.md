@@ -19,7 +19,22 @@ Install the pinned SDK into `third_party\ultralight`:
 powershell -ExecutionPolicy Bypass -File scripts\setup-ultralight.ps1
 ```
 
-The SDK is ignored by Git. Builds also accept `ULTRALIGHT_SDK_ROOT`.
+The SDK is ignored by Git. Builds use the `UltralightSdkRoot` MSBuild property when supplied,
+then `ULTRALIGHT_SDK_ROOT`, then `third_party\ultralight`:
+
+```powershell
+dotnet build UltralightWall\UltralightWall.sln -c Release `
+  -p:UltralightSdkRoot=C:\vendor\ultralight
+```
+
+Ultralight is included in output and publish by default. Set `IncludeUltralight=false` to
+publish without the native runtime and resources:
+
+```powershell
+dotnet publish UltralightWall\UltralightWall.csproj -c Release `
+  -p:UltralightSdkRoot=C:\vendor\ultralight `
+  -p:IncludeUltralight=false
+```
 
 ## Build and test
 
@@ -38,6 +53,14 @@ UltralightWall\bin\Release\net9.0-windows\win-x64\UltralightWall.exe `
   --mode all
 ```
 
+For a publish made with `IncludeUltralight=false`, point the executable at the external
+SDK/install root:
+
+```powershell
+UltralightWall.exe --mode all `
+  --ultralight-root C:\vendor\ultralight
+```
+
 Options:
 
 - `--url <url>`: HTTP, HTTPS, or file URL.
@@ -47,6 +70,8 @@ Options:
 - `--window <id>`: explicit logical window ID; repeatable.
 - `--reconcile-ms <n>`: desktop geometry/lifecycle reconciliation interval.
 - `--startup-timeout-ms <n>`: replacement startup timeout.
+- `--ultralight-root <path>`: external Ultralight SDK/install root for a publish made with
+  `IncludeUltralight=false`. The root must contain `bin\` and `resources\`.
 - `--transparent`: enable per-pixel transparent wallpaper windows. The webpage must also
   use a transparent background where it should reveal the desktop, for example:
   `html, body { background: transparent; }`.

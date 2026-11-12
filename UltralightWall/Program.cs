@@ -54,6 +54,7 @@ public sealed class HostOptions
     public int SelectedMonitor { get; private init; }
     public int ReconcileIntervalMs { get; private init; } = 250;
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
+    public string? UltralightRoot { get; private init; }
     public bool Verbose { get; private init; }
     public bool Transparent { get; private init; }
     public bool ShowHelp { get; private init; }
@@ -67,6 +68,7 @@ public sealed class HostOptions
         int selectedMonitor = 0;
         int reconcileMs = 250;
         int startupTimeoutMs = 30_000;
+        string? ultralightRoot = null;
         bool verbose = false;
         bool transparent = false;
 
@@ -139,6 +141,9 @@ public sealed class HostOptions
                 case "--startup-timeout-ms":
                     startupTimeoutMs = ParsePositiveInt(NextValue(args, ref index, option, inlineValue), option);
                     break;
+                case "--ultralight-root":
+                    ultralightRoot = Path.GetFullPath(NextValue(args, ref index, option, inlineValue));
+                    break;
                 default:
                     throw new OptionException($"Unknown argument: {argument}");
             }
@@ -153,6 +158,7 @@ public sealed class HostOptions
             SelectedMonitor = selectedMonitor,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
+            UltralightRoot = ultralightRoot,
             Verbose = verbose,
             Transparent = transparent
         };
@@ -240,6 +246,7 @@ public sealed class HostOptions
           --monitor <number>              1-based monitor for single mode. Default: 1.
           --reconcile-ms <n>              Desktop reconciliation interval. Default: 250.
           --startup-timeout-ms <n>        Replacement startup timeout. Default: 30000.
+          --ultralight-root <path>       External Ultralight SDK/install root.
           --transparent                   Enable per-pixel transparent wallpaper windows.
           --verbose                       Log embedding diagnostics.
           --help, -h                     Show this help.

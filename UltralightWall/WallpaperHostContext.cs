@@ -51,7 +51,7 @@ public sealed class WallpaperHostContext : ApplicationContext
     public WallpaperHostContext(HostOptions options)
     {
         _options = options;
-        _runtime = new UltralightRuntime();
+        _runtime = new UltralightRuntime(options.UltralightRoot);
         _embedder = new DesktopEmbedder(options.Verbose);
         _baseUrl = options.Url;
         _monitorUrls = new Dictionary<int, string>(options.MonitorUrls);

@@ -2,15 +2,14 @@ namespace UltralightWall;
 
 public sealed class UltralightRuntime : IDisposable
 {
-    private string _assetsPath = "";
     private IntPtr _app;
 
-    public UltralightRuntime()
+    public UltralightRuntime(string? ultralightRoot = null)
     {
         string stage = "runtime file validation";
         try
         {
-            Initialize(out stage);
+            Initialize(ultralightRoot, out stage);
         }
         catch (Exception ex)
         {
@@ -18,23 +17,30 @@ public sealed class UltralightRuntime : IDisposable
         }
     }
 
-    private void Initialize(out string stage)
+    private void Initialize(string? ultralightRoot, out string stage)
     {
         stage = "runtime file validation";
         string basePath = AppContext.BaseDirectory;
-        foreach (string library in new[] { "AppCore.dll", "Ultralight.dll", "UltralightCore.dll", "WebCore.dll" })
-        {
-            string path = Path.Combine(basePath, library);
-            if (!File.Exists(path))
-                throw new FileNotFoundException($"Ultralight runtime file is missing: {path}", path);
-        }
-
-        _assetsPath = Path.Combine(basePath, "assets");
-        if (!Directory.Exists(_assetsPath))
-            throw new DirectoryNotFoundException($"Ultralight assets directory is missing: {_assetsPath}");
+        RuntimeLayout layout = RuntimeLayout.Resolve(ultralightRoot, basePath);
+        layout.Validate();
+        UltralightNative.ConfigureLibraryDirectory(layout.LibraryDirectory);
 
         stage = "AppCore creation";
-        _app = UltralightNative.ulCreateApp(IntPtr.Zero, IntPtr.Zero);
+        IntPtr settings = UltralightNative.ulCreateSettings();
+        if (settings == IntPtr.Zero)
+            throw new InvalidOperationException("Ultralight settings could not be created.");
+
+        IntPtr filesystemPath = CreateString(layout.FileSystemPath);
+        try
+        {
+            UltralightNative.ulSettingsSetFileSystemPath(settings, filesystemPath);
+            _app = UltralightNative.ulCreateApp(settings, IntPtr.Zero);
+        }
+        finally
+        {
+            DestroyString(filesystemPath);
+            UltralightNative.ulDestroySettings(settings);
+        }
 
         if (_app == IntPtr.Zero)
             throw new InvalidOperationException("Ultralight AppCore could not be initialized.");
@@ -189,6 +195,41 @@ public sealed class UltralightRuntime : IDisposable
         if (panel != IntPtr.Zero)
             UltralightNative.ulDestroyPanel(panel);
         UltralightNative.ulDestroyWindow(window);
+    }
+}
+
+internal sealed record RuntimeLayout(string LibraryDirectory, string FileSystemPath)
+{
+    private static readonly string[] RequiredLibraries =
+        { "AppCore.dll", "Ultralight.dll", "UltralightCore.dll", "WebCore.dll" };
+
+    internal static RuntimeLayout Resolve(string? ultralightRoot, string basePath)
+    {
+        if (string.IsNullOrWhiteSpace(ultralightRoot))
+        {
+            string bundledFileSystemPath = Path.Combine(basePath, "assets");
+            return new RuntimeLayout(basePath, bundledFileSystemPath);
+        }
+
+        string root = Path.GetFullPath(ultralightRoot);
+        return new RuntimeLayout(Path.Combine(root, "bin"), root);
+    }
+
+    internal void Validate()
+    {
+        foreach (string library in RequiredLibraries)
+        {
+            string path = Path.Combine(LibraryDirectory, library);
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Ultralight runtime file is missing: {path}", path);
+        }
+
+        if (!Directory.Exists(FileSystemPath))
+            throw new DirectoryNotFoundException($"Ultralight filesystem root is missing: {FileSystemPath}");
+
+        string resourcesPath = Path.Combine(FileSystemPath, "resources");
+        if (!Directory.Exists(resourcesPath))
+            throw new DirectoryNotFoundException($"Ultralight resources directory is missing: {resourcesPath}");
     }
 }
 
