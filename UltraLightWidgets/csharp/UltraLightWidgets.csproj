@@ -12,11 +12,11 @@
     <AssemblyName>UltraLightWidgets</AssemblyName>
     <RootNamespace>UltraLightWidgets</RootNamespace>
     <UltralightSdkRoot Condition="'$(ULTRALIGHT_SDK_ROOT)' != ''">$(ULTRALIGHT_SDK_ROOT)</UltralightSdkRoot>
-    <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\third_party\ultralight</UltralightSdkRoot>
+    <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\..\third_party\ultralight</UltralightSdkRoot>
     <IncludeUltralight Condition="'$(IncludeUltralight)' == ''">true</IncludeUltralight>
   </PropertyGroup>
 
-  <Target Name="ValidateUltralightSdk" BeforeTargets="PrepareForBuild">
+  <Target Name="ValidateUltralightSdk" BeforeTargets="PrepareForBuild" Condition="'$(IncludeUltralight)' == 'true'">
     <Error Condition="!Exists('$(UltralightSdkRoot)\include\AppCore\CAPI.h')" Text="Ultralight SDK missing. Run scripts\setup-ultralight.ps1 or set ULTRALIGHT_SDK_ROOT." />
     <Error Condition="!Exists('$(UltralightSdkRoot)\bin\AppCore.dll')" Text="Ultralight AppCore.dll missing under $(UltralightSdkRoot)." />
     <Error Condition="!Exists('$(UltralightSdkRoot)\bin\Ultralight.dll')" Text="Ultralight.dll missing under $(UltralightSdkRoot)." />

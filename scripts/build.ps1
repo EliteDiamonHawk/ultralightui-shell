@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$SolutionPath = Join-Path $RepositoryRoot 'UltraLightWidgets\UltraLightWidgets.sln'
+$SolutionPath = Join-Path $RepositoryRoot 'UltraLightWidgets\csharp\UltraLightWidgets.sln'
 $DotnetArguments = @('build', $SolutionPath, '--configuration', $Configuration)
 if ($NoRestore) { $DotnetArguments += '--no-restore' }
 $DotnetArguments += $Arguments

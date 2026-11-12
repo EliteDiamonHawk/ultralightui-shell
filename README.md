@@ -23,7 +23,7 @@ Builds use the `UltralightSdkRoot` MSBuild property when supplied, then
 `ULTRALIGHT_SDK_ROOT`, then `third_party\ultralight`:
 
 ```powershell
-dotnet build UltraLightWidgets\UltraLightWidgets.sln -c Release `
+dotnet build UltraLightWidgets\csharp\UltraLightWidgets.sln -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight
 ```
 
@@ -31,7 +31,7 @@ Ultralight is included in output and publish by default. Set `IncludeUltralight=
 publish without the native runtime and resources:
 
 ```powershell
-dotnet publish UltraLightWidgets\UltraLightWidgets.csproj -c Release `
+dotnet publish UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight `
   -p:IncludeUltralight=false
 ```
@@ -39,10 +39,10 @@ dotnet publish UltraLightWidgets\UltraLightWidgets.csproj -c Release `
 ## Build, test and run
 
 ```powershell
-dotnet build UltraLightWidgets\UltraLightWidgets.sln -c Release
-dotnet build UltraLightWidgets.Tests\UltraLightWidgets.Tests.csproj -c Release
-dotnet run --project UltraLightWidgets.Tests\UltraLightWidgets.Tests.csproj -c Release
-dotnet run --project UltraLightWidgets\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
+dotnet build UltraLightWidgets\csharp\UltraLightWidgets.sln -c Release
+dotnet build UltraLightWidgets.Tests\cshap\UltraLightWidgets.Tests.csproj -c Release
+dotnet run --project UltraLightWidgets.Tests\cshap\UltraLightWidgets.Tests.csproj -c Release
+dotnet run --project UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
 ```
 
 For an excluded publish, point the executable at the external SDK/install root:
@@ -59,7 +59,7 @@ The external root must contain `bin\` and `resources\`.
 Start the application with a required JSON file:
 
 ```powershell
-dotnet run --project UltraLightWidgets\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
+dotnet run --project UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
 ```
 
 or as standalone executable:

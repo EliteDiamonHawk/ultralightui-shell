@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\UltraLightWidgets\UltraLightWidgets.csproj" />
+    <ProjectReference Include="..\..\UltraLightWidgets\csharp\UltraLightWidgets.csproj" />
   </ItemGroup>
 
 </Project>
