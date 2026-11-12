@@ -5,13 +5,13 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget>x64</PlatformTarget>
-    <AssemblyName>UltraLightWidgetWall.Tests</AssemblyName>
+    <AssemblyName>UltraLightWidgets.Tests</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\UltraLightWidgetWall\UltraLightWidgetWall.csproj" />
+    <ProjectReference Include="..\UltraLightWidgets\UltraLightWidgets.csproj" />
   </ItemGroup>
 
 </Project>

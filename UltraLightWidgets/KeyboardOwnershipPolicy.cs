@@ -1,4 +1,4 @@
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 internal enum KeyboardOwnershipState
 {

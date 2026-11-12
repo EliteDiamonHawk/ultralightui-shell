@@ -1,7 +1,7 @@
 using System.Drawing;
-using UltraLightWidgetWall;
+using UltraLightWidgets;
 
-namespace UltraLightWidgetWall.Tests;
+namespace UltraLightWidgets.Tests;
 
 internal static class Program
 {
@@ -32,7 +32,7 @@ internal static class Program
             (nameof(OptionsParseUltralightArguments), OptionsParseUltralightArguments),
             (nameof(RuntimeLayoutResolvesBundledAndExternalRoots), RuntimeLayoutResolvesBundledAndExternalRoots),
             (nameof(RuntimeLayoutValidatesRequiredFiles), RuntimeLayoutValidatesRequiredFiles),
-            (nameof(HelpTextUsesUltraLightWidgetWall), HelpTextUsesUltraLightWidgetWall),
+            (nameof(HelpTextUsesUltraLightWidgets), HelpTextUsesUltraLightWidgets),
             (nameof(NonClientInsetsAreDerived), NonClientInsetsAreDerived),
             (nameof(ClientBoundsExpandByMeasuredInsets), ClientBoundsExpandByMeasuredInsets),
             (nameof(BorderlessStyleTransformationIsIdempotent), BorderlessStyleTransformationIsIdempotent),
@@ -60,7 +60,7 @@ internal static class Program
             }
         }
 
-        if (Environment.GetEnvironmentVariable("ULTRALIGHTWIDGETWALL_RUN_INTEGRATION") == "1")
+        if (Environment.GetEnvironmentVariable("ULTRALIGHTWIDGETS_RUN_INTEGRATION") == "1")
         {
             try
             {
@@ -75,7 +75,7 @@ internal static class Program
         }
         else
         {
-            Console.WriteLine("SKIP RuntimeSmokeTest (set ULTRALIGHTWIDGETWALL_RUN_INTEGRATION=1 to enable).");
+            Console.WriteLine("SKIP RuntimeSmokeTest (set ULTRALIGHTWIDGETS_RUN_INTEGRATION=1 to enable).");
         }
 
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} unit tests passed.");
@@ -273,8 +273,8 @@ internal static class Program
         }
     }
 
-    private static void HelpTextUsesUltraLightWidgetWall() =>
-        AssertTrue(HostOptions.HelpText.Contains("UltraLightWidgetWall", StringComparison.Ordinal));
+    private static void HelpTextUsesUltraLightWidgets() =>
+        AssertTrue(HostOptions.HelpText.Contains("UltraLightWidgets", StringComparison.Ordinal));
 
     private static void NonClientInsetsAreDerived()
     {

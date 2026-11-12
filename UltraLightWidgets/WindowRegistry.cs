@@ -1,4 +1,4 @@
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 public sealed class WindowRegistry
 {

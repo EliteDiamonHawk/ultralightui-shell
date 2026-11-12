@@ -1,6 +1,6 @@
-# UltraLightWidgetWall
+# UltraLightWidgets
 
-UltraLightWidgetWall hosts JSON-defined web widgets as Windows desktop wallpaper windows using Ultralight AppCore. Each entry in the configuration creates one borderless native window, positions it on a selected monitor, and embeds it behind desktop icons.
+UltraLightWidgets hosts JSON-defined web widgets as Windows desktop wallpaper windows using Ultralight AppCore. Each entry in the configuration creates one borderless native window, positions it on a selected monitor, and embeds it behind desktop icons.
 
 ## BrowserWall Collection
 
@@ -23,7 +23,7 @@ Builds use the `UltralightSdkRoot` MSBuild property when supplied, then
 `ULTRALIGHT_SDK_ROOT`, then `third_party\ultralight`:
 
 ```powershell
-dotnet build UltraLightWidgetWall\UltraLightWidgetWall.sln -c Release `
+dotnet build UltraLightWidgets\UltraLightWidgets.sln -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight
 ```
 
@@ -31,7 +31,7 @@ Ultralight is included in output and publish by default. Set `IncludeUltralight=
 publish without the native runtime and resources:
 
 ```powershell
-dotnet publish UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release `
+dotnet publish UltraLightWidgets\UltraLightWidgets.csproj -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight `
   -p:IncludeUltralight=false
 ```
@@ -39,16 +39,16 @@ dotnet publish UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release `
 ## Build, test and run
 
 ```powershell
-dotnet build UltraLightWidgetWall\UltraLightWidgetWall.sln -c Release
-dotnet build UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
-dotnet run --project UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
-dotnet run --project UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release -- --config .\widgets.json
+dotnet build UltraLightWidgets\UltraLightWidgets.sln -c Release
+dotnet build UltraLightWidgets.Tests\UltraLightWidgets.Tests.csproj -c Release
+dotnet run --project UltraLightWidgets.Tests\UltraLightWidgets.Tests.csproj -c Release
+dotnet run --project UltraLightWidgets\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
 ```
 
 For an excluded publish, point the executable at the external SDK/install root:
 
 ```powershell
-UltraLightWidgetWall.exe --config widgets.json `
+UltraLightWidgets.exe --config widgets.json `
   --ultralight-root C:\vendor\ultralight
 ```
 
@@ -59,13 +59,13 @@ The external root must contain `bin\` and `resources\`.
 Start the application with a required JSON file:
 
 ```powershell
-dotnet run --project UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release -- --config .\widgets.json
+dotnet run --project UltraLightWidgets\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
 ```
 
 or as standalone executable:
 
 ```powershell
-UltraLightWidgetWall.exe --config widgets.json
+UltraLightWidgets.exe --config widgets.json
 ```
 
 Example:
@@ -106,7 +106,7 @@ The application reads the configuration at startup. Tray controls can reload the
 - Fullscreen and manual suspension controls.
 - Startup timeout, lifecycle tracking, transactional replacement, and monitor-topology reconciliation.
 
-Keyboard input is safe by default. A widget becomes a pending keyboard candidate after a left click and becomes the single active owner only when its native Ultralight view has input focus and the foreground window is the widget, one of its children, or an allowed desktop shell window (`Progman`, `WorkerW`, `SHELLDLL_DefView`, or `SysListView32`). UltralightWidgetWall uses native renderer focus as its `RendererFallback` focus mode because it has no DOM-focus bridge. Ordinary web keys are forwarded as native Ultralight raw, character, modifier, repeat, and Unicode events; Windows/system keys, Alt+Tab, Ctrl+Esc, Escape, PrintScreen, Apps, Pause, function keys, and lock keys remain system pass-through. Context-switching keys revoke ownership, while lock-key toggles do not. Any held forwarded keys receive synthesized key-up events when focus is revoked, a widget is suspended/reloaded/closed, or the host shuts down.
+Keyboard input is safe by default. A widget becomes a pending keyboard candidate after a left click and becomes the single active owner only when its native Ultralight view has input focus and the foreground window is the widget, one of its children, or an allowed desktop shell window (`Progman`, `WorkerW`, `SHELLDLL_DefView`, or `SysListView32`). UltraLightWidgets uses native renderer focus as its `RendererFallback` focus mode because it has no DOM-focus bridge. Ordinary web keys are forwarded as native Ultralight raw, character, modifier, repeat, and Unicode events; Windows/system keys, Alt+Tab, Ctrl+Esc, Escape, PrintScreen, Apps, Pause, function keys, and lock keys remain system pass-through. Context-switching keys revoke ownership, while lock-key toggles do not. Any held forwarded keys receive synthesized key-up events when focus is revoked, a widget is suspended/reloaded/closed, or the host shuts down.
 
 Overlapping widgets route to the smallest widget bounds first. `transparent` controls rendering only; transparent widgets remain interactive within their bounds.
 

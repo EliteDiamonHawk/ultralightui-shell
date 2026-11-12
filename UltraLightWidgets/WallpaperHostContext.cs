@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 public sealed class WallpaperHostContext : ApplicationContext
 {
@@ -54,7 +54,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         _tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "UltraLightWidgetWall",
+            Text = "UltraLightWidgets",
             Visible = true,
             ContextMenuStrip = _menu
         };
@@ -330,7 +330,7 @@ public sealed class WallpaperHostContext : ApplicationContext
         catch (WidgetConfigurationException ex)
         {
             Console.Error.WriteLine($"[Config] reload rejected: {ex.Message}");
-            MessageBox.Show(ex.Message, "UltraLightWidgetWall - Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message, "UltraLightWidgets - Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 

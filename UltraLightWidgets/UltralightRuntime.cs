@@ -1,4 +1,4 @@
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 public sealed class UltralightRuntime : IDisposable
 {
@@ -31,7 +31,7 @@ public sealed class UltralightRuntime : IDisposable
             throw new InvalidOperationException("Ultralight settings could not be created.");
 
         IntPtr developerName = CreateString("BrowserWall");
-        IntPtr appName = CreateString("ultralightwidgetwall");
+        IntPtr appName = CreateString("ultralightwidgets");
         IntPtr filesystemPath = CreateString(layout.FileSystemPath);
         try
         {
@@ -78,7 +78,7 @@ public sealed class UltralightRuntime : IDisposable
             if (hwnd == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight window has no native handle: {spec.LogicalId}");
 
-            UltralightNative.ulWindowSetTitle(window, $"UltraLightWidgetWall - {spec.LogicalId}");
+            UltralightNative.ulWindowSetTitle(window, $"UltraLightWidgets - {spec.LogicalId}");
             IntPtr viewConfig = UltralightNative.ulCreateViewConfig();
             if (viewConfig == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight view configuration could not be created: {spec.LogicalId}");

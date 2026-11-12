@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 internal static class Program
 {
@@ -138,10 +138,10 @@ public sealed class HostOptions
     }
 
     public const string HelpText = """
-        UltraLightWidgetWall - JSON-configured Ultralight desktop widget wall
+        UltraLightWidgets - JSON-configured Ultralight desktop widget wall
 
         Usage:
-          UltraLightWidgetWall.exe --config <path> [options]
+          UltraLightWidgets.exe --config <path> [options]
 
         Options:
           --config <path>                Required JSON widget configuration.

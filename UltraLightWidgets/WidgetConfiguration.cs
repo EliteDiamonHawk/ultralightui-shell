@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 public sealed class WidgetConfiguration
 {

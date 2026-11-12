@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$TestProjectPath = Join-Path $RepositoryRoot 'UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj'
+$TestProjectPath = Join-Path $RepositoryRoot 'UltraLightWidgets.Tests\UltraLightWidgets.Tests.csproj'
 $DotnetArguments = @('run', '--project', $TestProjectPath, '--configuration', $Configuration) + $Arguments
 
 Push-Location $RepositoryRoot

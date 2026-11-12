@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 public sealed class DesktopEmbedder
 {

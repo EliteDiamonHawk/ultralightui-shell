@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
-namespace UltraLightWidgetWall;
+namespace UltraLightWidgets;
 
 internal static class MonitorHostWindow
 {
-    private const string ClassName = "UltraLightWidgetWallMonitorHost";
+    private const string ClassName = "UltraLightWidgetsMonitorHost";
     private const int ErrorClassAlreadyExists = 1410;
     private static readonly object SyncRoot = new();
     private static readonly NativeMethods.WndProc WindowProcedure = WndProc;
