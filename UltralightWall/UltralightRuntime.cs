@@ -30,14 +30,20 @@ public sealed class UltralightRuntime : IDisposable
         if (settings == IntPtr.Zero)
             throw new InvalidOperationException("Ultralight settings could not be created.");
 
+        IntPtr developerName = CreateString("BrowserWall");
+        IntPtr appName = CreateString("ultralightwall");
         IntPtr filesystemPath = CreateString(layout.FileSystemPath);
         try
         {
+            UltralightNative.ulSettingsSetDeveloperName(settings, developerName);
+            UltralightNative.ulSettingsSetAppName(settings, appName);
             UltralightNative.ulSettingsSetFileSystemPath(settings, filesystemPath);
             _app = UltralightNative.ulCreateApp(settings, IntPtr.Zero);
         }
         finally
         {
+            DestroyString(appName);
+            DestroyString(developerName);
             DestroyString(filesystemPath);
             UltralightNative.ulDestroySettings(settings);
         }
