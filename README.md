@@ -19,7 +19,22 @@ Install the pinned SDK into `third_party\ultralight`:
 powershell -ExecutionPolicy Bypass -File scripts\setup-ultralight.ps1
 ```
 
-Builds also accept `ULTRALIGHT_SDK_ROOT`.
+Builds use the `UltralightSdkRoot` MSBuild property when supplied, then
+`ULTRALIGHT_SDK_ROOT`, then `third_party\ultralight`:
+
+```powershell
+dotnet build UltraLightWidgetWall\UltraLightWidgetWall.sln -c Release `
+  -p:UltralightSdkRoot=C:\vendor\ultralight
+```
+
+Ultralight is included in output and publish by default. Set `IncludeUltralight=false` to
+publish without the native runtime and resources:
+
+```powershell
+dotnet publish UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release `
+  -p:UltralightSdkRoot=C:\vendor\ultralight `
+  -p:IncludeUltralight=false
+```
 
 ## Build, test and run
 
@@ -29,6 +44,15 @@ dotnet build UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Rel
 dotnet run --project UltraLightWidgetWall.Tests\UltraLightWidgetWall.Tests.csproj -c Release
 dotnet run --project UltraLightWidgetWall\UltraLightWidgetWall.csproj -c Release -- --config .\widgets.json
 ```
+
+For an excluded publish, point the executable at the external SDK/install root:
+
+```powershell
+UltraLightWidgetWall.exe --config widgets.json `
+  --ultralight-root C:\vendor\ultralight
+```
+
+The external root must contain `bin\` and `resources\`.
 
 ## Configuration
 

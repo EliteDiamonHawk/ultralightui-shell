@@ -13,6 +13,7 @@
     <RootNamespace>UltraLightWidgetWall</RootNamespace>
     <UltralightSdkRoot Condition="'$(ULTRALIGHT_SDK_ROOT)' != ''">$(ULTRALIGHT_SDK_ROOT)</UltralightSdkRoot>
     <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\third_party\ultralight</UltralightSdkRoot>
+    <IncludeUltralight Condition="'$(IncludeUltralight)' == ''">true</IncludeUltralight>
   </PropertyGroup>
 
   <Target Name="ValidateUltralightSdk" BeforeTargets="PrepareForBuild">
@@ -24,12 +25,15 @@
     <Error Condition="!Exists('$(UltralightSdkRoot)\resources')" Text="Ultralight resources missing under $(UltralightSdkRoot)." />
   </Target>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IncludeUltralight)' == 'true'">
     <None Include="$(UltralightSdkRoot)\bin\AppCore.dll" Link="AppCore.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(UltralightSdkRoot)\bin\Ultralight.dll" Link="Ultralight.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(UltralightSdkRoot)\bin\UltralightCore.dll" Link="UltralightCore.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(UltralightSdkRoot)\bin\WebCore.dll" Link="WebCore.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(UltralightSdkRoot)\resources\**\*" Link="assets\resources\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="TestAssets\probe.html" Link="assets\probe.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

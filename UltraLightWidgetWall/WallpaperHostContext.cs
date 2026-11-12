@@ -46,7 +46,7 @@ public sealed class WallpaperHostContext : ApplicationContext
     {
         _options = options;
         _configuration = options.LoadConfiguration();
-        _runtime = new UltralightRuntime();
+        _runtime = new UltralightRuntime(options.UltralightRoot);
         _embedder = new DesktopEmbedder(options.Verbose);
         _topologySignature = GetTopologySignature();
 

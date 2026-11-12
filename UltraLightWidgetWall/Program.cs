@@ -53,6 +53,7 @@ public sealed class HostOptions
 
     public string ConfigPath { get; private init; } = "";
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
+    public string? UltralightRoot { get; private init; }
     public int ReconcileIntervalMs { get; private init; } = 250;
     public bool Verbose { get; private init; }
     public bool ShowHelp { get; private init; }
@@ -62,6 +63,7 @@ public sealed class HostOptions
         string? configPath = null;
         int reconcileMs = 250;
         int startupTimeoutMs = 30_000;
+        string? ultralightRoot = null;
         bool verbose = false;
 
         for (int index = 0; index < args.Length; index++)
@@ -96,6 +98,9 @@ public sealed class HostOptions
                 case "--startup-timeout-ms":
                     startupTimeoutMs = ParsePositiveInt(NextValue(args, ref index, option, inlineValue), option);
                     break;
+                case "--ultralight-root":
+                    ultralightRoot = Path.GetFullPath(NextValue(args, ref index, option, inlineValue));
+                    break;
                 default:
                     throw new OptionException($"Unknown argument: {argument}");
             }
@@ -107,6 +112,7 @@ public sealed class HostOptions
         return new HostOptions
         {
             ConfigPath = Path.GetFullPath(configPath),
+            UltralightRoot = ultralightRoot,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
             Verbose = verbose
@@ -141,6 +147,7 @@ public sealed class HostOptions
           --config <path>                Required JSON widget configuration.
           --reconcile-ms <n>             Desktop reconciliation interval. Default: 250.
           --startup-timeout-ms <n>       Window startup timeout. Default: 30000.
+          --ultralight-root <path>      External Ultralight SDK/install root.
           --verbose                      Log embedding diagnostics.
           --help, -h                     Show this help.
         """;

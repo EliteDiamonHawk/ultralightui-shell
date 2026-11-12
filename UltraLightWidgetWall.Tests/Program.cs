@@ -30,6 +30,8 @@ internal static class Program
             (nameof(CloseCheckRequiresAllWindows), CloseCheckRequiresAllWindows),
             (nameof(OptionsRequireConfig), OptionsRequireConfig),
             (nameof(OptionsParseUltralightArguments), OptionsParseUltralightArguments),
+            (nameof(RuntimeLayoutResolvesBundledAndExternalRoots), RuntimeLayoutResolvesBundledAndExternalRoots),
+            (nameof(RuntimeLayoutValidatesRequiredFiles), RuntimeLayoutValidatesRequiredFiles),
             (nameof(HelpTextUsesUltraLightWidgetWall), HelpTextUsesUltraLightWidgetWall),
             (nameof(NonClientInsetsAreDerived), NonClientInsetsAreDerived),
             (nameof(ClientBoundsExpandByMeasuredInsets), ClientBoundsExpandByMeasuredInsets),
@@ -228,12 +230,47 @@ internal static class Program
             "--config", "widgets.json",
             "--reconcile-ms=100",
             "--startup-timeout-ms", "5000",
+            "--ultralight-root", @"..\third_party\ultralight",
             "--verbose"
         });
         AssertEqual(100, options.ReconcileIntervalMs);
         AssertEqual(TimeSpan.FromSeconds(5), options.StartupTimeout);
+        AssertTrue(options.UltralightRoot!.EndsWith(Path.Combine("third_party", "ultralight"), StringComparison.OrdinalIgnoreCase));
         AssertTrue(options.Verbose);
         AssertTrue(options.ConfigPath.EndsWith("widgets.json", StringComparison.OrdinalIgnoreCase));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--config", "widgets.json", "--ultralight-root" }));
+    }
+
+    private static void RuntimeLayoutResolvesBundledAndExternalRoots()
+    {
+        RuntimeLayout bundled = RuntimeLayout.Resolve(null, @"C:\app");
+        AssertEqual(@"C:\app", bundled.LibraryDirectory);
+        AssertEqual(Path.Combine(@"C:\app", "assets"), bundled.FileSystemPath);
+
+        RuntimeLayout external = RuntimeLayout.Resolve(@"C:\vendor\ultralight", @"C:\app");
+        AssertEqual(Path.Combine(@"C:\vendor\ultralight", "bin"), external.LibraryDirectory);
+        AssertEqual(@"C:\vendor\ultralight", external.FileSystemPath);
+    }
+
+    private static void RuntimeLayoutValidatesRequiredFiles()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"ultralight-widget-wall-test-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "bin"));
+            RuntimeLayout layout = RuntimeLayout.Resolve(root, @"C:\app");
+            AssertThrows<FileNotFoundException>(() => layout.Validate());
+
+            foreach (string library in new[] { "AppCore.dll", "Ultralight.dll", "UltralightCore.dll", "WebCore.dll" })
+                File.WriteAllText(Path.Combine(root, "bin", library), "test");
+
+            AssertThrows<DirectoryNotFoundException>(() => layout.Validate());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
     }
 
     private static void HelpTextUsesUltraLightWidgetWall() =>
@@ -344,7 +381,7 @@ internal static class Program
         string stage = "runtime creation";
         try
         {
-            using var runtime = new UltralightRuntime();
+            using var runtime = new UltralightRuntime(Environment.GetEnvironmentVariable("ULTRALIGHT_TEST_ROOT"));
             stage = "window creation";
             var spec = new WallpaperWindowSpec("widget-1", "file:///probe.html", new Rectangle(0, 0, 640, 480), new Rectangle(0, 0, 640, 480), true, 1);
             AppWindow window = runtime.CreateWindow(spec, TimeSpan.FromSeconds(5));

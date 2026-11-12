@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace UltraLightWidgetWall;
 
@@ -6,6 +7,31 @@ internal static class UltralightNative
 {
     private const string AppCore = "AppCore.dll";
     private const string Core = "Ultralight.dll";
+    private static string? _libraryDirectory;
+
+    static UltralightNative()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(UltralightNative).Assembly, ResolveLibrary);
+    }
+
+    internal static void ConfigureLibraryDirectory(string libraryDirectory) =>
+        _libraryDirectory = Path.GetFullPath(libraryDirectory);
+
+    private static IntPtr ResolveLibrary(
+        string libraryName,
+        Assembly assembly,
+        DllImportSearchPath? searchPath)
+    {
+        if (_libraryDirectory is null ||
+            !string.Equals(libraryName, AppCore, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(libraryName, Core, StringComparison.OrdinalIgnoreCase))
+        {
+            return IntPtr.Zero;
+        }
+
+        string path = Path.Combine(_libraryDirectory, libraryName);
+        return File.Exists(path) ? NativeLibrary.Load(path) : IntPtr.Zero;
+    }
 
     internal const uint WindowFlagsBorderless = 1u << 0;
     internal const uint WindowFlagsHidden = 1u << 4;
