@@ -1,10 +1,6 @@
-# UltraLightWidgets
+# UltraLightStartMenu
 
-UltraLightWidgets hosts JSON-defined web widgets as Windows desktop wallpaper windows using Ultralight AppCore. Each entry in the configuration creates one borderless native window, positions it on a selected monitor, and embeds it behind desktop icons.
-
-## BrowserWall Collection
-
-see [BrowserWall.md](https://github.com/EliteDiamonHawk/browserwall)
+UltraLightStartMenu hosts one JSON-configured web start menu in a borderless Ultralight window. When visible, the window is positioned above normal Windows applications and can be controlled from the tray or command line.
 
 ## Requirements
 
@@ -23,7 +19,7 @@ Builds use the `UltralightSdkRoot` MSBuild property when supplied, then
 `ULTRALIGHT_SDK_ROOT`, then `third_party\ultralight`:
 
 ```powershell
-dotnet build UltraLightWidgets\csharp\UltraLightWidgets.sln -c Release `
+dotnet build UltraLightStartMenu\csharp\UltraLightStartMenu.sln -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight
 ```
 
@@ -31,88 +27,84 @@ Ultralight is included in output and publish by default. Set `IncludeUltralight=
 publish without the native runtime and resources:
 
 ```powershell
-dotnet publish UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release `
+dotnet publish UltraLightStartMenu\csharp\UltraLightStartMenu.csproj -c Release `
   -p:UltralightSdkRoot=C:\vendor\ultralight `
   -p:IncludeUltralight=false
 ```
 
-## Build, test and run
+## Build, test, and run
 
 ```powershell
-dotnet build UltraLightWidgets\csharp\UltraLightWidgets.sln -c Release
-dotnet build UltraLightWidgets.Tests\cshap\UltraLightWidgets.Tests.csproj -c Release
-dotnet run --project UltraLightWidgets.Tests\cshap\UltraLightWidgets.Tests.csproj -c Release
-dotnet run --project UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
+dotnet build UltraLightStartMenu\csharp\UltraLightStartMenu.sln -c Release
+dotnet run --project UltraLightStartMenu.Tests\csharp\UltraLightStartMenu.Tests.csproj -c Release
+dotnet run --project UltraLightStartMenu\csharp\UltraLightStartMenu.csproj -c Release -- --config .\start-menu.json
 ```
 
-For an excluded publish, point the executable at the external SDK/install root:
+The PowerShell helpers mirror these commands:
 
 ```powershell
-UltraLightWidgets.exe --config widgets.json `
-  --ultralight-root C:\vendor\ultralight
+.\scripts\build.ps1
+.\scripts\test.ps1
+.\scripts\run.ps1 -Arguments @('--config', '.\start-menu.json')
 ```
-
-The external root must contain `bin\` and `resources\`.
 
 ## Configuration
 
-Start the application with a required JSON file:
-
-```powershell
-dotnet run --project UltraLightWidgets\csharp\UltraLightWidgets.csproj -c Release -- --config .\widgets.json
-```
-
-or as standalone executable:
-
-```powershell
-UltraLightWidgets.exe --config widgets.json
-```
-
-Example:
+Start the application with one required JSON object:
 
 ```json
 {
-  "widgets": [
-    {
-      "x": 50,
-      "y": 50,
-      "pos-scaled": true,
-      "size-scaled": false,
-      "anchor": "center",
-      "width": 400,
-      "height": 200,
-      "monitor": 1,
-      "url": "https://example.com",
-      "transparent": true
-    }
-  ]
+  "start-menu": {
+    "x": 50,
+    "y": 50,
+    "pos-scaled": true,
+    "size-scaled": false,
+    "anchor": "center",
+    "width": 800,
+    "height": 600,
+    "monitor": 1,
+    "url": "https://example.com",
+    "transparent": true,
+    "auto-hide": true
+  }
 }
 ```
 
-Every widget requires `x`, `y`, `pos-scaled`, `size-scaled`, `anchor`, `width` (or `w`), `height` (or `h`), `monitor`, and `url`. `transparent` is optional and defaults to `true`.
+The required fields are `x`, `y`, `pos-scaled`, `size-scaled`, `anchor`, `width` (or `w`), `height` (or `h`), `monitor`, and `url`. `transparent` defaults to `true`. `auto-hide` also defaults to `true`; set it to `false` to keep the menu visible until explicitly hidden. The legacy `widgets` array is not supported.
 
-When `pos-scaled` is `true`, `x` and `y` are percentages of the selected monitor's width and height; otherwise they are screen pixels. When `size-scaled` is `true`, `width` and `height` are percentages using a uniform scale based on the shorter monitor dimension; otherwise they are pixel dimensions. The shorter aliases `w` and `h` may be used for `width` and `height`. The anchor identifies which point of the widget is placed at the resolved position, so `x: 50`, `y: 50`, and `anchor: "center"` centers the widget on the monitor. Monitor numbers are 1-based and use full monitor bounds, including the taskbar area. Anchors are `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`.
+When `pos-scaled` is `true`, `x` and `y` are percentages of the selected monitor's width and height; otherwise they are screen pixels. When `size-scaled` is `true`, `width` and `height` are percentages using a uniform scale based on the shorter monitor dimension; otherwise they are pixel dimensions. Monitor numbers are 1-based and use full monitor bounds. Anchors are `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`.
 
-The application reads the configuration at startup. Tray controls can reload the current configuration-derived windows, but the file is not watched automatically.
+## Tray and command line control
+
+Normal launch:
+
+```powershell
+UltraLightStartMenu.exe --config start-menu.json
+```
+
+The running instance exposes tray actions to show, hide, reload, print status, and exit. Showing focuses the start menu and raises it as a topmost window. With `auto-hide` enabled, moving focus to another application hides it automatically.
+
+The existing instance can also be controlled without loading the configuration again:
+
+```powershell
+UltraLightStartMenu.exe --show
+UltraLightStartMenu.exe --hide
+```
+
+These commands use a user-scoped named pipe. They return a nonzero exit code if no running instance accepts the command. A second normal launch is rejected rather than creating another tray or start-menu window.
 
 ## Behavior
 
-- One Ultralight window per widget entry.
-- Borderless, non-activating desktop wallpaper windows.
-- WorkerW/Progman desktop embedding behind desktop icons.
-- Per-widget transparency.
-- Mouse, keyboard, wheel, modifier, and web-shortcut forwarding.
-- Desktop icon selection and context-menu pass-through.
-- Fullscreen and manual suspension controls.
-- Startup timeout, lifecycle tracking, transactional replacement, and monitor-topology reconciliation.
+- Exactly one Ultralight window is created from the `start-menu` object.
+- The visible window is borderless and `HWND_TOPMOST`.
+- The Ultralight page remains loaded while hidden.
+- Monitor changes and configured geometry are reconciled while the host runs.
+- `transparent` controls rendering transparency.
+- Malformed configuration, invalid geometry or URLs, unsupported anchors, and unavailable monitors reject startup or replacement without destroying the current window.
 
-Keyboard input is safe by default. A widget becomes a pending keyboard candidate after a left click and becomes the single active owner only when its native Ultralight view has input focus and the foreground window is the widget, one of its children, or an allowed desktop shell window (`Progman`, `WorkerW`, `SHELLDLL_DefView`, or `SysListView32`). UltraLightWidgets uses native renderer focus as its `RendererFallback` focus mode because it has no DOM-focus bridge. Ordinary web keys are forwarded as native Ultralight raw, character, modifier, repeat, and Unicode events; Windows/system keys, Alt+Tab, Ctrl+Esc, Escape, PrintScreen, Apps, Pause, function keys, and lock keys remain system pass-through. Context-switching keys revoke ownership, while lock-key toggles do not. Any held forwarded keys receive synthesized key-up events when focus is revoked, a widget is suspended/reloaded/closed, or the host shuts down.
+## BrowserWall Collection
 
-Overlapping widgets route to the smallest widget bounds first. `transparent` controls rendering only; transparent widgets remain interactive within their bounds.
-
-Malformed configuration, invalid geometry or URLs, unsupported anchors, and unavailable monitors reject the complete replacement while preserving existing windows.
-
-Desktop embedding depends on Windows Shell behavior. Explorer restart recovery, display hotplug/reconfiguration, and platform-specific focus/DPI quirks remain outside current scope.
+See [BrowserWall.md](https://github.com/EliteDiamonHawk/browserwall).
 
 ## License
 

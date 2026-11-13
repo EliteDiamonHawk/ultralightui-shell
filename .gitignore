@@ -42,3 +42,7 @@ third_party/.ultralight-backup-*/
 
 # User-specific local script wrappers.
 scripts/personal/
+
+# reslink
+reslink.toml
+reslink.gitignore

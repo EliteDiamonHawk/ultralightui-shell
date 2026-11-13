@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace UltraLightWidgets;
+namespace UltraLightStartMenu;
 
 internal static class Program
 {
@@ -16,8 +16,11 @@ internal static class Program
                 return 0;
             }
 
+            if (options.Command != StartMenuCommand.Run)
+                return StartMenuInstance.SendCommand(options.Command);
+
             ApplicationConfiguration.Initialize();
-            Application.Run(new WallpaperHostContext(options));
+            Application.Run(new StartMenuHostContext(options));
             return 0;
         }
         catch (OptionException ex)
@@ -26,10 +29,20 @@ internal static class Program
             Console.Error.WriteLine("Use --help for usage.");
             return 2;
         }
-        catch (WidgetConfigurationException ex)
+        catch (StartMenuConfigurationException ex)
         {
             Console.Error.WriteLine($"[Config] {ex.Message}");
             return 2;
+        }
+        catch (StartMenuInstanceAlreadyRunningException ex)
+        {
+            Console.Error.WriteLine($"[Instance] {ex.Message}");
+            return 3;
+        }
+        catch (StartMenuCommandException ex)
+        {
+            Console.Error.WriteLine($"[Command] {ex.Message}");
+            return 3;
         }
         catch (Exception ex)
         {
@@ -39,12 +52,12 @@ internal static class Program
     }
 }
 
-public sealed record WallpaperWindowSpec(
+public sealed record StartMenuWindowSpec(
     string LogicalId,
     string Url,
     Rectangle Bounds,
-    Rectangle VirtualBounds,
     bool Transparent = true,
+    bool AutoHide = true,
     int MonitorNumber = 0);
 
 public sealed class HostOptions
@@ -57,6 +70,7 @@ public sealed class HostOptions
     public int ReconcileIntervalMs { get; private init; } = 250;
     public bool Verbose { get; private init; }
     public bool ShowHelp { get; private init; }
+    public StartMenuCommand Command { get; private init; } = StartMenuCommand.Run;
 
     public static HostOptions Parse(string[] args)
     {
@@ -65,12 +79,24 @@ public sealed class HostOptions
         int startupTimeoutMs = 30_000;
         string? ultralightRoot = null;
         bool verbose = false;
+        StartMenuCommand command = StartMenuCommand.Run;
 
         for (int index = 0; index < args.Length; index++)
         {
             string argument = args[index];
             if (argument is "--help" or "-h")
                 return new HostOptions { ShowHelp = true };
+
+            if (argument is "--show" or "--hide")
+            {
+                StartMenuCommand requested = argument == "--show"
+                    ? StartMenuCommand.Show
+                    : StartMenuCommand.Hide;
+                if (command != StartMenuCommand.Run && command != requested)
+                    throw new OptionException("--show and --hide cannot be used together.");
+                command = requested;
+                continue;
+            }
 
             if (argument == "--verbose")
             {
@@ -106,8 +132,19 @@ public sealed class HostOptions
             }
         }
 
+        if (command != StartMenuCommand.Run)
+        {
+            if (configPath != null || ultralightRoot != null || verbose ||
+                reconcileMs != 250 || startupTimeoutMs != 30_000)
+            {
+                throw new OptionException("--show and --hide cannot be combined with startup options.");
+            }
+
+            return new HostOptions { Command = command };
+        }
+
         if (string.IsNullOrWhiteSpace(configPath))
-            throw new OptionException("--config <path> is required.");
+            throw new OptionException("--config <path> is required when starting UltraLightStartMenu.");
 
         return new HostOptions
         {
@@ -115,11 +152,12 @@ public sealed class HostOptions
             UltralightRoot = ultralightRoot,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
-            Verbose = verbose
+            Verbose = verbose,
+            Command = command
         };
     }
 
-    public WidgetConfiguration LoadConfiguration() => WidgetConfiguration.Load(ConfigPath);
+    public StartMenuConfiguration LoadConfiguration() => StartMenuConfiguration.Load(ConfigPath);
 
     private static string NextValue(string[] args, ref int index, string option, string? inlineValue)
     {
@@ -138,19 +176,30 @@ public sealed class HostOptions
     }
 
     public const string HelpText = """
-        UltraLightWidgets - JSON-configured Ultralight desktop widget wall
+        UltraLightStartMenu - JSON-configured topmost Ultralight start menu
 
         Usage:
-          UltraLightWidgets.exe --config <path> [options]
+          UltraLightStartMenu.exe --config <path> [options]
+          UltraLightStartMenu.exe --show
+          UltraLightStartMenu.exe --hide
 
         Options:
-          --config <path>                Required JSON widget configuration.
-          --reconcile-ms <n>             Desktop reconciliation interval. Default: 250.
+          --config <path>                Required JSON start-menu configuration when starting.
+          --show                         Show and focus the running start menu.
+          --hide                         Hide the running start menu.
+          --reconcile-ms <n>             Window reconciliation interval. Default: 250.
           --startup-timeout-ms <n>       Window startup timeout. Default: 30000.
-          --ultralight-root <path>      External Ultralight SDK/install root.
-          --verbose                      Log embedding diagnostics.
+          --ultralight-root <path>       External Ultralight SDK/install root.
+          --verbose                      Log window diagnostics.
           --help, -h                     Show this help.
         """;
+}
+
+public enum StartMenuCommand
+{
+    Run,
+    Show,
+    Hide
 }
 
 public sealed class OptionException : Exception

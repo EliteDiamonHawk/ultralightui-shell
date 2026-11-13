@@ -9,8 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>UltraLightWidgets</AssemblyName>
-    <RootNamespace>UltraLightWidgets</RootNamespace>
+    <AssemblyName>UltraLightStartMenu</AssemblyName>
+    <RootNamespace>UltraLightStartMenu</RootNamespace>
     <UltralightSdkRoot Condition="'$(ULTRALIGHT_SDK_ROOT)' != ''">$(ULTRALIGHT_SDK_ROOT)</UltralightSdkRoot>
     <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\..\third_party\ultralight</UltralightSdkRoot>
     <IncludeUltralight Condition="'$(IncludeUltralight)' == ''">true</IncludeUltralight>

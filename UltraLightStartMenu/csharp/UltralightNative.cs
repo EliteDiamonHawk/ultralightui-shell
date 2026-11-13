@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Reflection;
 
-namespace UltraLightWidgets;
+namespace UltraLightStartMenu;
 
 internal static class UltralightNative
 {

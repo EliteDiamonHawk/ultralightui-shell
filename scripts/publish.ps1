@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ProjectPath = Join-Path $RepositoryRoot 'UltraLightWidgets\csharp\UltraLightWidgets.csproj'
+$ProjectPath = Join-Path $RepositoryRoot 'UltraLightStartMenu\csharp\UltraLightStartMenu.csproj'
 if (-not [IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath = Join-Path $RepositoryRoot $OutputPath
 }

@@ -1,4 +1,4 @@
-namespace UltraLightWidgets;
+namespace UltraLightStartMenu;
 
 public sealed class UltralightRuntime : IDisposable
 {
@@ -30,8 +30,8 @@ public sealed class UltralightRuntime : IDisposable
         if (settings == IntPtr.Zero)
             throw new InvalidOperationException("Ultralight settings could not be created.");
 
-        IntPtr developerName = CreateString("BrowserWall");
-        IntPtr appName = CreateString("ultralightwidgets");
+        IntPtr developerName = CreateString("UltraLightStartMenu");
+        IntPtr appName = CreateString("ultralightstartmenu");
         IntPtr filesystemPath = CreateString(layout.FileSystemPath);
         try
         {
@@ -52,7 +52,7 @@ public sealed class UltralightRuntime : IDisposable
             throw new InvalidOperationException("Ultralight AppCore could not be initialized.");
     }
 
-    public AppWindow CreateWindow(WallpaperWindowSpec spec, TimeSpan timeout)
+    public UltralightWindow CreateWindow(StartMenuWindowSpec spec, TimeSpan timeout)
     {
         IntPtr monitor = ResolveMonitor(spec);
         double scale = Math.Max(0.01, UltralightNative.ulMonitorGetScale(monitor));
@@ -78,7 +78,7 @@ public sealed class UltralightRuntime : IDisposable
             if (hwnd == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight window has no native handle: {spec.LogicalId}");
 
-            UltralightNative.ulWindowSetTitle(window, $"UltraLightWidgets - {spec.LogicalId}");
+            UltralightNative.ulWindowSetTitle(window, $"UltraLightStartMenu - {spec.LogicalId}");
             IntPtr viewConfig = UltralightNative.ulCreateViewConfig();
             if (viewConfig == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight view configuration could not be created: {spec.LogicalId}");
@@ -112,7 +112,7 @@ public sealed class UltralightRuntime : IDisposable
                 DestroyString(url);
             }
 
-            return new AppWindow(spec, timeout, window, panel, view, hwnd);
+            return new UltralightWindow(spec, timeout, window, panel, view, hwnd);
         }
         catch
         {
@@ -121,40 +121,19 @@ public sealed class UltralightRuntime : IDisposable
         }
     }
 
-    public void ShowWhenReady(AppWindow appWindow, TimeSpan timeout) =>
-        UltralightNative.ulWindowShowWhenReady(appWindow.UlWindow, Math.Max(0, timeout.TotalSeconds));
+    public void ShowWhenReady(UltralightWindow window, TimeSpan timeout) =>
+        UltralightNative.ulWindowShowWhenReady(window.UlWindow, Math.Max(0, timeout.TotalSeconds));
 
     public bool Pump() => _app != IntPtr.Zero && UltralightNative.ulAppRunOnce(_app, 0);
 
-    public bool TrySetSuspended(AppWindow appWindow, bool suspended)
-    {
-        if (_app == IntPtr.Zero || appWindow.UlView == IntPtr.Zero ||
-            appWindow.State is AppWindowState.Closed or AppWindowState.Failed)
-        {
-            return false;
-        }
-
-        try
-        {
-            UltralightNative.ulViewSetVisible(appWindow.UlView, !suspended);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Suspension] transition failed for {appWindow.LogicalId}: {ex.Message}");
-            return false;
-        }
-    }
-
-    public void DestroyWindow(AppWindow appWindow)
+    public void DestroyWindow(UltralightWindow appWindow)
     {
         DestroyWindow(appWindow.UlWindow, appWindow.UlPanel, appWindow.UlView);
         appWindow.UlWindow = IntPtr.Zero;
         appWindow.UlPanel = IntPtr.Zero;
         appWindow.UlView = IntPtr.Zero;
         appWindow.Hwnd = IntPtr.Zero;
-        appWindow.RendererSuspended = false;
-        appWindow.State = AppWindowState.Closed;
+        appWindow.State = UltralightWindowState.Closed;
     }
 
     public void Dispose()
@@ -166,7 +145,7 @@ public sealed class UltralightRuntime : IDisposable
         _app = IntPtr.Zero;
     }
 
-    private IntPtr ResolveMonitor(WallpaperWindowSpec spec)
+    private IntPtr ResolveMonitor(StartMenuWindowSpec spec)
     {
         if (spec.MonitorNumber > 0)
         {
@@ -235,15 +214,15 @@ internal sealed record RuntimeLayout(string LibraryDirectory, string FileSystemP
     }
 }
 
-public sealed class AppWindow
+public sealed class UltralightWindow
 {
-    public AppWindow(WallpaperWindowSpec spec, TimeSpan timeout)
+    public UltralightWindow(StartMenuWindowSpec spec, TimeSpan timeout)
         : this(spec, timeout, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero)
     {
     }
 
-    internal AppWindow(
-        WallpaperWindowSpec spec,
+    internal UltralightWindow(
+        StartMenuWindowSpec spec,
         TimeSpan timeout,
         IntPtr ulWindow,
         IntPtr ulPanel,
@@ -264,18 +243,14 @@ public sealed class AppWindow
 
     public string LogicalId { get; }
     public string Url { get; }
-    public WallpaperWindowSpec Spec { get; }
+    public StartMenuWindowSpec Spec { get; }
     public DateTimeOffset StartedAt { get; }
     public TimeSpan DiscoveryTimeout { get; }
     public DateTimeOffset Deadline { get; internal set; }
     public IntPtr Hwnd { get; internal set; }
-    public IntPtr MonitorHostHwnd { get; internal set; }
-    public IntPtr MonitorHandle { get; internal set; }
-    public bool FullscreenOccluded { get; internal set; }
-    public bool DesiredSuspended { get; internal set; }
-    public bool RendererSuspended { get; internal set; }
-    public AppWindowState State { get; internal set; } = AppWindowState.Pending;
-    public WindowCloseIntent CloseIntent { get; internal set; } = WindowCloseIntent.None;
+    public bool IsVisible { get; internal set; }
+    public bool IsTopmost { get; internal set; }
+    public UltralightWindowState State { get; internal set; } = UltralightWindowState.Pending;
     public string? FailureReason { get; internal set; }
     internal IntPtr UlWindow { get; set; }
     internal IntPtr UlPanel { get; set; }
@@ -284,26 +259,10 @@ public sealed class AppWindow
     public bool IsExpired(DateTimeOffset now) => now >= Deadline;
 }
 
-public enum AppWindowState
+public enum UltralightWindowState
 {
     Pending,
-    Embedded,
+    Ready,
     Closed,
     Failed
-}
-
-public enum WindowCloseIntent
-{
-    None,
-    Intentional,
-    Unexpected
-}
-
-public static class CloseCheck
-{
-    public static bool AllClosed(IEnumerable<AppWindow> windows) =>
-        windows.Any() && windows.All(window => window.State is AppWindowState.Closed or AppWindowState.Failed);
-
-    public static bool IsIntentional(IEnumerable<AppWindow> windows) =>
-        windows.Any() && windows.All(window => window.CloseIntent == WindowCloseIntent.Intentional);
 }

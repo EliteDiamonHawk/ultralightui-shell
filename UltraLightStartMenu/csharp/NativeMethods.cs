@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace UltraLightWidgets;
+namespace UltraLightStartMenu;
 
 internal static class NativeMethods
 {
@@ -66,6 +66,9 @@ internal static class NativeMethods
     internal const uint SWP_FRAMECHANGED = 0x0020;
     internal const uint SWP_NOSENDCHANGING = 0x0400;
     internal const uint SWP_NOOWNERZORDER = 0x0200;
+    internal const int SW_HIDE = 0;
+    internal const int SW_SHOW = 5;
+    internal const int SW_SHOWNOACTIVATE = 4;
     internal const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
     internal const uint CWP_SKIPINVISIBLE = 0x0001;
     internal const int GW_OWNER = 4;
@@ -77,6 +80,7 @@ internal static class NativeMethods
     internal const int CHILDID_SELF = 0;
     internal static readonly IntPtr HWND_BOTTOM = new(1);
     internal static readonly IntPtr HWND_TOP = IntPtr.Zero;
+    internal static readonly IntPtr HWND_TOPMOST = new(-1);
 
     internal delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
     internal delegate IntPtr WndProc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
@@ -192,6 +196,10 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     internal static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetForegroundWindow(IntPtr hwnd);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
