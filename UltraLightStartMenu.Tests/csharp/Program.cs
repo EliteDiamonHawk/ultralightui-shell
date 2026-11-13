@@ -12,6 +12,8 @@ internal static class Program
         {
             (nameof(ConfigurationLoadsRequiredFields), ConfigurationLoadsRequiredFields),
             (nameof(ConfigurationDefaultsOptionalFields), ConfigurationDefaultsOptionalFields),
+            (nameof(ConfigurationParsesHiddenBehaviorModes), ConfigurationParsesHiddenBehaviorModes),
+            (nameof(ConfigurationRejectsInvalidHiddenBehavior), ConfigurationRejectsInvalidHiddenBehavior),
             (nameof(ConfigurationSupportsDimensionAliases), ConfigurationSupportsDimensionAliases),
             (nameof(ConfigurationRejectsLegacyWidgetArray), ConfigurationRejectsLegacyWidgetArray),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
@@ -34,6 +36,7 @@ internal static class Program
             (nameof(CommandProtocolParsesOnlyVisibilityCommands), CommandProtocolParsesOnlyVisibilityCommands),
             (nameof(CommandProtocolSerializesVisibilityCommands), CommandProtocolSerializesVisibilityCommands),
             (nameof(VisibilityControllerCentralizesState), VisibilityControllerCentralizesState),
+            (nameof(PumpPolicyHonorsHiddenBehavior), PumpPolicyHonorsHiddenBehavior),
             (nameof(AutoHideRulesRequireExternalForeground), AutoHideRulesRequireExternalForeground),
             (nameof(RuntimeLayoutResolvesBundledAndExternalRoots), RuntimeLayoutResolvesBundledAndExternalRoots),
             (nameof(RuntimeLayoutValidatesRequiredFiles), RuntimeLayoutValidatesRequiredFiles),
@@ -90,6 +93,7 @@ internal static class Program
         AssertFalse(startMenu.SizeScaled);
         AssertTrue(startMenu.Transparent);
         AssertTrue(startMenu.AutoHide);
+        AssertEqual(StartMenuHiddenBehavior.None, startMenu.HiddenBehavior);
     }
 
     private static void ConfigurationDefaultsOptionalFields()
@@ -99,7 +103,19 @@ internal static class Program
             """);
         AssertFalse(configuration.StartMenu.Transparent);
         AssertFalse(configuration.StartMenu.AutoHide);
+        AssertEqual(StartMenuHiddenBehavior.None, configuration.StartMenu.HiddenBehavior);
     }
+
+    private static void ConfigurationParsesHiddenBehaviorModes()
+    {
+        AssertEqual(StartMenuHiddenBehavior.None, LoadWithHiddenBehavior("none").StartMenu.HiddenBehavior);
+        AssertEqual(StartMenuHiddenBehavior.Pause, LoadWithHiddenBehavior("pause").StartMenu.HiddenBehavior);
+        AssertEqual(StartMenuHiddenBehavior.Pause, LoadWithHiddenBehavior("SUSPEND").StartMenu.HiddenBehavior);
+        AssertEqual(StartMenuHiddenBehavior.Unload, LoadWithHiddenBehavior("UnLoAd").StartMenu.HiddenBehavior);
+    }
+
+    private static void ConfigurationRejectsInvalidHiddenBehavior() =>
+        AssertThrows<StartMenuConfigurationException>(() => LoadWithHiddenBehavior("freeze"));
 
     private static void ConfigurationSupportsDimensionAliases()
     {
@@ -236,6 +252,9 @@ internal static class Program
         AssertTrue(visibility.DesiredVisible);
         AssertTrue(visibility.IsVisible);
         AssertEqual(1, placement.ShowCount);
+
+        visibility.Detach(window);
+        AssertFalse(visibility.IsVisible);
     }
 
     private static void AutoHideRulesRequireExternalForeground()
@@ -244,6 +263,15 @@ internal static class Program
         AssertFalse(AutoHideRules.ShouldHide(false, true, false));
         AssertFalse(AutoHideRules.ShouldHide(true, false, false));
         AssertFalse(AutoHideRules.ShouldHide(true, true, true));
+    }
+
+    private static void PumpPolicyHonorsHiddenBehavior()
+    {
+        AssertTrue(StartMenuPumpPolicy.ShouldPump(StartMenuHiddenBehavior.None, false, false));
+        AssertFalse(StartMenuPumpPolicy.ShouldPump(StartMenuHiddenBehavior.Pause, false, false));
+        AssertFalse(StartMenuPumpPolicy.ShouldPump(StartMenuHiddenBehavior.Unload, false, false));
+        AssertTrue(StartMenuPumpPolicy.ShouldPump(StartMenuHiddenBehavior.Pause, true, false));
+        AssertTrue(StartMenuPumpPolicy.ShouldPump(StartMenuHiddenBehavior.Unload, false, true));
     }
 
     private static void RuntimeLayoutResolvesBundledAndExternalRoots()
@@ -334,6 +362,10 @@ internal static class Program
                 File.Delete(path);
         }
     }
+
+    private static StartMenuConfiguration LoadWithHiddenBehavior(string behavior) => Load(
+        "{\"start-menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"https://example.test\",\"hidden-behavior\":\"" +
+        behavior + "\"}}");
 
     private sealed class RecordingPlacement : IStartMenuWindowPlacement
     {

@@ -58,7 +58,8 @@ public sealed record StartMenuWindowSpec(
     Rectangle Bounds,
     bool Transparent = true,
     bool AutoHide = true,
-    int MonitorNumber = 0);
+    int MonitorNumber = 0,
+    StartMenuHiddenBehavior HiddenBehavior = StartMenuHiddenBehavior.None);
 
 public sealed class HostOptions
 {

@@ -52,7 +52,8 @@ public sealed class StartMenuConfiguration
             bounds,
             StartMenu.Transparent,
             StartMenu.AutoHide,
-            StartMenu.MonitorNumber);
+            StartMenu.MonitorNumber,
+            StartMenu.HiddenBehavior);
     }
 
     private static StartMenuDefinition Validate(StartMenuFileEntry? entry)
@@ -88,6 +89,8 @@ public sealed class StartMenuConfiguration
         if (sizeScaled.Value && (width.Value > 100 || height.Value > 100))
             throw new StartMenuConfigurationException($"{prefix} size-scaled width and height must use values between 0 and 100.");
 
+        StartMenuHiddenBehavior hiddenBehavior = ParseHiddenBehavior(entry.HiddenBehavior, prefix);
+
         string normalizedUrl;
         try
         {
@@ -109,7 +112,23 @@ public sealed class StartMenuConfiguration
             entry.Monitor.Value,
             normalizedUrl,
             entry.Transparent ?? true,
-            entry.AutoHide ?? true);
+            entry.AutoHide ?? true,
+            hiddenBehavior);
+    }
+
+    private static StartMenuHiddenBehavior ParseHiddenBehavior(string? value, string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return StartMenuHiddenBehavior.None;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "none" => StartMenuHiddenBehavior.None,
+            "pause" or "suspend" => StartMenuHiddenBehavior.Pause,
+            "unload" => StartMenuHiddenBehavior.Unload,
+            _ => throw new StartMenuConfigurationException(
+                $"{prefix} hidden-behavior '{value}' is invalid. Use none, pause, suspend, or unload.")
+        };
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -149,6 +168,8 @@ public sealed class StartMenuConfiguration
         public bool? Transparent { get; set; }
         [JsonPropertyName("auto-hide")]
         public bool? AutoHide { get; set; }
+        [JsonPropertyName("hidden-behavior")]
+        public string? HiddenBehavior { get; set; }
     }
 
     private static class LegacyAliases
@@ -171,7 +192,15 @@ public sealed record StartMenuDefinition(
     int MonitorNumber,
     string Url,
     bool Transparent,
-    bool AutoHide);
+    bool AutoHide,
+    StartMenuHiddenBehavior HiddenBehavior = StartMenuHiddenBehavior.None);
+
+public enum StartMenuHiddenBehavior
+{
+    None,
+    Pause,
+    Unload
+}
 
 public enum StartMenuAnchor
 {

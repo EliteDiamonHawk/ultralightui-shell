@@ -11,7 +11,7 @@ public sealed class StartMenuVisibilityController
 
     public UltralightWindow? Window { get; private set; }
     public bool DesiredVisible { get; private set; } = true;
-    public bool IsVisible => Window?.IsVisible ?? DesiredVisible;
+    public bool IsVisible => Window?.IsVisible ?? false;
     public bool TopmostPlacementApplied => Window?.TopmostPlacementApplied ?? false;
 
     public void SetDesiredVisible(bool visible)

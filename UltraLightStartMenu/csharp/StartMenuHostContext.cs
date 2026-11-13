@@ -72,7 +72,8 @@ public sealed class StartMenuHostContext : ApplicationContext
 
         try
         {
-            _runtime.Pump();
+            if (ShouldPumpUltralight())
+                _runtime.Pump();
             PollWindow();
         }
         catch (Exception ex)
@@ -91,6 +92,10 @@ public sealed class StartMenuHostContext : ApplicationContext
 
         if (_topologyMonitor.HasChanged())
         {
+            if (_configuration.StartMenu.HiddenBehavior == StartMenuHiddenBehavior.Unload &&
+                !_visibility.DesiredVisible)
+                return;
+
             BeginReplacement(_configuration.ResolveWindowSpec(), _visibility.Window);
             return;
         }
@@ -152,12 +157,12 @@ public sealed class StartMenuHostContext : ApplicationContext
         }
     }
 
-    private void BeginReplacement(StartMenuWindowSpec spec, UltralightWindow? target)
+    private bool BeginReplacement(StartMenuWindowSpec spec, UltralightWindow? target)
     {
         if (_pending != null)
         {
             Console.WriteLine("[Replace] request ignored while another replacement is pending.");
-            return;
+            return false;
         }
 
         try
@@ -165,16 +170,27 @@ public sealed class StartMenuHostContext : ApplicationContext
             UltralightWindow window = _runtime.CreateWindow(spec, _options.StartupTimeout);
             _pending = new ReplacementBatch(window, target);
             Console.WriteLine($"[Ultralight] created {spec.LogicalId}: {spec.Url}");
+            return true;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Replace] creation failed: {ex.Message}");
+            return false;
         }
     }
 
     private void CommitPending()
     {
         ReplacementBatch pending = _pending!;
+        if (_configuration.StartMenu.HiddenBehavior == StartMenuHiddenBehavior.Unload &&
+            !_visibility.DesiredVisible)
+        {
+            _runtime.DestroyWindow(pending.Window);
+            _pending = null;
+            Console.WriteLine("[Replace] discarded hidden unload-mode window.");
+            return;
+        }
+
         if (pending.Target != null)
         {
             _visibility.Detach(pending.Target);
@@ -192,6 +208,9 @@ public sealed class StartMenuHostContext : ApplicationContext
         ReplacementBatch pending = _pending!;
         _runtime.DestroyWindow(pending.Window);
         _pending = null;
+        if (_configuration.StartMenu.HiddenBehavior == StartMenuHiddenBehavior.Unload &&
+            pending.Target == null && _visibility.DesiredVisible)
+            _visibility.SetDesiredVisible(false);
         Console.Error.WriteLine($"[Replace] aborted: {pending.Window.FailureReason ?? "unknown failure"}; existing window retained.");
     }
 
@@ -199,6 +218,13 @@ public sealed class StartMenuHostContext : ApplicationContext
     {
         try
         {
+            if (_configuration.StartMenu.HiddenBehavior == StartMenuHiddenBehavior.Unload &&
+                !_visibility.DesiredVisible)
+            {
+                Console.WriteLine("[Replace] reload deferred while unload-mode start menu is hidden.");
+                return;
+            }
+
             BeginReplacement(_configuration.ResolveWindowSpec(), _visibility.Window);
         }
         catch (StartMenuConfigurationException ex)
@@ -215,7 +241,11 @@ public sealed class StartMenuHostContext : ApplicationContext
 
         try
         {
-            _visibility.SetDesiredVisible(command == StartMenuCommand.Show);
+            if (command == StartMenuCommand.Show)
+                ShowStartMenu();
+            else
+                HideStartMenu();
+
             _tray.Update(_visibility.IsVisible);
             string state = _visibility.DesiredVisible ? "shown" : "hidden";
             Console.WriteLine($"[Visibility] start menu {state}.");
@@ -226,6 +256,41 @@ public sealed class StartMenuHostContext : ApplicationContext
                 $"Could not {command.ToString().ToLowerInvariant()} the start menu: {ex.Message}", ex);
         }
     }
+
+    private void ShowStartMenu()
+    {
+        _visibility.SetDesiredVisible(true);
+        if (_configuration.StartMenu.HiddenBehavior != StartMenuHiddenBehavior.Unload ||
+            _visibility.Window != null || _pending != null)
+            return;
+
+        if (!BeginReplacement(_configuration.ResolveWindowSpec(), null))
+            _visibility.SetDesiredVisible(false);
+    }
+
+    private void HideStartMenu()
+    {
+        _visibility.SetDesiredVisible(false);
+        if (_configuration.StartMenu.HiddenBehavior != StartMenuHiddenBehavior.Unload)
+            return;
+
+        if (_pending != null)
+            AbortPending();
+
+        if (_visibility.Window == null)
+            return;
+
+        UltralightWindow window = _visibility.Window;
+        _visibility.Detach(window);
+        CloseWindow(window);
+        Console.WriteLine("[Visibility] unloaded hidden start menu.");
+    }
+
+    private bool ShouldPumpUltralight()
+        => StartMenuPumpPolicy.ShouldPump(
+            _configuration.StartMenu.HiddenBehavior,
+            _pending != null,
+            _visibility.IsVisible);
 
     private void PrintStatus()
     {
@@ -276,4 +341,13 @@ public sealed class StartMenuHostContext : ApplicationContext
     private static string FormatHwnd(IntPtr hwnd) => hwnd == IntPtr.Zero ? "<none>" : $"0x{hwnd.ToInt64():X}";
 
     private sealed record ReplacementBatch(UltralightWindow Window, UltralightWindow? Target);
+}
+
+internal static class StartMenuPumpPolicy
+{
+    internal static bool ShouldPump(
+        StartMenuHiddenBehavior behavior,
+        bool replacementPending,
+        bool visible)
+        => replacementPending || visible || behavior == StartMenuHiddenBehavior.None;
 }

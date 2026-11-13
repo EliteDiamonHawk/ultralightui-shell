@@ -65,12 +65,19 @@ Start the application with one required JSON object:
     "monitor": 1,
     "url": "https://example.com",
     "transparent": true,
-    "auto-hide": true
+    "auto-hide": true,
+    "hidden-behavior": "none"
   }
 }
 ```
 
-The required fields are `x`, `y`, `pos-scaled`, `size-scaled`, `anchor`, `width` (or `w`), `height` (or `h`), `monitor`, and `url`. `transparent` defaults to `true`. `auto-hide` also defaults to `true`; set it to `false` to keep the menu visible until explicitly hidden. The legacy `widgets` array is not supported.
+The required fields are `x`, `y`, `pos-scaled`, `size-scaled`, `anchor`, `width` (or `w`), `height` (or `h`), `monitor`, and `url`. `transparent` defaults to `true`. `auto-hide` also defaults to `true`; set it to `false` to keep the menu visible until explicitly hidden. `hidden-behavior` defaults to `none` and accepts `none`, `pause`, `suspend`, or `unload`. `suspend` is an alias for `pause`. The legacy `widgets` array is not supported.
+
+Hidden behavior controls what happens after the window is hidden:
+
+- `none` hides the native window while keeping the page loaded and pumped.
+- `pause` (or `suspend`) keeps the page loaded but stops Ultralight pumping until shown again. Tray, IPC, and native window control remain active.
+- `unload` destroys the Ultralight window and page while hidden. Showing the menu creates a new window and reloads the configured URL, so page state is lost.
 
 When `pos-scaled` is `true`, `x` and `y` are percentages of the selected monitor's width and height; otherwise they are screen pixels. When `size-scaled` is `true`, `width` and `height` are percentages using a uniform scale based on the shorter monitor dimension; otherwise they are pixel dimensions. Monitor numbers are 1-based and use full monitor bounds. Anchors are `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`.
 
@@ -97,7 +104,7 @@ These commands use a user-scoped named pipe. They return a nonzero exit code if 
 
 - Exactly one Ultralight window is created from the `start-menu` object.
 - The visible window is borderless and `HWND_TOPMOST`.
-- The Ultralight page remains loaded while hidden.
+- Hidden behavior is controlled by `hidden-behavior`; default `none` keeps the Ultralight page loaded while hidden.
 - Monitor changes and configured geometry are reconciled while the host runs.
 - `transparent` controls rendering transparency.
 - Malformed configuration, invalid geometry or URLs, unsupported anchors, and unavailable monitors reject startup or replacement without destroying the current window.
