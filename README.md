@@ -1,6 +1,6 @@
 # UltraLightRenderer
 
-UltraLightRenderer is the unified BrowserWall host for Ultralight wallpapers, desktop widgets, and topmost start menus.
+UltraLightRenderer creates ultralight engine based wallpapers, desktop widgets, and start menus to support user created html, css, and js based UI. 
 
 ## Requirements
 
