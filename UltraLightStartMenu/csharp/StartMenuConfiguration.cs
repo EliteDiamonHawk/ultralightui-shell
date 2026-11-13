@@ -44,13 +44,8 @@ public sealed class StartMenuConfiguration
 
     public StartMenuWindowSpec ResolveWindowSpec()
     {
-        Screen[] screens = Screen.AllScreens;
-        if (StartMenu.MonitorNumber > screens.Length)
-            throw new StartMenuConfigurationException(
-                $"Start menu selects monitor {StartMenu.MonitorNumber}, but only {screens.Length} monitor(s) are available.");
-
-        Screen screen = screens[StartMenu.MonitorNumber - 1];
-        Rectangle bounds = StartMenuGeometry.Resolve(StartMenu, screen.Bounds);
+        Rectangle monitorBounds = MonitorResolution.GetWindowsBounds(StartMenu.MonitorNumber);
+        Rectangle bounds = StartMenuGeometry.Resolve(StartMenu, monitorBounds);
         return new StartMenuWindowSpec(
             "start-menu",
             StartMenu.Url,
@@ -63,12 +58,12 @@ public sealed class StartMenuConfiguration
     private static StartMenuDefinition Validate(StartMenuFileEntry? entry)
     {
         const string prefix = "Start menu";
-        double? width = entry?.Width ?? entry?.WidthAlias;
-        double? height = entry?.Height ?? entry?.HeightAlias;
-        bool? posScaled = entry?.PosScaled ?? entry?.PosScaleAlias;
-        bool? sizeScaled = entry?.SizeScaled ?? entry?.SizeScaleAlias;
         if (entry == null)
             throw new StartMenuConfigurationException($"{prefix} must be an object.");
+        double? width = entry.Width ?? LegacyAliases.Width(entry);
+        double? height = entry.Height ?? LegacyAliases.Height(entry);
+        bool? posScaled = entry.PosScaled ?? LegacyAliases.PosScaled(entry);
+        bool? sizeScaled = entry.SizeScaled ?? LegacyAliases.SizeScaled(entry);
         if (entry.X == null || entry.Y == null || posScaled == null || sizeScaled == null || width == null ||
             height == null || entry.Monitor == null || string.IsNullOrWhiteSpace(entry.Anchor) ||
             string.IsNullOrWhiteSpace(entry.Url))
@@ -120,7 +115,8 @@ public sealed class StartMenuConfiguration
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        NumberHandling = JsonNumberHandling.AllowReadingFromString
+        NumberHandling = JsonNumberHandling.AllowReadingFromString,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
     private sealed class ConfigurationFile
@@ -136,23 +132,31 @@ public sealed class StartMenuConfiguration
         [JsonPropertyName("pos-scaled")]
         public bool? PosScaled { get; set; }
         [JsonPropertyName("pos-scale")]
-        public bool? PosScaleAlias { get; set; }
+        public bool? LegacyPosScale { get; set; }
         [JsonPropertyName("size-scaled")]
         public bool? SizeScaled { get; set; }
         [JsonPropertyName("size-scale")]
-        public bool? SizeScaleAlias { get; set; }
+        public bool? LegacySizeScale { get; set; }
         public string? Anchor { get; set; }
         public double? Width { get; set; }
         [JsonPropertyName("w")]
-        public double? WidthAlias { get; set; }
+        public double? LegacyWidth { get; set; }
         public double? Height { get; set; }
         [JsonPropertyName("h")]
-        public double? HeightAlias { get; set; }
+        public double? LegacyHeight { get; set; }
         public int? Monitor { get; set; }
         public string? Url { get; set; }
         public bool? Transparent { get; set; }
         [JsonPropertyName("auto-hide")]
         public bool? AutoHide { get; set; }
+    }
+
+    private static class LegacyAliases
+    {
+        public static double? Width(StartMenuFileEntry entry) => entry.LegacyWidth;
+        public static double? Height(StartMenuFileEntry entry) => entry.LegacyHeight;
+        public static bool? PosScaled(StartMenuFileEntry entry) => entry.LegacyPosScale;
+        public static bool? SizeScaled(StartMenuFileEntry entry) => entry.LegacySizeScale;
     }
 }
 

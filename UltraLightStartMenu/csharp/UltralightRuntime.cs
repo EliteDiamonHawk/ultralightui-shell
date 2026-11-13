@@ -146,16 +146,7 @@ public sealed class UltralightRuntime : IDisposable
     }
 
     private IntPtr ResolveMonitor(StartMenuWindowSpec spec)
-    {
-        if (spec.MonitorNumber > 0)
-        {
-            IntPtr monitor = UltralightNative.ulAppGetMonitor(_app, (uint)(spec.MonitorNumber - 1));
-            if (monitor != IntPtr.Zero)
-                return monitor;
-        }
-
-        return UltralightNative.ulAppGetMainMonitor(_app);
-    }
+        => MonitorResolution.GetUltralightMonitor(_app, spec.MonitorNumber);
 
     private static IntPtr CreateString(string value) => UltralightNative.ulCreateString(value);
 
@@ -249,7 +240,7 @@ public sealed class UltralightWindow
     public DateTimeOffset Deadline { get; internal set; }
     public IntPtr Hwnd { get; internal set; }
     public bool IsVisible { get; internal set; }
-    public bool IsTopmost { get; internal set; }
+    public bool TopmostPlacementApplied { get; internal set; }
     public UltralightWindowState State { get; internal set; } = UltralightWindowState.Pending;
     public string? FailureReason { get; internal set; }
     internal IntPtr UlWindow { get; set; }

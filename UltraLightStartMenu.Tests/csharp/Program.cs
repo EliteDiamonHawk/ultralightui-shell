@@ -14,6 +14,7 @@ internal static class Program
             (nameof(ConfigurationDefaultsOptionalFields), ConfigurationDefaultsOptionalFields),
             (nameof(ConfigurationSupportsDimensionAliases), ConfigurationSupportsDimensionAliases),
             (nameof(ConfigurationRejectsLegacyWidgetArray), ConfigurationRejectsLegacyWidgetArray),
+            (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
             (nameof(ConfigurationRejectsMissingFields), ConfigurationRejectsMissingFields),
             (nameof(ConfigurationRejectsInvalidAnchor), ConfigurationRejectsInvalidAnchor),
             (nameof(ConfigurationRejectsInvalidGeometry), ConfigurationRejectsInvalidGeometry),
@@ -31,6 +32,9 @@ internal static class Program
             (nameof(OptionsRejectConflictingCommands), OptionsRejectConflictingCommands),
             (nameof(OptionsRejectStartupOptionsForCommands), OptionsRejectStartupOptionsForCommands),
             (nameof(CommandProtocolParsesOnlyVisibilityCommands), CommandProtocolParsesOnlyVisibilityCommands),
+            (nameof(CommandProtocolSerializesVisibilityCommands), CommandProtocolSerializesVisibilityCommands),
+            (nameof(VisibilityControllerCentralizesState), VisibilityControllerCentralizesState),
+            (nameof(AutoHideRulesRequireExternalForeground), AutoHideRulesRequireExternalForeground),
             (nameof(RuntimeLayoutResolvesBundledAndExternalRoots), RuntimeLayoutResolvesBundledAndExternalRoots),
             (nameof(RuntimeLayoutValidatesRequiredFiles), RuntimeLayoutValidatesRequiredFiles),
             (nameof(HelpTextUsesUltraLightStartMenu), HelpTextUsesUltraLightStartMenu),
@@ -109,6 +113,11 @@ internal static class Program
     private static void ConfigurationRejectsLegacyWidgetArray() =>
         AssertThrows<StartMenuConfigurationException>(() => Load("{\"widgets\":[{\"url\":\"https://example.test\"}]}"));
 
+    private static void ConfigurationRejectsUnknownFields() =>
+        AssertThrows<StartMenuConfigurationException>(() => Load("""
+            {"start-menu":{"x":0,"y":0,"pos-scaled":false,"size-scaled":false,"anchor":"top-left","width":100,"height":100,"monitor":1,"url":"https://example.test","auto_hide":false}}
+            """));
+
     private static void ConfigurationRejectsMissingFields() =>
         AssertThrows<StartMenuConfigurationException>(() => Load("{\"start-menu\":{\"url\":\"https://example.test\"}}"));
 
@@ -155,7 +164,7 @@ internal static class Program
         AssertEqual("https://example.test/", UrlBuilder.Normalize("example.test"));
 
     private static void UrlBuilderPreservesQueryAndFragment() =>
-        AssertEqual("https://example.test/wallpaper?theme=dark#scene", UrlBuilder.Normalize("https://example.test/wallpaper?theme=dark#scene"));
+        AssertEqual("https://example.test/start-menu?theme=dark#scene", UrlBuilder.Normalize("https://example.test/start-menu?theme=dark#scene"));
 
     private static void UrlBuilderRejectsUnsupportedScheme() =>
         AssertThrows<OptionException>(() => UrlBuilder.Normalize("javascript:alert(1)"));
@@ -195,11 +204,46 @@ internal static class Program
 
     private static void CommandProtocolParsesOnlyVisibilityCommands()
     {
-        AssertTrue(StartMenuInstance.TryParseCommand("show", out StartMenuCommand show));
+        AssertTrue(StartMenuCommandProtocol.TryParse("show", out StartMenuCommand show));
         AssertEqual(StartMenuCommand.Show, show);
-        AssertTrue(StartMenuInstance.TryParseCommand(" HIDE ", out StartMenuCommand hide));
+        AssertTrue(StartMenuCommandProtocol.TryParse(" HIDE ", out StartMenuCommand hide));
         AssertEqual(StartMenuCommand.Hide, hide);
-        AssertFalse(StartMenuInstance.TryParseCommand("run", out _));
+        AssertFalse(StartMenuCommandProtocol.TryParse("run", out _));
+    }
+
+    private static void CommandProtocolSerializesVisibilityCommands()
+    {
+        AssertEqual("show", StartMenuCommandProtocol.Serialize(StartMenuCommand.Show));
+        AssertEqual("hide", StartMenuCommandProtocol.Serialize(StartMenuCommand.Hide));
+        AssertThrows<ArgumentOutOfRangeException>(() => StartMenuCommandProtocol.Serialize(StartMenuCommand.Run));
+    }
+
+    private static void VisibilityControllerCentralizesState()
+    {
+        var placement = new RecordingPlacement();
+        var visibility = new StartMenuVisibilityController(placement);
+        var window = new UltralightWindow(
+            new StartMenuWindowSpec("start-menu", "https://example.test", new Rectangle(0, 0, 100, 100)),
+            TimeSpan.FromSeconds(1));
+
+        visibility.SetDesiredVisible(false);
+        visibility.Attach(window);
+        AssertFalse(visibility.DesiredVisible);
+        AssertFalse(visibility.IsVisible);
+        AssertEqual(1, placement.HideCount);
+
+        visibility.SetDesiredVisible(true);
+        AssertTrue(visibility.DesiredVisible);
+        AssertTrue(visibility.IsVisible);
+        AssertEqual(1, placement.ShowCount);
+    }
+
+    private static void AutoHideRulesRequireExternalForeground()
+    {
+        AssertTrue(AutoHideRules.ShouldHide(true, true, false));
+        AssertFalse(AutoHideRules.ShouldHide(false, true, false));
+        AssertFalse(AutoHideRules.ShouldHide(true, false, false));
+        AssertFalse(AutoHideRules.ShouldHide(true, true, true));
     }
 
     private static void RuntimeLayoutResolvesBundledAndExternalRoots()
@@ -241,9 +285,9 @@ internal static class Program
     {
         uint hiddenFlags = StartMenuWindowController.GetPlacementFlags(false);
         uint shownFlags = StartMenuWindowController.GetPlacementFlags(true);
-        AssertFalse((hiddenFlags & NativeMethods.SWP_SHOWWINDOW) != 0);
-        AssertTrue((shownFlags & NativeMethods.SWP_SHOWWINDOW) != 0);
-        AssertEqual(new IntPtr(-1), NativeMethods.HWND_TOPMOST);
+        AssertFalse((hiddenFlags & NativeWindowApi.SWP_SHOWWINDOW) != 0);
+        AssertTrue((shownFlags & NativeWindowApi.SWP_SHOWWINDOW) != 0);
+        AssertEqual(new IntPtr(-1), NativeWindowApi.HWND_TOPMOST);
     }
 
     private static void RuntimeSmokeTest()
@@ -257,6 +301,14 @@ internal static class Program
             UltralightWindow window = runtime.CreateWindow(spec, TimeSpan.FromSeconds(5));
             stage = "native handle validation";
             AssertTrue(window.Hwnd != IntPtr.Zero);
+            stage = "topmost placement";
+            var controller = new StartMenuWindowController();
+            controller.Reconcile(window);
+            AssertTrue(window.TopmostPlacementApplied);
+            controller.Show(window);
+            AssertTrue(window.IsVisible);
+            controller.Hide(window);
+            AssertFalse(window.IsVisible);
             stage = "runtime pump";
             runtime.Pump();
             stage = "window destruction";
@@ -280,6 +332,26 @@ internal static class Program
         {
             if (File.Exists(path))
                 File.Delete(path);
+        }
+    }
+
+    private sealed class RecordingPlacement : IStartMenuWindowPlacement
+    {
+        public int ShowCount { get; private set; }
+        public int HideCount { get; private set; }
+
+        public void Reconcile(UltralightWindow window) => window.TopmostPlacementApplied = true;
+
+        public void Show(UltralightWindow window)
+        {
+            ShowCount++;
+            window.IsVisible = true;
+        }
+
+        public void Hide(UltralightWindow window)
+        {
+            HideCount++;
+            window.IsVisible = false;
         }
     }
 

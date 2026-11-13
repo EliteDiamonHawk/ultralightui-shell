@@ -4,58 +4,59 @@ public sealed class StartMenuHostContext : ApplicationContext
 {
     private readonly HostOptions _options;
     private readonly StartMenuConfiguration _configuration;
-    private readonly StartMenuInstance _instance;
+    private readonly SingleInstanceLease _instance;
+    private readonly CommandPipeServer _commandServer;
     private readonly UltralightRuntime _runtime;
-    private readonly StartMenuWindowController _windowController = new();
+    private readonly StartMenuWindowController _windowController;
+    private readonly StartMenuVisibilityController _visibility;
+    private readonly StartMenuTrayController _tray;
+    private readonly AutoHideMonitor _autoHideMonitor;
+    private readonly WindowTopologyMonitor _topologyMonitor;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Control _eventDispatcher = new();
-    private readonly NotifyIcon _tray;
-    private readonly ContextMenuStrip _menu;
-    private readonly List<IntPtr> _winEventHooks = new();
-    private readonly NativeMethods.WinEventDelegate _winEventProc;
 
-    private ToolStripMenuItem? _showItem;
-    private ToolStripMenuItem? _hideItem;
-    private UltralightWindow? _window;
     private ReplacementBatch? _pending;
-    private bool _desiredVisible = true;
     private bool _exiting;
-    private string _topologySignature;
     private DateTimeOffset _nextReconcile = DateTimeOffset.MinValue;
-
-    private const int ActivePumpIntervalMs = 16;
 
     public StartMenuHostContext(HostOptions options)
     {
         _options = options;
         _configuration = options.LoadConfiguration();
-        _instance = StartMenuInstance.Acquire();
+        _instance = SingleInstanceLease.Acquire();
 
         try
         {
+            StartMenuWindowSpec initialSpec = _configuration.ResolveWindowSpec();
             _runtime = new UltralightRuntime(options.UltralightRoot);
-            _topologySignature = GetTopologySignature();
-
-            _menu = new ContextMenuStrip();
-            _tray = new NotifyIcon
-            {
-                Icon = SystemIcons.Application,
-                Text = "UltraLightStartMenu",
-                Visible = true,
-                ContextMenuStrip = _menu
-            };
-            BuildMenu();
+            _windowController = new StartMenuWindowController(options.Verbose);
+            _visibility = new StartMenuVisibilityController(_windowController);
+            _topologyMonitor = new WindowTopologyMonitor();
 
             _eventDispatcher.CreateControl();
-            _winEventProc = WinEventCallback;
-            InstallForegroundHook();
+            _autoHideMonitor = new AutoHideMonitor(
+                _eventDispatcher,
+                () => _configuration.StartMenu.AutoHide,
+                () => _visibility.IsVisible,
+                () => _visibility.Window?.Hwnd ?? IntPtr.Zero,
+                () => HandleCommand(StartMenuCommand.Hide));
+            _autoHideMonitor.Start();
 
-            _timer = new System.Windows.Forms.Timer { Interval = ActivePumpIntervalMs };
+            _tray = new StartMenuTrayController(
+                () => HandleCommand(StartMenuCommand.Show),
+                () => HandleCommand(StartMenuCommand.Hide),
+                ReloadStartMenu,
+                PrintStatus,
+                ExitHost);
+            _tray.Update(_visibility.IsVisible);
+
+            _timer = new System.Windows.Forms.Timer { Interval = 16 };
             _timer.Tick += (_, _) => Tick();
             _timer.Start();
 
-            _instance.Start(_eventDispatcher, HandleCommand);
-            BeginReplacement(_configuration.ResolveWindowSpec(), null);
+            _commandServer = new CommandPipeServer();
+            _commandServer.Start(_eventDispatcher, HandleCommand);
+            BeginReplacement(initialSpec, null);
         }
         catch
         {
@@ -80,22 +81,6 @@ public sealed class StartMenuHostContext : ApplicationContext
         }
     }
 
-    private void BuildMenu()
-    {
-        _menu.Items.Clear();
-
-        _showItem = new ToolStripMenuItem("Show start menu", null, (_, _) => HandleCommand(StartMenuCommand.Show));
-        _hideItem = new ToolStripMenuItem("Hide start menu", null, (_, _) => HandleCommand(StartMenuCommand.Hide));
-        _menu.Items.Add(_showItem);
-        _menu.Items.Add(_hideItem);
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(new ToolStripMenuItem("Reload start menu", null, (_, _) => ReloadStartMenu()));
-        _menu.Items.Add(new ToolStripMenuItem("Print status", null, (_, _) => PrintStatus()));
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => ExitHost()));
-        UpdateMenuState();
-    }
-
     private void PollWindow()
     {
         if (_pending != null)
@@ -104,28 +89,28 @@ public sealed class StartMenuHostContext : ApplicationContext
             return;
         }
 
-        if (GetTopologySignature() != _topologySignature)
+        if (_topologyMonitor.HasChanged())
         {
-            _topologySignature = GetTopologySignature();
-            BeginReplacement(_configuration.ResolveWindowSpec(), _window);
+            BeginReplacement(_configuration.ResolveWindowSpec(), _visibility.Window);
             return;
         }
 
-        if (_window == null || _window.State != UltralightWindowState.Ready ||
+        UltralightWindow? window = _visibility.Window;
+        if (window == null || window.State != UltralightWindowState.Ready ||
             DateTimeOffset.UtcNow < _nextReconcile)
             return;
         _nextReconcile = DateTimeOffset.UtcNow.AddMilliseconds(_options.ReconcileIntervalMs);
 
-        if (!NativeMethods.IsWindow(_window.Hwnd))
+        if (!NativeWindowApi.IsWindow(window.Hwnd))
         {
-            Console.Error.WriteLine($"[Lifecycle] Start-menu window lost: {_window.LogicalId}");
-            BeginReplacement(_configuration.ResolveWindowSpec(), _window);
+            Console.Error.WriteLine($"[Lifecycle] Start-menu window lost: {window.LogicalId}");
+            BeginReplacement(_configuration.ResolveWindowSpec(), window);
             return;
         }
 
         try
         {
-            _windowController.Reconcile(_window);
+            _visibility.Reconcile();
         }
         catch (Exception ex)
         {
@@ -144,7 +129,7 @@ public sealed class StartMenuHostContext : ApplicationContext
             return;
         }
 
-        if (!NativeMethods.IsWindow(pending.Window.Hwnd))
+        if (!NativeWindowApi.IsWindow(pending.Window.Hwnd))
         {
             pending.Window.State = UltralightWindowState.Failed;
             pending.Window.FailureReason = "native window handle became invalid";
@@ -154,13 +139,9 @@ public sealed class StartMenuHostContext : ApplicationContext
 
         try
         {
-            _windowController.Reconcile(pending.Window);
             _runtime.ShowWhenReady(pending.Window, _options.StartupTimeout);
             pending.Window.State = UltralightWindowState.Ready;
-            if (_desiredVisible)
-                _windowController.Show(pending.Window);
-            else
-                _windowController.Hide(pending.Window);
+            _visibility.Prepare(pending.Window);
             CommitPending();
         }
         catch (Exception ex)
@@ -195,11 +176,14 @@ public sealed class StartMenuHostContext : ApplicationContext
     {
         ReplacementBatch pending = _pending!;
         if (pending.Target != null)
+        {
+            _visibility.Detach(pending.Target);
             CloseWindow(pending.Target);
+        }
 
-        _window = pending.Window;
+        _visibility.Attach(pending.Window);
         _pending = null;
-        UpdateMenuState();
+        _tray.Update(_visibility.IsVisible);
         Console.WriteLine("[Replace] committed new Ultralight start-menu window.");
     }
 
@@ -215,7 +199,7 @@ public sealed class StartMenuHostContext : ApplicationContext
     {
         try
         {
-            BeginReplacement(_configuration.ResolveWindowSpec(), _window);
+            BeginReplacement(_configuration.ResolveWindowSpec(), _visibility.Window);
         }
         catch (StartMenuConfigurationException ex)
         {
@@ -229,95 +213,32 @@ public sealed class StartMenuHostContext : ApplicationContext
         if (_exiting || command == StartMenuCommand.Run)
             return;
 
-        _desiredVisible = command == StartMenuCommand.Show;
-        if (_window is { State: UltralightWindowState.Ready } window)
+        try
         {
-            try
-            {
-                if (_desiredVisible)
-                    _windowController.Show(window);
-                else
-                    _windowController.Hide(window);
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Could not {command.ToString().ToLowerInvariant()} the start menu: {ex.Message}", ex);
-            }
+            _visibility.SetDesiredVisible(command == StartMenuCommand.Show);
+            _tray.Update(_visibility.IsVisible);
+            string state = _visibility.DesiredVisible ? "shown" : "hidden";
+            Console.WriteLine($"[Visibility] start menu {state}.");
         }
-
-        UpdateMenuState();
-        Console.WriteLine($"[Visibility] start menu {_desiredVisible switch { true => "shown", false => "hidden" }}.");
-    }
-
-    private void UpdateMenuState()
-    {
-        bool visible = _window?.IsVisible ?? _desiredVisible;
-        if (_showItem != null) _showItem.Enabled = !visible;
-        if (_hideItem != null) _hideItem.Enabled = visible;
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Could not {command.ToString().ToLowerInvariant()} the start menu: {ex.Message}", ex);
+        }
     }
 
     private void PrintStatus()
     {
-        if (_window == null)
+        UltralightWindow? window = _visibility.Window;
+        if (window == null)
         {
             Console.WriteLine("[Status] start-menu: not created");
             return;
         }
 
-        Console.WriteLine($"[Status] {_window.LogicalId}: {_window.State}, " +
-            $"HWND={FormatHwnd(_window.Hwnd)}, visible={_window.IsVisible}, " +
-            $"topmost={_windowController.IsTopmost(_window)}, url={_window.Spec.Url}");
-    }
-
-    private void InstallForegroundHook()
-    {
-        IntPtr hook = NativeMethods.SetWinEventHook(
-            NativeMethods.EVENT_SYSTEM_FOREGROUND,
-            NativeMethods.EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero,
-            _winEventProc,
-            0,
-            0,
-            NativeMethods.WINEVENT_OUTOFCONTEXT);
-        if (hook != IntPtr.Zero)
-            _winEventHooks.Add(hook);
-        else
-            Console.Error.WriteLine("[Window] Could not install foreground monitoring hook.");
-    }
-
-    private void WinEventCallback(
-        IntPtr hook,
-        uint eventType,
-        IntPtr hwnd,
-        int idObject,
-        int idChild,
-        uint eventThread,
-        uint eventTime)
-    {
-        if (_exiting || eventType != NativeMethods.EVENT_SYSTEM_FOREGROUND ||
-            !_configuration.StartMenu.AutoHide || _window?.IsVisible != true || IsOwnedWindow(hwnd))
-            return;
-
-        try
-        {
-            _eventDispatcher.BeginInvoke((Action)(() =>
-            {
-                if (!_exiting && _configuration.StartMenu.AutoHide && _window?.IsVisible == true && !IsOwnedWindow(hwnd))
-                    HandleCommand(StartMenuCommand.Hide);
-            }));
-        }
-        catch (InvalidOperationException) { }
-    }
-
-    private bool IsOwnedWindow(IntPtr hwnd)
-    {
-        if (hwnd == IntPtr.Zero)
-            return false;
-        if (_window != null && NativeMethods.IsDescendantOrSelf(hwnd, _window.Hwnd))
-            return true;
-
-        NativeMethods.GetWindowThreadProcessId(hwnd, out uint processId);
-        return processId == (uint)Environment.ProcessId;
+        Console.WriteLine($"[Status] {window.LogicalId}: {window.State}, " +
+            $"HWND={FormatHwnd(window.Hwnd)}, visible={_visibility.IsVisible}, " +
+            $"topmost-placement={_visibility.TopmostPlacementApplied}, url={window.Spec.Url}");
     }
 
     private void ExitHost()
@@ -326,36 +247,31 @@ public sealed class StartMenuHostContext : ApplicationContext
             return;
 
         _exiting = true;
-        foreach (IntPtr hook in _winEventHooks)
-            NativeMethods.UnhookWinEvent(hook);
-        _winEventHooks.Clear();
+        _autoHideMonitor.Dispose();
 
         if (_pending != null)
         {
             _runtime.DestroyWindow(_pending.Window);
             _pending = null;
         }
-        if (_window != null)
-            CloseWindow(_window);
+        if (_visibility.Window != null)
+        {
+            UltralightWindow window = _visibility.Window;
+            _visibility.Detach(window);
+            CloseWindow(window);
+        }
 
         _timer.Stop();
         _timer.Dispose();
-        _tray.Visible = false;
+        _commandServer.Dispose();
         _tray.Dispose();
-        _menu.Dispose();
         _eventDispatcher.Dispose();
         _runtime.Dispose();
         _instance.Dispose();
         ExitThread();
     }
 
-    private void CloseWindow(UltralightWindow window)
-    {
-        _runtime.DestroyWindow(window);
-    }
-
-    private static string GetTopologySignature() =>
-        string.Join("|", Screen.AllScreens.Select(screen => $"{screen.DeviceName}:{screen.Bounds}"));
+    private void CloseWindow(UltralightWindow window) => _runtime.DestroyWindow(window);
 
     private static string FormatHwnd(IntPtr hwnd) => hwnd == IntPtr.Zero ? "<none>" : $"0x{hwnd.ToInt64():X}";
 

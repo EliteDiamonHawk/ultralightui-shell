@@ -17,7 +17,7 @@ internal static class Program
             }
 
             if (options.Command != StartMenuCommand.Run)
-                return StartMenuInstance.SendCommand(options.Command);
+                return CommandPipeClient.Send(options.Command);
 
             ApplicationConfiguration.Initialize();
             Application.Run(new StartMenuHostContext(options));
