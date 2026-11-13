@@ -37,7 +37,7 @@ experimental/
 
 
 # User-specific local script wrappers.
-scripts/personal/
+**/scripts/personal/
 
 # reslink
 reslink.toml
