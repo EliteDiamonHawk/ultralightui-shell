@@ -100,3 +100,5 @@ For a process with exactly one group, the group name may be omitted from `--paus
 ## License
 
 MIT. See `LICENSE` in the source repositories.
+
+The repo was forked from `Superswan`. See `third_party/Superswan`.

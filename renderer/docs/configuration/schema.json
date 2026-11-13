@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schema.json",
+  "title": "UltraLightRenderer configuration",
+  "description": "Canonical JSON schema for UltraLightRenderer configuration files.",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": false,
+  "properties": {
+    "wallpaper": {
+      "type": "array",
+      "description": "Wallpaper profiles. Each profile resolves to one or more desktop windows.",
+      "items": { "$ref": "#/$defs/wallpaper" }
+    },
+    "widgets": {
+      "type": "array",
+      "description": "Desktop widget windows.",
+      "items": { "$ref": "#/$defs/widget" }
+    },
+    "start-menu": {
+      "description": "One start-menu window.",
+      "$ref": "#/$defs/startMenu"
+    }
+  },
+  "$defs": {
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "HTTP, HTTPS, or file URL. Bare host names become HTTPS URLs."
+    },
+    "threadGroup": {
+      "type": "string",
+      "minLength": 1
+    },
+    "anchor": {
+      "type": "string",
+      "enum": [
+        "top-left",
+        "top",
+        "top-right",
+        "left",
+        "center",
+        "right",
+        "bottom-left",
+        "bottom",
+        "bottom-right"
+      ]
+    },
+    "geometry": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "anchor",
+        "monitor",
+        "url"
+      ],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "pos-scaled": { "type": "boolean" },
+        "pos-scale": { "type": "boolean" },
+        "size-scaled": { "type": "boolean" },
+        "size-scale": { "type": "boolean" },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "w": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "h": { "type": "number", "exclusiveMinimum": 0 },
+        "monitor": { "type": "integer", "minimum": 1 },
+        "url": { "$ref": "#/$defs/url" },
+        "transparent": { "type": "boolean" },
+        "thread-group": { "$ref": "#/$defs/threadGroup" }
+      },
+      "allOf": [
+        {
+          "anyOf": [
+            { "required": ["pos-scaled"] },
+            { "required": ["pos-scale"] }
+          ]
+        },
+        {
+          "anyOf": [
+            { "required": ["size-scaled"] },
+            { "required": ["size-scale"] }
+          ]
+        },
+        {
+          "anyOf": [
+            { "required": ["width"] },
+            { "required": ["w"] }
+          ]
+        },
+        {
+          "anyOf": [
+            { "required": ["height"] },
+            { "required": ["h"] }
+          ]
+        }
+      ]
+    },
+    "widget": {
+      "allOf": [
+        { "$ref": "#/$defs/geometry" }
+      ],
+      "unevaluatedProperties": false
+    },
+    "wallpaper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "$ref": "#/$defs/url" },
+        "mode": {
+          "type": "string",
+          "enum": ["span", "all", "single"]
+        },
+        "monitor": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "monitor-urls": {
+          "type": "object",
+          "patternProperties": {
+            "^[1-9][0-9]*$": { "$ref": "#/$defs/url" }
+          },
+          "additionalProperties": false
+        },
+        "window-ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "transparent": { "type": "boolean" },
+        "thread-group": { "$ref": "#/$defs/threadGroup" }
+      }
+    },
+    "startMenu": {
+      "allOf": [
+        { "$ref": "#/$defs/geometry" },
+        {
+          "type": "object",
+          "properties": {
+            "auto-hide": { "type": "boolean" },
+            "hidden-behavior": {
+              "type": "string",
+              "enum": ["none", "pause", "suspend", "unload"]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "wallpaper": [
+    {
+      "url": "https://example.com/wallpaper",
+      "mode": "all",
+      "monitor-urls": {
+        "1": "https://example.com/wallpaper/primary",
+        "2": "https://example.com/wallpaper/secondary"
+      },
+      "transparent": false,
+      "thread-group": "desktop"
+    }
+  ],
+  "widgets": [
+    {
+      "x": 50,
+      "y": 8,
+      "pos-scaled": true,
+      "size-scaled": false,
+      "anchor": "top",
+      "width": 520,
+      "height": 180,
+      "monitor": 1,
+      "url": "https://example.com/widget",
+      "transparent": true,
+      "thread-group": "desktop"
+    }
+  ],
+  "start-menu": {
+    "x": 50,
+    "y": 50,
+    "pos-scaled": true,
+    "size-scaled": false,
+    "anchor": "center",
+    "width": 820,
+    "height": 620,
+    "monitor": 1,
+    "url": "https://example.com/start-menu",
+    "transparent": true,
+    "auto-hide": true,
+    "hidden-behavior": "pause",
+    "thread-group": "start-menu"
+  }
+}
