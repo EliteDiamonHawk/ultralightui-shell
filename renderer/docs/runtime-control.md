@@ -7,7 +7,12 @@ Run the executable from its published output directory, or use the PowerShell wr
 ```powershell
 UltraLightRenderer.exe --config .\example.json
 UltraLightRenderer.exe --config .\wallpaper.json --config .\widgets.json
+UltraLightRenderer.exe --config .\example.json --ultralight-root C:\vendor\ultralight
 ```
+
+Use `--ultralight-root <path>` to load Ultralight from an external installation. The
+specified root must contain `bin\AppCore.dll`, `bin\Ultralight.dll`,
+`bin\UltralightCore.dll`, `bin\WebCore.dll`, and `resources\`.
 
 Startup options:
 
