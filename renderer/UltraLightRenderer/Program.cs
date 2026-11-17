@@ -17,6 +17,13 @@ internal static class Program
             if (options.Command.Kind != RendererCommandKind.None)
                 return CommandPipeClient.Send(options.Command);
 
+            if (options.ConfigPaths.Count > 0 && CommandPipeClient.TrySend(
+                    new RendererCommand(RendererCommandKind.ApplyConfig, ConfigPaths: options.ConfigPaths),
+                    out int configCommandExitCode))
+            {
+                return configCommandExitCode;
+            }
+
             ApplicationConfiguration.Initialize();
             using SingleInstanceLease lease = SingleInstanceLease.Acquire();
             Application.Run(new RendererHostContext(options, lease));

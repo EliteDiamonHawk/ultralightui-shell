@@ -69,10 +69,20 @@ public static class CommandPipeClient
 {
     public static int Send(RendererCommand command)
     {
+        if (TrySend(command, out int exitCode))
+            return exitCode;
+
+        Console.Error.WriteLine("[Command] No running UltraLightRenderer instance accepted the command.");
+        return 3;
+    }
+
+    public static bool TrySend(RendererCommand command, out int exitCode)
+    {
+        exitCode = 3;
         try
         {
             using var pipe = new NamedPipeClientStream(".", RendererIpcNames.PipeName, PipeDirection.InOut);
-            pipe.Connect(1500);
+            pipe.Connect(250);
             using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
             writer.WriteLine(RendererCommandProtocol.Serialize(command));
@@ -80,15 +90,16 @@ public static class CommandPipeClient
             if (response.StartsWith("ERR ", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"[Command] {response[4..]}");
-                return 3;
+                exitCode = 3;
+                return true;
             }
             Console.WriteLine(response);
-            return 0;
+            exitCode = 0;
+            return true;
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
-            Console.Error.WriteLine($"[Command] No running UltraLightRenderer instance accepted the command: {ex.Message}");
-            return 3;
+            return false;
         }
     }
 }

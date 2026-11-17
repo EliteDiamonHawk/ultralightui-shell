@@ -6,7 +6,7 @@ Files:
 
 - [`configuration.md`](configuration.md) explains sections, fields, defaults, geometry, and reload behavior.
 - [`schema.json`](schema.json) describes the canonical JSON shape for editor validation.
-- [`example.json`](example.json) shows wallpaper, widget, and start-menu sections together.
+- [`example.json`](example.json) shows wallpaper, widget, and menu sections together.
 
 Start the renderer from `renderer/`:
 

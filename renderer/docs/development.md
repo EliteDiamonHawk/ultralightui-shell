@@ -61,4 +61,4 @@ Before submitting changes:
 1. Run the test script.
 2. Run a release build with the SDK available.
 3. If native behavior changed, run on Windows with one and multiple monitors, including mixed DPI where available.
-4. Exercise start-menu show/hide, pause/resume, status, reload, and exit commands.
+4. Exercise menu show/hide, ID-based hide/reveal, pause/resume, status, reload, and exit commands.

@@ -1,6 +1,6 @@
 # UltraLightRenderer docs
 
-UltraLightRenderer hosts Ultralight pages as Windows wallpapers, widgets, and start menus. The project targets Windows x64, .NET 9, and WinForms.
+UltraLightRenderer hosts Ultralight pages as Windows wallpapers, widgets, and menus. The project targets Windows x64, .NET 9, and WinForms.
 
 ## Run it
 

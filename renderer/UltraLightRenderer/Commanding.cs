@@ -7,7 +7,11 @@ public enum RendererCommandKind
 {
     None,
     Show,
-    Hide,
+    ShowMenu,
+    HideMenu,
+    HideWindow,
+    RevealWindow,
+    ApplyConfig,
     Pause,
     Resume,
     Status,
@@ -18,7 +22,10 @@ public enum RendererCommandKind
 public sealed record RendererCommand(
     RendererCommandKind Kind,
     string? Group = null,
-    bool All = false);
+    bool All = false,
+    string? TargetId = null,
+    string? Topic = null,
+    IReadOnlyList<string>? ConfigPaths = null);
 
 public sealed class HostOptions
 {
@@ -26,6 +33,8 @@ public sealed class HostOptions
 
     public IReadOnlyList<string> ConfigPaths { get; private init; } = Array.Empty<string>();
     public string? UltralightRoot { get; private init; }
+    public IntPtr? ControlReadHandle { get; private init; }
+    public IntPtr? ControlWriteHandle { get; private init; }
     public int ReconcileIntervalMs { get; private init; } = 250;
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
     public bool Verbose { get; private init; }
@@ -38,6 +47,8 @@ public sealed class HostOptions
         string? ultralightRoot = null;
         int reconcileMs = 250;
         int startupTimeoutMs = 30_000;
+        IntPtr? controlReadHandle = null;
+        IntPtr? controlWriteHandle = null;
         bool verbose = false;
         bool showHelp = false;
         RendererCommand? command = null;
@@ -82,8 +93,29 @@ public sealed class HostOptions
                     EnsureNoCommand(command, option);
                     startupTimeoutMs = ParsePositiveInt(NextValue(args, ref index, option, inlineValue), option);
                     break;
-                case "--show": SetCommand(ref command, new(RendererCommandKind.Show), option); break;
-                case "--hide": SetCommand(ref command, new(RendererCommandKind.Hide), option); break;
+                case "--control-read-handle":
+                    EnsureNoCommand(command, option);
+                    controlReadHandle = ParseHandle(NextValue(args, ref index, option, inlineValue), option);
+                    break;
+                case "--control-write-handle":
+                    EnsureNoCommand(command, option);
+                    controlWriteHandle = ParseHandle(NextValue(args, ref index, option, inlineValue), option);
+                    break;
+                case "--show":
+                    SetCommand(ref command, new(RendererCommandKind.Show, Topic: NextRequiredTopic(args, ref index, inlineValue, option)), option);
+                    break;
+                case "--show-menu":
+                    SetCommand(ref command, new(RendererCommandKind.ShowMenu), option);
+                    break;
+                case "--hide-menu":
+                    SetCommand(ref command, new(RendererCommandKind.HideMenu), option);
+                    break;
+                case "--hide":
+                    SetCommand(ref command, new(RendererCommandKind.HideWindow, TargetId: NextRequiredId(args, ref index, inlineValue, option)), option);
+                    break;
+                case "--reveal":
+                    SetCommand(ref command, new(RendererCommandKind.RevealWindow, TargetId: NextRequiredId(args, ref index, inlineValue, option)), option);
+                    break;
                 case "--pause": SetCommand(ref command, new(RendererCommandKind.Pause, NextOptionalGroup(args, ref index, inlineValue)), option); break;
                 case "--resume": SetCommand(ref command, new(RendererCommandKind.Resume, NextOptionalGroup(args, ref index, inlineValue)), option); break;
                 case "--status": SetCommand(ref command, new(RendererCommandKind.Status, NextOptionalGroup(args, ref index, inlineValue)), option); break;
@@ -103,18 +135,20 @@ public sealed class HostOptions
 
         if (command != null)
         {
-            if (configPaths.Count > 0 || ultralightRoot != null || verbose || reconcileMs != 250 || startupTimeoutMs != 30_000)
+            if (configPaths.Count > 0 || ultralightRoot != null || verbose || reconcileMs != 250 || startupTimeoutMs != 30_000 || controlReadHandle != null || controlWriteHandle != null)
                 throw new OptionException("Runtime commands cannot be combined with startup options.");
             return new HostOptions { Command = command };
         }
 
-        if (configPaths.Count == 0)
-            throw new OptionException("At least one --config <path> is required when starting UltraLightRenderer.");
+        if (controlReadHandle.HasValue != controlWriteHandle.HasValue)
+            throw new OptionException("Control read and write handles must be supplied together.");
 
         return new HostOptions
         {
             ConfigPaths = configPaths,
             UltralightRoot = ultralightRoot,
+            ControlReadHandle = controlReadHandle,
+            ControlWriteHandle = controlWriteHandle,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
             Verbose = verbose
@@ -122,11 +156,13 @@ public sealed class HostOptions
     }
 
     public const string HelpText = """
-        UltraLightRenderer - unified Ultralight wallpaper, widget, and start-menu host
+        UltraLightRenderer - unified Ultralight wallpaper, widget, and menu host
 
         Usage:
-          UltraLightRenderer.exe --config <path> [--config <path> ...] [options]
-          UltraLightRenderer.exe --show | --hide
+          UltraLightRenderer.exe [--config <path> ...] [options]
+          UltraLightRenderer.exe --show-menu | --hide-menu
+          UltraLightRenderer.exe --hide <id> | --reveal <id>
+          UltraLightRenderer.exe --show pipes|config|windows|paths
           UltraLightRenderer.exe --pause [group] | --pause-all
           UltraLightRenderer.exe --resume [group] | --resume-all
           UltraLightRenderer.exe --status [group] | --status-all
@@ -134,14 +170,18 @@ public sealed class HostOptions
           UltraLightRenderer.exe --exit
 
         Startup options:
-          --config <path>                Configuration JSON; repeatable.
+          --config <path>                Configuration JSON; repeatable. Optional.
           --ultralight-root <path>       External Ultralight SDK/install root.
           --reconcile-ms <n>             Geometry reconciliation interval. Default: 250.
           --startup-timeout-ms <n>       Window startup timeout. Default: 30000.
+          --control-read-handle <n>     Inherited control-to-renderer pipe handle.
+          --control-write-handle <n>    Inherited renderer-to-control pipe handle.
           --verbose                      Log embedding diagnostics.
 
         Runtime commands:
-          --show, --hide                 Show or hide the configured start menu.
+          --show-menu, --hide-menu       Show or hide configured menu.
+          --hide <id>, --reveal <id>     Hide or reveal one window.
+          --show <topic>                 Show pipes, config, windows, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.
           --resume [group], --resume-all Resume one group or all groups.
           --status [group], --status-all Print one group or all groups.
@@ -171,6 +211,22 @@ public sealed class HostOptions
         return args[++index].Trim();
     }
 
+    private static string NextRequiredTopic(string[] args, ref int index, string? inlineValue, string option)
+    {
+        string value = NextValue(args, ref index, option, inlineValue).Trim().ToLowerInvariant();
+        if (value is not ("pipes" or "config" or "windows" or "paths"))
+            throw new OptionException($"{option} topic must be pipes, config, windows, or paths.");
+        return value;
+    }
+
+    private static string NextRequiredId(string[] args, ref int index, string? inlineValue, string option)
+    {
+        string value = NextValue(args, ref index, option, inlineValue).Trim();
+        if (value.Length == 0)
+            throw new OptionException($"{option} requires a non-empty window ID.");
+        return value;
+    }
+
     private static string NextValue(string[] args, ref int index, string option, string? inlineValue)
     {
         if (inlineValue != null)
@@ -185,6 +241,13 @@ public sealed class HostOptions
         if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed) || parsed <= 0)
             throw new OptionException($"{option} requires a positive integer.");
         return parsed;
+    }
+
+    private static IntPtr ParseHandle(string value, string option)
+    {
+        if (!ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong raw) || raw == 0 || raw > long.MaxValue)
+            throw new OptionException($"{option} requires a positive native handle value.");
+        return new IntPtr(unchecked((long)raw));
     }
 }
 

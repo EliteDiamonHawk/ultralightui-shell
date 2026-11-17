@@ -13,7 +13,7 @@ Configuration errors identify the section, item, or field. Check:
 - root is an object;
 - at least one known top-level section exists;
 - each section appears in only one config file;
-- required widget/start-menu fields are present;
+- required widget/menu fields are present;
 - monitor numbers are within the connected monitor count;
 - URLs use HTTP, HTTPS, or `file:`;
 - no unknown or duplicate fields exist.
@@ -36,12 +36,12 @@ Use `--verbose` and inspect `[EmbedCheck]` / `[Window]` output. Confirm:
 
 The host periodically reconciles native geometry. A repeated geometry error usually indicates a Windows desktop-host or DPI interaction, not a URL problem.
 
-## Start menu does not remain visible
+## Menu does not remain visible
 
-`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--show` recreates it. Test with:
+`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--show-menu` recreates it. Test with:
 
 ```powershell
-UltraLightRenderer.exe --show
+UltraLightRenderer.exe --show-menu
 UltraLightRenderer.exe --status-all
 ```
 

@@ -6,7 +6,7 @@ Use one top-level section per file. The loader combines sections across files; i
 
 - `wallpaper`: an array of wallpaper profiles.
 - `widgets`: an array of widget definitions.
-- `start-menu`: one start-menu definition.
+- `menu`: one menu definition.
 
 Add at least one section. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
 
@@ -14,7 +14,7 @@ See [`README.md`](README.md) for the files in this directory and [`schema.json`]
 
 ## URLs
 
-Add `url` to each wallpaper, widget, and start-menu definition. The loader accepts `http`, `https`, and `file` schemes. It adds `https://` to a value without a scheme.
+Add `url` to each wallpaper, widget, and menu definition. The loader accepts `http`, `https`, and `file` schemes. It adds `https://` to a value without a scheme.
 
 ```json
 "url": "https://example.com/ui"
@@ -86,18 +86,18 @@ Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bott
 - Set `size-scaled: false` to express dimensions in pixels.
 - Widgets use `transparent: true` and `thread-group: widgets` when you omit those fields.
 
-## Start menu
+## Menu
 
-Give `start-menu` the same geometry and URL fields as a widget. Add these fields when needed:
+Give `menu` the same geometry and URL fields as a widget. Add these fields when needed:
 
 | Field | Required | Default | Meaning |
 | --- | --- | --- | --- |
 | `auto-hide` | No | `true` | Hide when another, non-owned foreground window becomes active. |
 | `hidden-behavior` | No | `none` | `none`, `pause`/`suspend`, or `unload`. |
 | `transparent` | No | `true` | Transparent Ultralight window. |
-| `thread-group` | No | `start-menu` | Runtime group. |
+| `thread-group` | No | `menu` | Runtime group. |
 
-`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--show` creates it again.
+`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--show-menu` creates it again.
 
 ## Thread groups and reload
 

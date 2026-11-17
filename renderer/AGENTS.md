@@ -2,7 +2,7 @@
 
 ## Scope
 
-This directory contains the Windows desktop host for Ultralight-rendered wallpapers, widgets, and start menus. Keep changes inside `renderer/` unless a task explicitly requires repository-level updates.
+This directory contains the Windows desktop host for Ultralight-rendered wallpapers, widgets, and menus. Keep changes inside `renderer/` unless a task explicitly requires repository-level updates.
 
 ## Project shape
 
@@ -16,10 +16,10 @@ This directory contains the Windows desktop host for Ultralight-rendered wallpap
 ## Runtime model
 
 - `Program` parses startup options or sends one runtime command.
-- `RendererConfiguration` loads one or more JSON files. Each top-level section (`wallpaper`, `widgets`, `start-menu`) may occur in only one file.
+- `RendererConfiguration` loads one or more JSON files. Each top-level section (`wallpaper`, `widgets`, `menu`) may occur in only one file.
 - Equal `thread-group` values share one STA thread and one Ultralight `AppCore` instance.
 - `RuntimeGroupContext` owns group windows, pumps Ultralight, reconciles native geometry, and handles reload/pause state on its owner thread.
-- Wallpapers and widgets embed under the Windows desktop worker window. Start menus remain topmost, non-activating windows managed separately.
+- Wallpapers and widgets embed under the Windows desktop worker window. Menus remain topmost, non-activating windows managed separately.
 - `CommandPipeServer` exposes user-scoped named-pipe control to the already-running instance.
 
 ## Change rules

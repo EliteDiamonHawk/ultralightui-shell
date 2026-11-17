@@ -36,6 +36,25 @@ internal static class UltralightNative
     internal const uint WindowFlagsBorderless = 1u << 0;
     internal const uint WindowFlagsHidden = 1u << 4;
     internal const uint WindowFlagsTransparent = 1u << 5;
+    internal const uint JsApiAttachFlagsNone = 0;
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate IntPtr JsFunctionCallback(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void JsAsyncFunctionCallback(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        IntPtr resolver);
 
     internal const int KeyEventTypeKeyUp = 1;
     internal const int KeyEventTypeRawKeyDown = 2;
@@ -174,5 +193,66 @@ internal static class UltralightNative
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ulDestroyView(IntPtr view);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSAPI([MarshalAs(UnmanagedType.LPUTF8Str)] string rootPath);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyJSAPI(IntPtr api);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulViewAttachJSAPI(
+        IntPtr view,
+        IntPtr api,
+        uint flags,
+        IntPtr originRules,
+        UIntPtr originRuleCount);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewDetachJSAPI(IntPtr view, IntPtr api);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSAPISetConstantString(
+        IntPtr api,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSAPISetConstantJSON(
+        IntPtr api,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string json);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSAPIBindFunction(
+        IntPtr api,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        JsFunctionCallback callback,
+        IntPtr userData,
+        IntPtr destroyUserData);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSAPIBindAsyncFunction(
+        IntPtr api,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        JsAsyncFunctionCallback callback,
+        IntPtr userData,
+        IntPtr destroyUserData);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulJSAPIEmitEventJSON(
+        IntPtr api,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string eventPath,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string argsJson);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSValueStringFromCString(
+        IntPtr context,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
 }
 

@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace UltraLightRenderer;
@@ -47,7 +48,10 @@ public sealed class RuntimeGroupHost : IDisposable
     public void InvokeFullscreenMonitor(IntPtr monitor) => Invoke(context => context.SetFullscreenMonitor(monitor));
     public void InvokeShowMenu() => Invoke(context => context.ShowStartMenu());
     public void InvokeHideMenu() => Invoke(context => context.HideStartMenu());
+    public void InvokeHideWindow(string? id) => Invoke(context => context.SetWindowVisible(id, false));
+    public void InvokeRevealWindow(string? id) => Invoke(context => context.SetWindowVisible(id, true));
     public void InvokeReload() => Invoke(context => context.Reload());
+    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => Invoke(context => context.GetWindowSnapshots());
 
     public void Stop()
     {
@@ -200,6 +204,31 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         return $"{_name}: {paused}; windows=[{windows}]";
     }
 
+    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() =>
+        SnapshotWindows().Select(window => new WindowSnapshot(
+            window.LogicalId,
+            window.Url,
+            _name,
+            window.Kind,
+            window.Spec.Bounds,
+            GetCurrentBounds(window),
+            window.Spec.MonitorNumber,
+            window.IsVisible,
+            window.RendererSuspended,
+            window.State)).ToArray();
+
+    public void SetWindowVisible(string? id, bool visible)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new InvalidOperationException("Window ID is required.");
+        AppWindow? window = SnapshotWindows().FirstOrDefault(item =>
+            string.Equals(item.LogicalId, id, StringComparison.Ordinal));
+        if (window == null)
+            throw new InvalidOperationException($"Unknown window ID: {id}");
+        window.DesiredVisible = visible;
+        ApplyWindowVisibility(window);
+    }
+
     public void SetPaused(bool paused)
     {
         _paused = paused;
@@ -212,6 +241,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             {
                 if (paused) _startMenuController.Hide(window);
                 else ApplyStartMenuVisibility(window);
+            }
+            else
+            {
+                ApplyWindowVisibility(window);
             }
         }
         _timer.Interval = paused ? 1000 : 16;
@@ -356,6 +389,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             if (spec.Kind is WindowKind.Wallpaper or WindowKind.Widget)
             {
                 _embedder.Embed(window);
+                window.IsVisible = true;
             }
             else
             {
@@ -381,6 +415,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         _desiredStartMenuVisible = visible;
         AppWindow window = CreateWindow(spec);
+        window.DesiredVisible = visible;
         lock (_windowSync)
         {
             _registry.Add(window);
@@ -393,7 +428,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private void ApplyStartMenuVisibility(AppWindow window)
     {
-        if (_desiredStartMenuVisible && !_paused)
+        if (_desiredStartMenuVisible && window.DesiredVisible && !_paused)
         {
             if (window.RendererSuspended)
             {
@@ -401,16 +436,48 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 window.RendererSuspended = false;
             }
             _startMenuController.Show(window);
+            window.IsVisible = true;
         }
         else
         {
             _startMenuController.Hide(window);
+            window.IsVisible = false;
             if (window.Spec.HiddenBehavior == StartMenuHiddenBehavior.Pause && !_paused)
             {
                 _runtime.TrySetSuspended(window, true);
                 window.RendererSuspended = true;
             }
         }
+    }
+
+    private void ApplyWindowVisibility(AppWindow window)
+    {
+        if (window.Kind == WindowKind.StartMenu)
+        {
+            ApplyStartMenuVisibility(window);
+            return;
+        }
+
+        if (window.DesiredVisible && !_paused)
+        {
+            NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
+            window.IsVisible = true;
+        }
+        else
+        {
+            NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_HIDE);
+            window.IsVisible = false;
+        }
+    }
+
+    private static Rectangle GetCurrentBounds(AppWindow window)
+    {
+        if (window.Hwnd == IntPtr.Zero)
+            return window.Spec.Bounds;
+        NativeMethods.RECT rect = new();
+        return NativeMethods.GetWindowRect(window.Hwnd, out rect)
+            ? Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom)
+            : window.Spec.Bounds;
     }
 
     private void ApplySuspension(AppWindow window)

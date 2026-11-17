@@ -42,3 +42,5 @@ experimental/
 # reslink
 reslink.toml
 reslink.gitignore
+
+plans/

@@ -17,8 +17,8 @@
       "description": "Desktop widget windows.",
       "items": { "$ref": "#/$defs/widget" }
     },
-    "start-menu": {
-      "description": "One start-menu window.",
+    "menu": {
+      "description": "One menu window.",
       "$ref": "#/$defs/startMenu"
     }
   },
@@ -31,6 +31,27 @@
     "threadGroup": {
       "type": "string",
       "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
+    "bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "backend-ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "control-routes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^/v1/" }
+        }
+      }
     },
     "anchor": {
       "type": "string",
@@ -56,6 +77,7 @@
         "url"
       ],
       "properties": {
+        "id": { "$ref": "#/$defs/id" },
         "x": { "type": "number" },
         "y": { "type": "number" },
         "pos-scaled": { "type": "boolean" },
@@ -70,7 +92,8 @@
         "monitor": { "type": "integer", "minimum": 1 },
         "url": { "$ref": "#/$defs/url" },
         "transparent": { "type": "boolean" },
-        "thread-group": { "$ref": "#/$defs/threadGroup" }
+        "thread-group": { "$ref": "#/$defs/threadGroup" },
+        "bridge": { "$ref": "#/$defs/bridge" }
       },
       "allOf": [
         {
@@ -110,6 +133,7 @@
       "additionalProperties": false,
       "required": ["url"],
       "properties": {
+        "id": { "$ref": "#/$defs/id" },
         "url": { "$ref": "#/$defs/url" },
         "mode": {
           "type": "string",
@@ -134,7 +158,8 @@
           }
         },
         "transparent": { "type": "boolean" },
-        "thread-group": { "$ref": "#/$defs/threadGroup" }
+        "thread-group": { "$ref": "#/$defs/threadGroup" },
+        "bridge": { "$ref": "#/$defs/bridge" }
       }
     },
     "startMenu": {

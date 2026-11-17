@@ -15,15 +15,20 @@ internal static class Program
             (nameof(OptionsParseAllCommands), OptionsParseAllCommands),
             (nameof(OptionsAllowOmittedGroup), OptionsAllowOmittedGroup),
             (nameof(OptionsRejectMixedCommands), OptionsRejectMixedCommands),
+            (nameof(OptionsAllowNoConfig), OptionsAllowNoConfig),
+            (nameof(OptionsParseWindowAndInspectionCommands), OptionsParseWindowAndInspectionCommands),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
+            (nameof(ConfigurationParsesMenuIdsAndBridge), ConfigurationParsesMenuIdsAndBridge),
+            (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
             (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
             (nameof(CommandProtocolRoundTrips), CommandProtocolRoundTrips)
+            ,(nameof(ControlProtocolRoundTrips), ControlProtocolRoundTrips)
         };
 
         int failures = 0;
@@ -93,6 +98,30 @@ internal static class Program
     private static void OptionsRejectMixedCommands() =>
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--pause", "desktop", "--resume" }));
 
+    private static void OptionsAllowNoConfig()
+    {
+        HostOptions options = HostOptions.Parse(Array.Empty<string>());
+        AssertEqual(0, options.ConfigPaths.Count);
+        AssertEqual(RendererCommandKind.None, options.Command.Kind);
+    }
+
+    private static void OptionsParseWindowAndInspectionCommands()
+    {
+        HostOptions hide = HostOptions.Parse(new[] { "--hide", "widget-1" });
+        AssertEqual(RendererCommandKind.HideWindow, hide.Command.Kind);
+        AssertEqual("widget-1", hide.Command.TargetId);
+
+        HostOptions reveal = HostOptions.Parse(new[] { "--reveal=widget-1" });
+        AssertEqual(RendererCommandKind.RevealWindow, reveal.Command.Kind);
+        AssertEqual("widget-1", reveal.Command.TargetId);
+
+        HostOptions show = HostOptions.Parse(new[] { "--show", "windows" });
+        AssertEqual(RendererCommandKind.Show, show.Command.Kind);
+        AssertEqual("windows", show.Command.Topic);
+
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show" }));
+    }
+
     private static void ConfigurationMergesDistinctSections()
     {
         string wallpaper = WriteTemp("{\"wallpaper\":[{\"url\":\"example.test\",\"mode\":\"span\"}]}");
@@ -117,12 +146,12 @@ internal static class Program
 
     private static void ConfigurationAppliesDefaultGroups()
     {
-        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"start-menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}}");
+        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}}");
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
             AssertEqual("widgets", configuration.Widgets[0].ThreadGroup);
-            AssertEqual("start-menu", configuration.StartMenu!.ThreadGroup);
+            AssertEqual("menu", configuration.Menu!.ThreadGroup);
         }
         finally { Delete(path); }
     }
@@ -141,6 +170,26 @@ internal static class Program
     private static void ConfigurationRejectsUnknownFields()
     {
         string path = WriteTemp("{\"widgets\":[],\"unknown\":[]}");
+        try { AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { path })); }
+        finally { Delete(path); }
+    }
+
+    private static void ConfigurationParsesMenuIdsAndBridge()
+    {
+        string path = WriteTemp("{\"menu\":{\"id\":\"main.menu\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"enabled\":true,\"backend-ids\":[\"cpu\"],\"control-routes\":[\"/v1/windows/{id}/reveal\"]}}}");
+        try
+        {
+            RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
+            AssertEqual("main.menu", configuration.Menu!.Id);
+            AssertTrue(configuration.Menu.Bridge!.Enabled == true);
+            AssertEqual("cpu", configuration.Menu.Bridge.BackendIds.Single());
+        }
+        finally { Delete(path); }
+    }
+
+    private static void ConfigurationRejectsNonAsciiIds()
+    {
+        string path = WriteTemp("{\"widgets\":[{\"id\":\"café\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}]}");
         try { AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { path })); }
         finally { Delete(path); }
     }
@@ -175,6 +224,23 @@ internal static class Program
         AssertTrue(RendererCommandProtocol.TryParse(json, out RendererCommand? parsed));
         AssertEqual(RendererCommandKind.Reload, parsed!.Kind);
         AssertEqual("desktop", parsed.Group);
+    }
+
+    private static void ControlProtocolRoundTrips()
+    {
+        string id = Guid.NewGuid().ToString("D");
+        AssertTrue(ControlPipeCodec.TryParseRequest(
+            $"{{\"id\":\"{id}\",\"method\":\"GET\",\"path\":\"/v1/windows\",\"body\":null}}",
+            out ControlRequest? request,
+            out ControlError? error));
+        AssertEqual(null, error);
+        AssertEqual("GET", request!.Method);
+        AssertEqual("/v1/windows", request.Path);
+
+        string response = ControlPipeCodec.Serialize(new ControlResponse(id, 200, new { ok = true }));
+        AssertTrue(ControlPipeCodec.TryParseResponse(response, out ControlResponse? parsed));
+        AssertEqual(id, parsed!.Id);
+        AssertEqual(200, parsed.Status);
     }
 
     private static string WriteTemp(string content)

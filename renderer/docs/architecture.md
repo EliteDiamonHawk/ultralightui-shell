@@ -25,15 +25,15 @@ Paused groups reduce their timer interval to 1000 ms and stop pumping Ultralight
 
 - Wallpaper: virtual-screen (`span`), per-monitor (`all`), or one selected monitor (`single`).
 - Widget: monitor-relative geometry resolved from anchor, position scaling, and size scaling.
-- Start menu: widget-like geometry with visibility and hidden-behavior state.
+- Menu: widget-like geometry with visibility and hidden-behavior state.
 
 `UltralightRuntime` creates borderless, hidden windows, panels, and views, loads each URL, then shows each window when ready.
 
 ## Native placement
 
-Wallpaper and widget windows are embedded below the Windows desktop worker window through `DesktopEmbedder`. Geometry is checked against actual client bounds and repaired periodically. Start menus use `StartMenuWindowController`, remain topmost, and are shown without activation.
+Wallpaper and widget windows are embedded below the Windows desktop worker window through `DesktopEmbedder`. Geometry is checked against actual client bounds and repaired periodically. Menus use the menu window controller, remain topmost, and are shown without activation.
 
-The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend wallpaper/widget views on their matching monitor. Start-menu auto-hide ignores foreground windows owned by the renderer process.
+The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend wallpaper/widget views on their matching monitor. Menu auto-hide ignores foreground windows owned by the renderer process.
 
 ## Reload behavior
 

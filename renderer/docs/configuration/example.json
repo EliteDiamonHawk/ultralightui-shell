@@ -26,7 +26,7 @@
       "thread-group": "desktop"
     }
   ],
-  "start-menu": {
+  "menu": {
     "x": 50,
     "y": 50,
     "pos-scaled": true,
@@ -35,10 +35,10 @@
     "width": 820,
     "height": 620,
     "monitor": 1,
-    "url": "https://example.com/start-menu",
+    "url": "https://example.com/menu",
     "transparent": true,
     "auto-hide": true,
     "hidden-behavior": "pause",
-    "thread-group": "start-menu"
+    "thread-group": "menu"
   }
 }

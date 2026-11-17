@@ -22,8 +22,9 @@ public sealed class UltralightRuntime : IDisposable
         stage = "runtime file validation";
         string basePath = AppContext.BaseDirectory;
         RuntimeLayout layout = RuntimeLayout.Resolve(ultralightRoot, basePath);
+        layout.Paths.EnsureWritableLayout();
         layout.Validate();
-        UltralightNative.ConfigureLibraryDirectory(layout.LibraryDirectory);
+        UltralightNative.ConfigureLibraryDirectory(layout.Paths.LibraryDirectory);
 
         stage = "AppCore creation";
         IntPtr settings = UltralightNative.ulCreateSettings();
@@ -32,7 +33,7 @@ public sealed class UltralightRuntime : IDisposable
 
         IntPtr developerName = CreateString("UltraLightRenderer");
         IntPtr appName = CreateString("ultralightrenderer");
-        IntPtr filesystemPath = CreateString(layout.FileSystemPath);
+        IntPtr filesystemPath = CreateString(layout.Paths.UltralightFileSystemPath);
         try
         {
             UltralightNative.ulSettingsSetDeveloperName(settings, developerName);
@@ -72,6 +73,7 @@ public sealed class UltralightRuntime : IDisposable
 
         IntPtr panel = IntPtr.Zero;
         IntPtr view = IntPtr.Zero;
+        RendererJsBridge? bridge = null;
         try
         {
             IntPtr hwnd = UltralightNative.ulWindowGetNativeHandle(window);
@@ -102,6 +104,12 @@ public sealed class UltralightRuntime : IDisposable
             if (view == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight view could not be created: {spec.LogicalId}");
 
+            if (spec.Bridge?.IsEnabled(spec.Url) == true)
+            {
+                bridge = new RendererJsBridge(spec);
+                bridge.Attach(view);
+            }
+
             IntPtr url = CreateString(spec.Url);
             try
             {
@@ -112,10 +120,11 @@ public sealed class UltralightRuntime : IDisposable
                 DestroyString(url);
             }
 
-            return new AppWindow(spec, timeout, window, panel, view, hwnd);
+            return new AppWindow(spec, timeout, window, panel, view, hwnd, bridge);
         }
         catch
         {
+            bridge?.Dispose();
             DestroyWindow(window, panel, view);
             throw;
         }
@@ -148,6 +157,8 @@ public sealed class UltralightRuntime : IDisposable
 
     public void DestroyWindow(AppWindow appWindow)
     {
+        appWindow.JsBridge?.Dispose();
+        appWindow.JsBridge = null;
         DestroyWindow(appWindow.UlWindow, appWindow.UlPanel, appWindow.UlView);
         appWindow.UlWindow = IntPtr.Zero;
         appWindow.UlPanel = IntPtr.Zero;
@@ -200,36 +211,29 @@ public sealed class UltralightRuntime : IDisposable
     }
 }
 
-internal sealed record RuntimeLayout(string LibraryDirectory, string FileSystemPath)
+internal sealed record RuntimeLayout(RendererPaths Paths)
 {
     private static readonly string[] RequiredLibraries =
         { "AppCore.dll", "Ultralight.dll", "UltralightCore.dll", "WebCore.dll" };
 
     internal static RuntimeLayout Resolve(string? ultralightRoot, string basePath)
     {
-        if (string.IsNullOrWhiteSpace(ultralightRoot))
-        {
-            string bundledFileSystemPath = Path.Combine(basePath, "assets");
-            return new RuntimeLayout(basePath, bundledFileSystemPath);
-        }
-
-        string root = Path.GetFullPath(ultralightRoot);
-        return new RuntimeLayout(Path.Combine(root, "bin"), root);
+        return new RuntimeLayout(RendererPaths.Resolve(ultralightRoot));
     }
 
     internal void Validate()
     {
         foreach (string library in RequiredLibraries)
         {
-            string path = Path.Combine(LibraryDirectory, library);
+            string path = Path.Combine(Paths.LibraryDirectory, library);
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Ultralight runtime file is missing: {path}", path);
         }
 
-        if (!Directory.Exists(FileSystemPath))
-            throw new DirectoryNotFoundException($"Ultralight filesystem root is missing: {FileSystemPath}");
+        if (!Directory.Exists(Paths.UltralightFileSystemPath))
+            throw new DirectoryNotFoundException($"Ultralight filesystem root is missing: {Paths.UltralightFileSystemPath}");
 
-        string resourcesPath = Path.Combine(FileSystemPath, "resources");
+        string resourcesPath = Path.Combine(Paths.UltralightFileSystemPath, "resources");
         if (!Directory.Exists(resourcesPath))
             throw new DirectoryNotFoundException($"Ultralight resources directory is missing: {resourcesPath}");
     }
@@ -248,7 +252,8 @@ public sealed class AppWindow
         IntPtr ulWindow,
         IntPtr ulPanel,
         IntPtr ulView,
-        IntPtr hwnd)
+        IntPtr hwnd,
+        RendererJsBridge? jsBridge = null)
     {
         LogicalId = spec.LogicalId;
         Url = spec.Url;
@@ -260,6 +265,7 @@ public sealed class AppWindow
         UlPanel = ulPanel;
         UlView = ulView;
         Hwnd = hwnd;
+        JsBridge = jsBridge;
     }
 
     public string LogicalId { get; }
@@ -275,6 +281,7 @@ public sealed class AppWindow
     public bool DesiredSuspended { get; internal set; }
     public bool RendererSuspended { get; internal set; }
     public bool IsVisible { get; internal set; }
+    public bool DesiredVisible { get; internal set; } = true;
     public bool TopmostPlacementApplied { get; internal set; }
     public WindowKind Kind => Spec.Kind;
     public AppWindowState State { get; internal set; } = AppWindowState.Pending;
@@ -282,6 +289,7 @@ public sealed class AppWindow
     public string? FailureReason { get; internal set; }
     public int OwnerThreadId { get; internal set; }
     public Func<Action, bool>? OwnerInvoker { get; internal set; }
+    internal RendererJsBridge? JsBridge { get; set; }
     internal IntPtr UlWindow { get; set; }
     internal IntPtr UlPanel { get; set; }
     internal IntPtr UlView { get; set; }
