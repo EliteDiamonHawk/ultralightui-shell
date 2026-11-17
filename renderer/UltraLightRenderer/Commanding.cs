@@ -104,7 +104,7 @@ public sealed class HostOptions
                 case "--show":
                     SetCommand(ref command, new(RendererCommandKind.Show, Topic: NextRequiredTopic(args, ref index, inlineValue, option)), option);
                     break;
-                case "--show-menu":
+                case "--reveal-menu":
                     SetCommand(ref command, new(RendererCommandKind.ShowMenu), option);
                     break;
                 case "--hide-menu":
@@ -160,7 +160,7 @@ public sealed class HostOptions
 
         Usage:
           UltraLightRenderer.exe [--config <path> ...] [options]
-          UltraLightRenderer.exe --show-menu | --hide-menu
+          UltraLightRenderer.exe --reveal-menu | --hide-menu
           UltraLightRenderer.exe --hide <id> | --reveal <id>
           UltraLightRenderer.exe --show pipes|config|windows|paths
           UltraLightRenderer.exe --pause [group] | --pause-all
@@ -179,7 +179,7 @@ public sealed class HostOptions
           --verbose                      Log embedding diagnostics.
 
         Runtime commands:
-          --show-menu, --hide-menu       Show or hide configured menu.
+          --reveal-menu, --hide-menu     Reveal or hide configured menu.
           --hide <id>, --reveal <id>     Hide or reveal one window.
           --show <topic>                 Show pipes, config, windows, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.

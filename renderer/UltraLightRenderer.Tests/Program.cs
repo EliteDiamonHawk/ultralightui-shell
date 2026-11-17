@@ -17,6 +17,7 @@ internal static class Program
             (nameof(OptionsRejectMixedCommands), OptionsRejectMixedCommands),
             (nameof(OptionsAllowNoConfig), OptionsAllowNoConfig),
             (nameof(OptionsParseWindowAndInspectionCommands), OptionsParseWindowAndInspectionCommands),
+            (nameof(OptionsParseMenuCommands), OptionsParseMenuCommands),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
@@ -120,6 +121,13 @@ internal static class Program
         AssertEqual("windows", show.Command.Topic);
 
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show" }));
+    }
+
+    private static void OptionsParseMenuCommands()
+    {
+        HostOptions reveal = HostOptions.Parse(new[] { "--reveal-menu" });
+        AssertEqual(RendererCommandKind.ShowMenu, reveal.Command.Kind);
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show-menu" }));
     }
 
     private static void ConfigurationMergesDistinctSections()

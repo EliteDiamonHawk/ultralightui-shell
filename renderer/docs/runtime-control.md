@@ -32,7 +32,7 @@ Startup options:
 Commands connect to the already-running user-scoped instance. They do not load config files.
 
 ```powershell
-UltraLightRenderer.exe --show-menu
+UltraLightRenderer.exe --reveal-menu
 UltraLightRenderer.exe --hide-menu
 UltraLightRenderer.exe --show windows
 UltraLightRenderer.exe --show config
@@ -48,7 +48,7 @@ UltraLightRenderer.exe --reload-all
 UltraLightRenderer.exe --exit
 ```
 
-`--show-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
+`--reveal-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
 
 The tray menu exposes the same common actions.
 
