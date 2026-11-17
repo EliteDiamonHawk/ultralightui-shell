@@ -41,8 +41,8 @@ The host periodically reconciles native geometry. A repeated geometry error usua
 `auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--reveal-menu` recreates it. Test with:
 
 ```powershell
-UltraLightRenderer.exe --reveal-menu
-UltraLightRenderer.exe --status-all
+Aether.exe --reveal-menu
+Aether.exe --status-all
 ```
 
 ## Reload rejected

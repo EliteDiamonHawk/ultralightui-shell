@@ -6,8 +6,8 @@ This directory contains the Windows desktop host for Ultralight-rendered wallpap
 
 ## Project shape
 
-- `UltraLightRenderer/`: production host and native Windows/Ultralight integration.
-- `UltraLightRenderer.Tests/`: lightweight executable test harness.
+- `Aether/`: production host and native Windows/Ultralight integration.
+- `Aether.Tests/`: lightweight executable test harness.
 - `scripts/`: PowerShell wrappers for build, run, publish, and test.
 - `third_party/`: vendored or locally installed dependencies. The Ultralight SDK is ignored by Git.
 - `docs/`: renderer-specific configuration, operations, architecture, and development notes.
@@ -44,7 +44,7 @@ From `renderer/`:
 Parser and policy tests can run without native SDK files:
 
 ```powershell
-dotnet run --project .\UltraLightRenderer.Tests\UltraLightRenderer.Tests.csproj -p:IncludeUltralight=false
+dotnet run --project .\Aether.Tests\Aether.Tests.csproj -p:IncludeUltralight=false
 ```
 
 For native startup, install the pinned Ultralight SDK under `third_party\ultralight` or pass `-p:UltralightSdkRoot=<path>` / `--ultralight-root <path>` as documented in `docs/development.md`.

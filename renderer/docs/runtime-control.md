@@ -5,9 +5,9 @@ Run the executable from its published output directory, or use the PowerShell wr
 ## Start
 
 ```powershell
-UltraLightRenderer.exe --config .\example.json
-UltraLightRenderer.exe --config .\wallpaper.json --config .\widgets.json
-UltraLightRenderer.exe --config .\example.json --ultralight-root C:\vendor\ultralight
+Aether.exe --config .\example.json
+Aether.exe --config .\wallpaper.json --config .\widgets.json
+Aether.exe --config .\example.json --ultralight-root C:\vendor\ultralight
 ```
 
 Use `--ultralight-root <path>` to load Ultralight from an external installation. The
@@ -32,20 +32,20 @@ Startup options:
 Commands connect to the already-running user-scoped instance. They do not load config files.
 
 ```powershell
-UltraLightRenderer.exe --reveal-menu
-UltraLightRenderer.exe --hide-menu
-UltraLightRenderer.exe --show windows
-UltraLightRenderer.exe --show config
-UltraLightRenderer.exe --show paths
-UltraLightRenderer.exe --pause desktop
-UltraLightRenderer.exe --resume desktop
-UltraLightRenderer.exe --status desktop
-UltraLightRenderer.exe --reload desktop
-UltraLightRenderer.exe --pause-all
-UltraLightRenderer.exe --resume-all
-UltraLightRenderer.exe --status-all
-UltraLightRenderer.exe --reload-all
-UltraLightRenderer.exe --exit
+Aether.exe --reveal-menu
+Aether.exe --hide-menu
+Aether.exe --show windows
+Aether.exe --show config
+Aether.exe --show paths
+Aether.exe --pause desktop
+Aether.exe --resume desktop
+Aether.exe --status desktop
+Aether.exe --reload desktop
+Aether.exe --pause-all
+Aether.exe --resume-all
+Aether.exe --status-all
+Aether.exe --reload-all
+Aether.exe --exit
 ```
 
 `--reveal-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.

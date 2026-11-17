@@ -1,6 +1,6 @@
-# UltraLightRenderer docs
+# Aether docs
 
-UltraLightRenderer hosts Ultralight pages as Windows wallpapers, widgets, and menus. The project targets Windows x64, .NET 9, and WinForms.
+Aether hosts Ultralight pages as Windows wallpapers, widgets, and menus. The project targets Windows x64, .NET 9, and WinForms.
 
 ## Run it
 

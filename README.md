@@ -1,6 +1,6 @@
-# UltraLightRenderer
+# Aether
 
-UltraLightRenderer creates ultralight engine based wallpapers, desktop widgets, and start menus to support user created html, css, and js based UI. 
+Aether creates ultralight engine based wallpapers, desktop widgets, and start menus to support user created html, css, and js based UI.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ Install the pinned SDK into `third_party\ultralight` or set `ULTRALIGHT_SDK_ROOT
 For configuration and parser tests without native SDK files:
 
 ```powershell
-dotnet run --project .\UltraLightRenderer.Tests\UltraLightRenderer.Tests.csproj -p:IncludeUltralight=false
+dotnet run --project .\Aether.Tests\Aether.Tests.csproj -p:IncludeUltralight=false
 ```
 
 ## Configuration
@@ -74,7 +74,7 @@ Omitting `thread-group` uses the section default: `wallpaper`, `widgets`, or `st
 Launch with:
 
 ```powershell
-UltraLightRenderer.exe --config .\wallpaper.json --config .\widgets.json --config .\start-menu.json
+Aether.exe --config .\wallpaper.json --config .\widgets.json --config .\start-menu.json
 ```
 
 ## Runtime control
@@ -82,17 +82,17 @@ UltraLightRenderer.exe --config .\wallpaper.json --config .\widgets.json --confi
 Commands communicate with the running user-scoped instance and do not load configuration:
 
 ```powershell
-UltraLightRenderer.exe --show
-UltraLightRenderer.exe --hide
-UltraLightRenderer.exe --pause desktop
-UltraLightRenderer.exe --resume desktop
-UltraLightRenderer.exe --status desktop
-UltraLightRenderer.exe --reload desktop
-UltraLightRenderer.exe --pause-all
-UltraLightRenderer.exe --resume-all
-UltraLightRenderer.exe --status-all
-UltraLightRenderer.exe --reload-all
-UltraLightRenderer.exe --exit
+Aether.exe --show
+Aether.exe --hide
+Aether.exe --pause desktop
+Aether.exe --resume desktop
+Aether.exe --status desktop
+Aether.exe --reload desktop
+Aether.exe --pause-all
+Aether.exe --resume-all
+Aether.exe --status-all
+Aether.exe --reload-all
+Aether.exe --exit
 ```
 
 For a process with exactly one group, the group name may be omitted from `--pause`, `--resume`, `--status`, and `--reload`.

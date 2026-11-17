@@ -34,7 +34,7 @@ $env:ULTRALIGHT_SDK_ROOT = 'C:\vendor\ultralight'
 The MSBuild property also works:
 
 ```powershell
-dotnet build .\UltraLightRenderer.sln -p:UltralightSdkRoot=C:\vendor\ultralight
+dotnet build .\Aether.sln -p:UltralightSdkRoot=C:\vendor\ultralight
 ```
 
 For parser and policy tests that do not need native SDK files, set `IncludeUltralight=false`.
@@ -54,7 +54,7 @@ The scripts default to `Release` for build/publish and `Debug` for run/test. Ext
 
 ## Test style
 
-The test project is an executable harness, not a test framework project. Add deterministic parser, geometry, policy, or lifecycle checks to `UltraLightRenderer.Tests/Program.cs`. Keep native-window tests separate from tests that can run without an SDK.
+The test project is an executable harness, not a test framework project. Add deterministic parser, geometry, policy, or lifecycle checks to `Aether.Tests/Program.cs`. Keep native-window tests separate from tests that can run without an SDK.
 
 Before submitting changes:
 

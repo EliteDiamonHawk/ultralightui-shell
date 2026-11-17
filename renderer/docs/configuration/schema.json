@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "schema.json",
-  "title": "UltraLightRenderer configuration",
-  "description": "Canonical JSON schema for UltraLightRenderer configuration files.",
+  "title": "Aether configuration",
+  "description": "Canonical JSON schema for Aether configuration files.",
   "type": "object",
   "minProperties": 1,
   "additionalProperties": false,
