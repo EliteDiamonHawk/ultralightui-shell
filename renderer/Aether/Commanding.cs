@@ -7,6 +7,7 @@ public enum RendererCommandKind
 {
     None,
     Show,
+    SystemTray,
     ShowMenu,
     HideMenu,
     HideWindow,
@@ -19,13 +20,21 @@ public enum RendererCommandKind
     Exit
 }
 
+public enum SystemTrayAction
+{
+    Toggle,
+    Show,
+    Hide
+}
+
 public sealed record RendererCommand(
     RendererCommandKind Kind,
     string? Group = null,
     bool All = false,
     string? TargetId = null,
     string? Topic = null,
-    IReadOnlyList<string>? ConfigPaths = null);
+    IReadOnlyList<string>? ConfigPaths = null,
+    SystemTrayAction TrayAction = SystemTrayAction.Toggle);
 
 public sealed class HostOptions
 {
@@ -39,6 +48,7 @@ public sealed class HostOptions
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
     public bool Verbose { get; private init; }
     public bool ShowHelp { get; private init; }
+    public SystemTrayAction? InitialSystemTrayAction { get; private init; }
     public RendererCommand Command { get; private init; } = new(RendererCommandKind.None);
 
     public static HostOptions Parse(string[] args)
@@ -51,6 +61,7 @@ public sealed class HostOptions
         IntPtr? controlWriteHandle = null;
         bool verbose = false;
         bool showHelp = false;
+        SystemTrayAction? systemTrayAction = null;
         RendererCommand? command = null;
 
         for (int index = 0; index < args.Length; index++)
@@ -80,6 +91,12 @@ public sealed class HostOptions
                 case "--verbose":
                     EnsureNoCommand(command, option);
                     verbose = true;
+                    break;
+                case "--system-tray":
+                    EnsureNoCommand(command, option);
+                    if (systemTrayAction != null)
+                        throw new OptionException($"{option} cannot be specified more than once.");
+                    systemTrayAction = NextSystemTrayAction(args, ref index, inlineValue, option);
                     break;
                 case "--ultralight-root":
                     EnsureNoCommand(command, option);
@@ -135,7 +152,7 @@ public sealed class HostOptions
 
         if (command != null)
         {
-            if (configPaths.Count > 0 || ultralightRoot != null || verbose || reconcileMs != 250 || startupTimeoutMs != 30_000 || controlReadHandle != null || controlWriteHandle != null)
+            if (configPaths.Count > 0 || ultralightRoot != null || verbose || reconcileMs != 250 || startupTimeoutMs != 30_000 || controlReadHandle != null || controlWriteHandle != null || systemTrayAction != null)
                 throw new OptionException("Runtime commands cannot be combined with startup options.");
             return new HostOptions { Command = command };
         }
@@ -151,7 +168,8 @@ public sealed class HostOptions
             ControlWriteHandle = controlWriteHandle,
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
-            Verbose = verbose
+            Verbose = verbose,
+            InitialSystemTrayAction = systemTrayAction
         };
     }
 
@@ -163,6 +181,7 @@ public sealed class HostOptions
           Aether.exe --reveal-menu | --hide-menu
           Aether.exe --hide <id> | --reveal <id>
           Aether.exe --show pipes|config|windows|paths
+          Aether.exe --system-tray [show|hide]
           Aether.exe --pause [group] | --pause-all
           Aether.exe --resume [group] | --resume-all
           Aether.exe --status [group] | --status-all
@@ -177,6 +196,7 @@ public sealed class HostOptions
           --control-read-handle <n>     Inherited control-to-renderer pipe handle.
           --control-write-handle <n>    Inherited renderer-to-control pipe handle.
           --verbose                      Log embedding diagnostics.
+          --system-tray [show|hide]      Set tray visibility; bare flag toggles it.
 
         Runtime commands:
           --reveal-menu, --hide-menu     Reveal or hide configured menu.
@@ -217,6 +237,21 @@ public sealed class HostOptions
         if (value is not ("pipes" or "config" or "windows" or "paths"))
             throw new OptionException($"{option} topic must be pipes, config, windows, or paths.");
         return value;
+    }
+
+    private static SystemTrayAction NextSystemTrayAction(string[] args, ref int index, string? inlineValue, string option)
+    {
+        string? value = inlineValue;
+        if (value == null && index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            value = args[++index];
+        if (string.IsNullOrWhiteSpace(value))
+            return SystemTrayAction.Toggle;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "show" => SystemTrayAction.Show,
+            "hide" => SystemTrayAction.Hide,
+            _ => throw new OptionException($"{option} value must be show or hide.")
+        };
     }
 
     private static string NextRequiredId(string[] args, ref int index, string? inlineValue, string option)

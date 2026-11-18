@@ -23,6 +23,7 @@ Startup options:
 | `--reconcile-ms <n>` | `250` | Native window geometry reconciliation interval. |
 | `--startup-timeout-ms <n>` | `30000` | Per-window Ultralight readiness timeout. |
 | `--verbose` | Off | Embedding and placement diagnostics. |
+| `--system-tray [show\|hide]` | Visible | Set tray visibility. Bare flag toggles it. |
 | `--help`, `-h` | Off | Print usage. |
 
 `--config` paths are converted to absolute paths during parsing. Startup options cannot be combined with runtime commands.
@@ -34,6 +35,9 @@ Commands connect to the already-running user-scoped instance. They do not load c
 ```powershell
 Aether.exe --reveal-menu
 Aether.exe --hide-menu
+Aether.exe --system-tray hide
+Aether.exe --system-tray show
+Aether.exe --system-tray
 Aether.exe --show windows
 Aether.exe --show config
 Aether.exe --show paths
@@ -49,6 +53,12 @@ Aether.exe --exit
 ```
 
 `--reveal-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
+
+`--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
+
+Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags are its command-line wrapper. It accepts one newline-delimited serialized `RendererCommand` per connection and returns `OK ...` or `ERR ...`.
+
+The anonymous parent/control pipe is state-only. It supports only `GET /v1/pipes`, returning control-channel state and backend snapshots. Other `/v1/*` routes return `404`.
 
 The tray menu exposes the same common actions.
 

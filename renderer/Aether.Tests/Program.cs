@@ -18,6 +18,7 @@ internal static class Program
             (nameof(OptionsAllowNoConfig), OptionsAllowNoConfig),
             (nameof(OptionsParseWindowAndInspectionCommands), OptionsParseWindowAndInspectionCommands),
             (nameof(OptionsParseMenuCommands), OptionsParseMenuCommands),
+            (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
@@ -130,6 +131,21 @@ internal static class Program
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show-menu" }));
     }
 
+    private static void OptionsParseSystemTrayCommands()
+    {
+        HostOptions show = HostOptions.Parse(new[] { "--system-tray", "show" });
+        AssertEqual(SystemTrayAction.Show, show.InitialSystemTrayAction);
+
+        HostOptions hide = HostOptions.Parse(new[] { "--system-tray=hide" });
+        AssertEqual(SystemTrayAction.Hide, hide.InitialSystemTrayAction);
+
+        HostOptions toggle = HostOptions.Parse(new[] { "--system-tray" });
+        AssertEqual(SystemTrayAction.Toggle, toggle.InitialSystemTrayAction);
+
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--system-tray", "invalid" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--system-tray", "show", "--system-tray", "hide" }));
+    }
+
     private static void ConfigurationMergesDistinctSections()
     {
         string wallpaper = WriteTemp("{\"wallpaper\":[{\"url\":\"example.test\",\"mode\":\"span\"}]}");
@@ -232,18 +248,23 @@ internal static class Program
         AssertTrue(RendererCommandProtocol.TryParse(json, out RendererCommand? parsed));
         AssertEqual(RendererCommandKind.Reload, parsed!.Kind);
         AssertEqual("desktop", parsed.Group);
+
+        json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.SystemTray, TrayAction: SystemTrayAction.Hide));
+        AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
+        AssertEqual(RendererCommandKind.SystemTray, parsed!.Kind);
+        AssertEqual(SystemTrayAction.Hide, parsed.TrayAction);
     }
 
     private static void ControlProtocolRoundTrips()
     {
         string id = Guid.NewGuid().ToString("D");
         AssertTrue(ControlPipeCodec.TryParseRequest(
-            $"{{\"id\":\"{id}\",\"method\":\"GET\",\"path\":\"/v1/windows\",\"body\":null}}",
+            $"{{\"id\":\"{id}\",\"method\":\"GET\",\"path\":\"/v1/pipes\",\"body\":null}}",
             out ControlRequest? request,
             out ControlError? error));
         AssertEqual(null, error);
         AssertEqual("GET", request!.Method);
-        AssertEqual("/v1/windows", request.Path);
+        AssertEqual("/v1/pipes", request.Path);
 
         string response = ControlPipeCodec.Serialize(new ControlResponse(id, 200, new { ok = true }));
         AssertTrue(ControlPipeCodec.TryParseResponse(response, out ControlResponse? parsed));

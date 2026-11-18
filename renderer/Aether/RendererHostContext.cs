@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Aether;
@@ -58,7 +57,7 @@ public sealed class RendererHostContext : ApplicationContext
                 Text = "Aether",
                 Icon = SystemIcons.Application,
                 ContextMenuStrip = _menu,
-                Visible = true
+                Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
             };
         }
         catch
@@ -132,6 +131,7 @@ public sealed class RendererHostContext : ApplicationContext
             return command.Kind switch
             {
                 RendererCommandKind.ApplyConfig => ApplyConfiguration(command.ConfigPaths ?? Array.Empty<string>()),
+                RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.ShowMenu => SetMenuVisibility(true),
                 RendererCommandKind.HideMenu => SetMenuVisibility(false),
                 RendererCommandKind.HideWindow => SetWindowVisibility(command.TargetId, false),
@@ -141,7 +141,7 @@ public sealed class RendererHostContext : ApplicationContext
                 RendererCommandKind.Pause => ApplyPause(command, true),
                 RendererCommandKind.Resume => ApplyPause(command, false),
                 RendererCommandKind.Status => GetStatus(command),
-                RendererCommandKind.Reload => ReloadConfiguration(),
+                RendererCommandKind.Reload => ReloadConfiguration(command),
                 _ => "ERR Unsupported runtime command."
             };
         }
@@ -177,11 +177,17 @@ public sealed class RendererHostContext : ApplicationContext
         return "OK configuration applied";
     }
 
-    private string ReloadConfiguration()
+    private string ReloadConfiguration(RendererCommand command)
     {
         if (_configPaths.Count == 0)
             return "ERR No active configuration.";
-        return ApplyConfiguration(_configPaths);
+        if (command.All)
+            return ApplyConfiguration(_configPaths);
+
+        IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
+        foreach (RuntimeGroupHost group in targets)
+            group.InvokeReload();
+        return $"OK reloaded {targets.Count} group(s)";
     }
 
     private string SetMenuVisibility(bool visible)
@@ -193,6 +199,23 @@ public sealed class RendererHostContext : ApplicationContext
             return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
         if (visible) host.InvokeShowMenu(); else host.InvokeHideMenu();
         return $"OK {(visible ? "showed" : "hid")} menu";
+    }
+
+    private string SetSystemTrayVisibility(SystemTrayAction action)
+    {
+        bool visible = false;
+        _dispatcher.Invoke(() =>
+        {
+            visible = action switch
+            {
+                SystemTrayAction.Show => true,
+                SystemTrayAction.Hide => false,
+                SystemTrayAction.Toggle => !_tray.Visible,
+                _ => throw new ArgumentOutOfRangeException(nameof(action))
+            };
+            _tray.Visible = visible;
+        });
+        return $"OK system tray {(visible ? "shown" : "hidden")}";
     }
 
     private string SetWindowVisibility(string? id, bool visible)
@@ -228,85 +251,13 @@ public sealed class RendererHostContext : ApplicationContext
 
     private ControlResponse HandleControlRequest(ControlRequest request)
     {
-        string[] parts = request.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (request.Method == "GET" && request.Path == "/v1/config")
-            return new ControlResponse(request.Id, 200, BuildConfigPayload());
-        if (request.Method == "POST" && request.Path == "/v1/config")
-        {
-            if (!TryGetFiles(request.Body, out IReadOnlyList<string> files, out string? error))
-                return new ControlResponse(request.Id, 400, Error: new ControlError("config_body_invalid", error!));
-            string result = ApplyConfiguration(files);
-            return result.StartsWith("OK ", StringComparison.Ordinal)
-                ? new ControlResponse(request.Id, 200, new { applied = true, files })
-                : new ControlResponse(request.Id, 422, Error: new ControlError("config_rejected", result[4..]));
-        }
-        if (request.Method == "GET" && request.Path == "/v1/windows")
-            return new ControlResponse(request.Id, 200, new { windows = GetWindowSnapshots() });
-        if (request.Method == "GET" && request.Path == "/v1/paths")
-            return new ControlResponse(request.Id, 200, RendererPaths.Resolve(_options.UltralightRoot));
         if (request.Method == "GET" && request.Path == "/v1/pipes")
             return new ControlResponse(request.Id, 200, new
             {
                 control = _controlChannel?.State ?? "standalone",
                 backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>()
             });
-        if (parts.Length == 4 && parts[0] == "v1" && parts[1] == "windows" && request.Method == "POST")
-        {
-            string id = Uri.UnescapeDataString(parts[2]);
-            bool visible = parts[3] == "reveal";
-            if (parts[3] is not ("hide" or "reveal"))
-                return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown window action."));
-            string result = SetWindowVisibility(id, visible);
-            return result.StartsWith("OK ", StringComparison.Ordinal)
-                ? new ControlResponse(request.Id, 200, new { id, visible })
-                : new ControlResponse(request.Id, 404, Error: new ControlError("window_not_found", result[4..]));
-        }
-        if (request.Method == "POST" && request.Path == "/v1/menu/show")
-            return ControlMenuResponse(request, true);
-        if (request.Method == "POST" && request.Path == "/v1/menu/hide")
-            return ControlMenuResponse(request, false);
-        if (parts.Length == 4 && parts[0] == "v1" && parts[1] == "backends" && parts[3] == "connect")
-            return new ControlResponse(request.Id, 501, Error: new ControlError("backend_transport_unavailable", "Backend connection manager is not initialized."));
-
         return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown control route."));
-    }
-
-    private ControlResponse ControlMenuResponse(ControlRequest request, bool visible)
-    {
-        string result = SetMenuVisibility(visible);
-        return result.StartsWith("OK ", StringComparison.Ordinal)
-            ? new ControlResponse(request.Id, 200, new { visible })
-            : new ControlResponse(request.Id, 404, Error: new ControlError("menu_not_found", result[4..]));
-    }
-
-    private static bool TryGetFiles(JsonElement? body, out IReadOnlyList<string> files, out string? error)
-    {
-        files = Array.Empty<string>();
-        error = null;
-        if (body is not { ValueKind: JsonValueKind.Object } value ||
-            !value.TryGetProperty("files", out JsonElement fileArray) || fileArray.ValueKind != JsonValueKind.Array)
-        {
-            error = "Body must contain a files array.";
-            return false;
-        }
-
-        var paths = new List<string>();
-        foreach (JsonElement item in fileArray.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
-            {
-                error = "Each config file path must be a non-empty string.";
-                return false;
-            }
-            paths.Add(Path.GetFullPath(item.GetString()!));
-        }
-        if (paths.Count == 0)
-        {
-            error = "At least one config file path is required.";
-            return false;
-        }
-        files = paths;
-        return true;
     }
 
     private object BuildConfigPayload() => new

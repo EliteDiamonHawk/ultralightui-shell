@@ -21,8 +21,14 @@ internal static class Program
                     new RendererCommand(RendererCommandKind.ApplyConfig, ConfigPaths: options.ConfigPaths),
                     out int configCommandExitCode))
             {
+                if (options.InitialSystemTrayAction is { } trayAction)
+                    return CommandPipeClient.Send(new RendererCommand(RendererCommandKind.SystemTray, TrayAction: trayAction));
                 return configCommandExitCode;
             }
+
+            if (options.ConfigPaths.Count == 0 && options.InitialSystemTrayAction is { } runtimeTrayAction &&
+                CommandPipeClient.TrySend(new RendererCommand(RendererCommandKind.SystemTray, TrayAction: runtimeTrayAction), out int trayCommandExitCode))
+                return trayCommandExitCode;
 
             ApplicationConfiguration.Initialize();
             using SingleInstanceLease lease = SingleInstanceLease.Acquire();
