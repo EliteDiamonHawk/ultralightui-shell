@@ -25,8 +25,8 @@ public sealed record RendererPaths(
 
         return new RendererPaths(
             root,
-            Path.Combine(root, "renderer"),
-            Path.Combine(root, "renderer", "ultralight"),
+            Path.Combine(root, "Aether"),
+            Path.Combine(root, "Aether", "ultralight"),
             executableBase,
             sdkRoot,
             external ? Path.Combine(sdkRoot, "bin") : executableBase,
