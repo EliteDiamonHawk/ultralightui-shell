@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$PublishScriptPath = Join-Path $PSScriptRoot 'publish.ps1'
+$ProjectPath = Join-Path $RepositoryRoot 'Aether\Aether.csproj'
 $LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 if ([string]::IsNullOrWhiteSpace($LocalAppData)) {
     throw 'Could not resolve the local application-data directory.'
@@ -19,13 +19,18 @@ $InstallationPath = Join-Path $InstallationParent 'installation'
 $StagingPath = Join-Path ([IO.Path]::GetTempPath()) "KhaosShell-Aether-install-$([Guid]::NewGuid().ToString('N'))"
 
 try {
-    & $PublishScriptPath `
-        -Configuration $Configuration `
-        -OutputPath $StagingPath `
-        -NoRestore:$NoRestore `
-        -Arguments $Arguments
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+    $DotnetArguments = @('publish', $ProjectPath, '--configuration', $Configuration, '--output', $StagingPath)
+    if ($NoRestore) { $DotnetArguments += '--no-restore' }
+    $DotnetArguments += $Arguments
+    Push-Location $RepositoryRoot
+    try {
+        & dotnet @DotnetArguments
+        $PublishExitCode = $LASTEXITCODE
+    }
+    finally { Pop-Location }
+
+    if ($PublishExitCode -ne 0) {
+        exit $PublishExitCode
     }
 
     if (-not (Test-Path -LiteralPath $StagingPath -PathType Container)) {
