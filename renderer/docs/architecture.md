@@ -8,7 +8,7 @@ Shutdown reverses those resources: command server, monitors, tray UI, runtime gr
 
 ## Runtime groups
 
-Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. All Ultralight calls, window creation, destruction, reloads, and group state changes are dispatched to that owner thread.
+Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. Aether dispatches Ultralight calls, window creation, destruction, reloads, and group state changes to that owner thread.
 
 `RuntimeGroupContext` runs a 16 ms timer while active. Each tick may:
 
@@ -31,14 +31,14 @@ Paused groups reduce their timer interval to 1000 ms and stop pumping Ultralight
 
 ## Native placement
 
-Wallpaper and widget windows are embedded below the Windows desktop worker window through `DesktopEmbedder`. Geometry is checked against actual client bounds and repaired periodically. Menus use the menu window controller, remain topmost, and are shown without activation.
+Aether embeds wallpaper and widget windows below the Windows desktop worker window through `DesktopEmbedder`. Aether checks their client bounds and repairs geometry on the reconciliation timer. The menu controller keeps menu windows topmost and shows them without activation.
 
 The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend wallpaper/widget views on their matching monitor. Menu auto-hide ignores foreground windows owned by the renderer process.
 
 ## Reload behavior
 
-Reload first parses and resolves a candidate configuration. If validation fails, the current configuration remains active. A group reload replaces that group’s windows. Group membership changes require `--reload-all`; that command creates new groups, disposes removed groups, then reloads all remaining groups.
+Reload parses and resolves a candidate configuration before it changes active windows. If validation fails, Aether keeps the current configuration. A group reload replaces that group's windows. Group membership changes require `--reload-all`; that command creates new groups, disposes removed groups, and reloads the remaining groups.
 
 ## Native boundary
 
-`UltralightNative` contains the C API bindings. `NativeMethods`, `NativeWindowApi`, and `WinEventApi` contain Win32 interop. Keep ownership and thread affinity explicit when changing these layers; failures often surface as invalid handles, geometry mismatch, or shutdown races rather than compile errors.
+`UltralightNative` contains the C API bindings. `NativeMethods`, `NativeWindowApi`, and `WinEventApi` contain Win32 interop. Keep ownership and thread affinity explicit when you change these layers. Failures often appear as invalid handles, geometry mismatches, or shutdown races.

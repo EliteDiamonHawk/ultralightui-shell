@@ -8,10 +8,10 @@ anonymous pipe handles:
 --control-write-handle <uint64>  Aether -> Chronos
 ```
 
-Each frame is one object, maximum 1 MiB. Requests use UUID `id`, uppercase
-`GET`, `POST`, `PUT`, `PATCH`, or `DELETE`, and a `/v1/` path. Responses repeat
-the ID and contain either `body` or structured `error`. Requests correlate
-concurrently and may complete out of order.
+Each frame contains one object and may not exceed 1 MiB. A request uses a UUID
+`id`, an uppercase `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` method, and a
+`/v1/` path. A response repeats the ID and contains either `body` or a
+structured `error`. Requests may complete out of order.
 
 Chronos handles:
 
@@ -20,7 +20,7 @@ Chronos handles:
 - `DELETE /v1/backends/{backend-id}/connect`: grant release.
 - `POST /v1/logs`: durable, redacted renderer event batches.
 
-Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs are
+Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs act as
 idempotency keys for five minutes or 256 entries. Duplicate content replays;
 different content returns `409 request_id_reused`.
 

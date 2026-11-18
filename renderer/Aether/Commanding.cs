@@ -95,19 +95,16 @@ public sealed class HostOptions
                     EnsureNoCommand(command, option);
                     controlWriteHandle = ParseHandle(NextValue(args, ref index, option, inlineValue), option);
                     break;
-                case "--show":
+                case "--list":
                     SetCommand(ref command, new(RendererCommandKind.Show, Topic: NextRequiredTopic(args, ref index, inlineValue, option)), option);
                     break;
-                case "--show-menu":
-                    SetCommand(ref command, new(RendererCommandKind.ShowMenu), option);
-                    break;
-                case "--hide-menu":
-                    SetCommand(ref command, new(RendererCommandKind.HideMenu), option);
+                case "--toggle-menu":
+                    SetCommand(ref command, ParseMenuCommand(args, ref index, inlineValue, option), option);
                     break;
                 case "--hide":
                     SetCommand(ref command, new(RendererCommandKind.HideWindow, TargetId: NextRequiredId(args, ref index, inlineValue, option)), option);
                     break;
-                case "--reveal":
+                case "--show":
                     SetCommand(ref command, new(RendererCommandKind.RevealWindow, TargetId: NextRequiredId(args, ref index, inlineValue, option)), option);
                     break;
                 case "--pause": SetCommand(ref command, new(RendererCommandKind.Pause, NextOptionalGroup(args, ref index, inlineValue)), option); break;
@@ -156,9 +153,9 @@ public sealed class HostOptions
 
         Usage:
           Aether.exe [--config <path> ...] [options]
-          Aether.exe --show-menu | --hide-menu
-          Aether.exe --hide <id> | --reveal <id>
-          Aether.exe --show pipes|config|windows|paths
+          Aether.exe --toggle-menu [show|hide]
+          Aether.exe --hide <id> | --show <id>
+          Aether.exe --list pipes|config|windows|paths
           Aether.exe --system-tray [show|hide]
           Aether.exe --pause [group] | --pause-all
           Aether.exe --resume [group] | --resume-all
@@ -178,9 +175,9 @@ public sealed class HostOptions
           --system-tray [show|hide]      Set tray visibility; bare flag toggles it.
 
         Runtime commands:
-          --show-menu, --hide-menu       Show or hide configured menu.
-          --hide <id>, --reveal <id>     Hide or reveal one window.
-          --show <topic>                 Show pipes, config, windows, or paths as JSON.
+          --toggle-menu [show|hide]      Toggle, show, or hide configured menu.
+          --hide <id>, --show <id>       Hide or show one window.
+          --list <topic>                 List pipes, config, windows, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.
           --resume [group], --resume-all Resume one group or all groups.
           --status [group], --status-all Print one group or all groups.
@@ -216,6 +213,21 @@ public sealed class HostOptions
         if (value is not ("pipes" or "config" or "windows" or "paths"))
             throw new OptionException($"{option} topic must be pipes, config, windows, or paths.");
         return value;
+    }
+
+    private static RendererCommand ParseMenuCommand(string[] args, ref int index, string? inlineValue, string option)
+    {
+        string? value = inlineValue;
+        if (value == null && index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            value = args[++index];
+
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" => new(RendererCommandKind.ToggleMenu),
+            "show" => new(RendererCommandKind.ShowMenu),
+            "hide" => new(RendererCommandKind.HideMenu),
+            _ => throw new OptionException($"{option} value must be show or hide.")
+        };
     }
 
     private static SystemTrayAction NextSystemTrayAction(string[] args, ref int index, string? inlineValue, string option)

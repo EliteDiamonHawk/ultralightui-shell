@@ -6,7 +6,7 @@
 - .NET 9 SDK.
 - Ultralight SDK `2.0.0-beta.2`.
 
-The project targets `net9.0-windows`, x64, and WinForms.
+The project targets `net9.0-windows`, x64, and WinForms. Run the scripts from `renderer/`.
 
 ## SDK layout
 
@@ -22,7 +22,7 @@ renderer/
     resources/
 ```
 
-The SDK directory is ignored by Git. The project validates these files before build when `IncludeUltralight=true`.
+Git ignores the SDK directory. The project checks these files before a build when `IncludeUltralight=true`.
 
 Alternative build-time root:
 
@@ -50,15 +50,15 @@ Run from `renderer/`:
 .\scripts\publish.ps1 -OutputPath .\publish
 ```
 
-The scripts default to `Release` for build/publish and `Debug` for run/test. Extra arguments are forwarded to `dotnet` or the application as appropriate.
+The scripts use `Release` for build/publish and `Debug` for run/test. Extra arguments go to `dotnet` or Aether as the script requires.
 
 ## Test style
 
-The test project is an executable harness, not a test framework project. Add deterministic parser, geometry, policy, or lifecycle checks to `Aether.Tests/Program.cs`. Keep native-window tests separate from tests that can run without an SDK.
+The test project runs as an executable harness, not as a test framework project. Add deterministic parser, geometry, policy, or lifecycle checks to `Aether.Tests/Program.cs`. Keep native-window tests separate from tests that can run without an SDK.
 
 Before submitting changes:
 
 1. Run the test script.
 2. Run a release build with the SDK available.
-3. If native behavior changed, run on Windows with one and multiple monitors, including mixed DPI where available.
-4. Exercise menu show/hide, ID-based hide/reveal, pause/resume, status, reload, and exit commands.
+3. If native behavior changed, test one and multiple monitors, including mixed DPI where available.
+4. Exercise menu show/hide, ID-based hide/show, pause/resume, status, reload, and exit commands.

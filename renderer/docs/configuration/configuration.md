@@ -1,4 +1,4 @@
-# Configuration
+# Renderer configuration
 
 Pass one or more JSON files with repeated `--config` options. The parser accepts comments and trailing commas. Each file must contain a JSON object.
 
@@ -53,6 +53,9 @@ Fields:
 | `window-ids` | No | Explicit logical IDs. When present, one window is created per ID over the virtual screen; this takes precedence over `mode`. |
 | `transparent` | No | Transparent Ultralight window. Default `false`. |
 | `thread-group` | No | Runtime group. Default `wallpaper`. |
+| `bridge` | No | Page backend and control-route permissions. |
+
+Set `id` when another process or page needs a stable window identifier. A generated ID uses the profile index and monitor number. A resolved ID may contain only letters, numbers, `.`, `_`, `:`, or `-`, and may contain up to 128 characters.
 
 `span` uses one virtual-screen window. `all` uses one window per monitor. `single` uses the selected `monitor`.
 
@@ -86,6 +89,8 @@ Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bott
 - Set `size-scaled: false` to express dimensions in pixels.
 - Widgets use `transparent: true` and `thread-group: widgets` when you omit those fields.
 
+Set `id` for stable window control. Add `bridge` only when the page needs backend or control access.
+
 ## Menu
 
 Give `menu` the same geometry and URL fields as a widget. Add these fields when needed:
@@ -97,7 +102,23 @@ Give `menu` the same geometry and URL fields as a widget. Add these fields when 
 | `transparent` | No | `true` | Transparent Ultralight window. |
 | `thread-group` | No | `menu` | Runtime group. |
 
-`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--show-menu` creates it again.
+The optional `id` follows the same rules as a widget ID. The optional `bridge` object controls page access to configured backends and `/v1/` control routes. Keep bridge access disabled unless the page needs it.
+
+`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--toggle-menu show` creates it again.
+
+## Bridge policy
+
+Add `bridge` to a wallpaper, widget, or menu when that page needs backend access:
+
+```json
+"bridge": {
+  "enabled": true,
+  "backend-ids": ["nyx"],
+  "control-routes": ["/v1/status"]
+}
+```
+
+`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
 
 ## Thread groups and reload
 

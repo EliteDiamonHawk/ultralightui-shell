@@ -9,8 +9,8 @@ This directory contains the Windows desktop host for Ultralight-rendered wallpap
 - `Aether/`: production host and native Windows/Ultralight integration.
 - `Aether.Tests/`: lightweight executable test harness.
 - `scripts/`: PowerShell wrappers for build, run, publish, and test.
-- `third_party/`: vendored or locally installed dependencies. The Ultralight SDK is ignored by Git.
-- `docs/`: renderer-specific configuration, operations, architecture, and development notes.
+- `third_party/`: vendored or locally installed dependencies. Git ignores the Ultralight SDK.
+- `docs/`: renderer configuration, operations, architecture, and development notes.
 - `docs/configuration/`: configuration guide, JSON Schema, and complete sample configuration.
 
 ## Runtime model
@@ -18,14 +18,14 @@ This directory contains the Windows desktop host for Ultralight-rendered wallpap
 - `Program` parses startup options or sends one runtime command.
 - `RendererConfiguration` loads one or more JSON files. Each top-level section (`wallpaper`, `widgets`, `menu`) may occur in only one file.
 - Equal `thread-group` values share one STA thread and one Ultralight `AppCore` instance.
-- `RuntimeGroupContext` owns group windows, pumps Ultralight, reconciles native geometry, and handles reload/pause state on its owner thread.
+- `RuntimeGroupContext` owns group windows, pumps Ultralight, reconciles native geometry, and handles reload and pause state on its owner thread.
 - Wallpapers and widgets embed under the Windows desktop worker window. Menus remain topmost, non-activating windows managed separately.
 - `CommandPipeServer` exposes user-scoped named-pipe control to the already-running instance.
 
 ## Change rules
 
 - Preserve x64, `net9.0-windows`, WinForms, STA-thread, and native-handle assumptions.
-- Keep all Ultralight and Win32 calls on their owning runtime/group thread unless an existing dispatcher path is used.
+- Keep all Ultralight and Win32 calls on their owning runtime/group thread unless code uses an existing dispatcher path.
 - Preserve configuration validation: reject unknown fields, duplicate sections, invalid URLs, invalid monitor numbers, and duplicate logical window IDs.
 - When adding config fields, update `RendererConfiguration`, `docs/configuration/example.json`, `docs/configuration/schema.json`, `docs/configuration/configuration.md`, and tests together.
 - When adding CLI commands or changing command semantics, update `HostOptions.HelpText`, `docs/runtime-control.md`, and tests together.
@@ -51,4 +51,4 @@ For native startup, install the pinned Ultralight SDK under `third_party\ultrali
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). Keep `docs/configuration/schema.json` and `docs/configuration/example.json` aligned with the parser implementation.
+Start at [`docs/README.md`](docs/README.md). Keep `docs/configuration/schema.json` and `docs/configuration/example.json` aligned with the parser implementation. Update the Markdown configuration reference when the contract changes.

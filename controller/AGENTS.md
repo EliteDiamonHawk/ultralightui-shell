@@ -12,14 +12,14 @@ requested otherwise.
   Win-key policy.
 - `Chronos.Tests/`: lightweight executable test harness.
 - `scripts/`: build, run, publish, and test wrappers.
-- `docs/`: controller architecture and operations.
+- `docs/`: controller architecture, operations, persistence, and IPC.
 
 ## Runtime model
 
 Chronos owns one controller instance and launches one Aether process with two
-inherited anonymous pipe handles. Aether runtime commands continue to use its
-same-user `Aether.Commands` named pipe. Chronos's inherited channel is the
-bidirectional control/logging/backend-grant transport.
+inherited anonymous pipe handles. Aether runtime commands continue to use the
+same-user `Aether.Commands` named pipe. Chronos uses the inherited channel for
+control requests, renderer logs, and backend grants.
 
 Chronos owns tray state, persistent wrapper settings, backend process grants,
 and global Win-key policy. Aether owns renderer windows, Ultralight threads,
@@ -44,5 +44,5 @@ From `controller/`:
 .\scripts\build.ps1
 ```
 
-Native checks require Windows. Test bare Win behavior only in a disposable
+Native checks require Windows. Test bare-Win behavior only in a disposable
 session where normal input restoration can be verified.

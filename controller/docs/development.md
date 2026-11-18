@@ -1,6 +1,6 @@
 # Development
 
-Requirements: Windows 10/11 x64 and .NET 9 SDK.
+Requirements: Windows 10/11 x64 and the .NET 9 SDK.
 
 From `controller/`:
 
@@ -11,10 +11,10 @@ From `controller/`:
 .\scripts\publish.ps1 -OutputPath .\publish
 ```
 
-Build/test scripts default to Release/Debug conventions matching renderer.
-`run.ps1 -Arguments @('--renderer-path', 'C:\path\Aether.exe')` overrides
-renderer discovery.
+Build and publish use Release. Run and test use Debug, matching the renderer
+scripts. `run.ps1 -Arguments @('--renderer-path', 'C:\path\Aether.exe')`
+overrides renderer discovery.
 
 Unit tests avoid native Aether and hook installation. Windows integration checks
-must exercise inherited control startup, `Aether.Commands`, config restoration,
+should cover inherited control startup, `Aether.Commands`, config restoration,
 tray suppression, backend grant failure, and Win-key shutdown restoration.

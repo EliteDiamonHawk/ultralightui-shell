@@ -1,10 +1,10 @@
-# Chronos docs
+# Chronos controller
 
 Chronos is KhaosShell's Windows controller. It launches one Aether renderer,
-owns inherited control pipes, restores accepted configuration, owns the system
-tray, and optionally turns a bare Windows-key tap into a menu toggle.
+owns the inherited control channel, restores accepted configuration, owns the
+system tray, and can turn a bare Windows-key tap into a menu toggle.
 
-## Run
+## Quick start
 
 From `controller/`:
 
@@ -16,15 +16,15 @@ Startup options:
 
 | Option | Purpose |
 | --- | --- |
-| `--config <path>` | Forward one absolute config path; repeatable. |
+| `--config <path>` | Forward one configuration path; repeatable. Chronos stores its absolute form. |
 | `--no-last-config` | Skip persisted config restoration for this launch. |
 | `--no-tray` | Suppress Chronos tray icon for this process lifetime. |
 | `--win-menu-toggle` | Enable bare-Win menu interception. |
 | `--no-win-menu-toggle` | Disable bare-Win menu interception. |
 | `--renderer-path <path>` | Override Aether executable discovery. |
 
-Aether is resolved from explicit `--renderer-path`, beside Chronos, then
-`%LOCALAPPDATA%\KhaosShell\Aether\installation\Aether.exe`.
+Chronos resolves Aether from `--renderer-path`, beside Chronos, or
+`%LOCALAPPDATA%\KhaosShell\Aether\installation\Aether.exe`, in that order.
 
 ## Persistent data
 
@@ -36,9 +36,9 @@ Aether is resolved from explicit `--renderer-path`, beside Chronos, then
   Chronos\backend-registry.json
 ```
 
-Chronos exposes no public command pipe. Existing `Aether.Commands` remains
-available for direct renderer control. Tray and future WinForms operations use
-Chronos's internal typed command service.
+Chronos exposes no public command pipe. The existing `Aether.Commands` pipe
+remains available for direct renderer control. The tray and future WinForms
+operations use Chronos's typed command service.
 
 ## Docs
 

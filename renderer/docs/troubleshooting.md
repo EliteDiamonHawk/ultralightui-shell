@@ -4,25 +4,25 @@
 
 Symptoms include errors naming `AppCore.dll`, `Ultralight.dll`, `UltralightCore.dll`, `WebCore.dll`, or `resources`.
 
-Check that the SDK is under `renderer\third_party\ultralight`, set `ULTRALIGHT_SDK_ROOT`, or pass `--ultralight-root <path>` when starting the executable. The external root must contain `bin\` and `resources\`.
+Check that the SDK is under `renderer\third_party\ultralight`, set `ULTRALIGHT_SDK_ROOT` for the build, or pass `--ultralight-root <path>` when starting Aether. The external root must contain the four DLLs under `bin\` and the `resources\` directory.
 
 ## Configuration rejected
 
 Configuration errors identify the section, item, or field. Check:
 
-- root is an object;
-- at least one known top-level section exists;
+- the root is an object;
+- the file set contains at least one known top-level section;
 - each section appears in only one config file;
-- required widget/menu fields are present;
-- monitor numbers are within the connected monitor count;
+- widgets and menus contain all required geometry fields;
+- monitor numbers fit the connected monitor count;
 - URLs use HTTP, HTTPS, or `file:`;
-- no unknown or duplicate fields exist.
+- fields and logical IDs are unique.
 
 ## Command cannot connect
 
 Runtime commands require a running instance for the same user. Start the host with at least one `--config` first. Avoid combining a command such as `--status-all` with startup options.
 
-If a stale process owns the instance, inspect and close that process before starting another copy. Do not delete lock or IPC state blindly; the lease and pipe are process-owned.
+If another process owns the instance, inspect and close that process before starting another copy. Do not delete lock or IPC state; the lease and pipe belong to the running process.
 
 ## Widget is misplaced or clipped
 
@@ -38,10 +38,10 @@ The host periodically reconciles native geometry. A repeated geometry error usua
 
 ## Menu does not remain visible
 
-`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--show-menu` recreates it. Test with:
+`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--toggle-menu show` recreates it. Test with:
 
 ```powershell
-Aether.exe --show-menu
+Aether.exe --toggle-menu show
 Aether.exe --status-all
 ```
 

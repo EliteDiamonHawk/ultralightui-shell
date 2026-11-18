@@ -54,6 +54,7 @@ public sealed class RuntimeGroupHost : IDisposable
     public void InvokeFullscreenMonitor(IntPtr monitor) => Invoke(context => context.SetFullscreenMonitor(monitor));
     public void InvokeShowMenu() => Invoke(context => context.ShowStartMenu());
     public void InvokeHideMenu() => Invoke(context => context.HideStartMenu());
+    public bool InvokeToggleMenu() => Invoke(context => context.ToggleStartMenu());
     public void InvokeHideWindow(string? id) => Invoke(context => context.SetWindowVisible(id, false));
     public void InvokeRevealWindow(string? id) => Invoke(context => context.SetWindowVisible(id, true));
     public void InvokeReload() => Invoke(context => context.Reload());
@@ -315,6 +316,18 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             ApplyStartMenuVisibility(_startMenu);
         }
+    }
+
+    public bool ToggleStartMenu()
+    {
+        if (_desiredStartMenuVisible)
+        {
+            HideStartMenu();
+            return false;
+        }
+
+        ShowStartMenu();
+        return true;
     }
 
     public void Reload()

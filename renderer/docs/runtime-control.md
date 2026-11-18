@@ -27,21 +27,24 @@ Startup options:
 | `--system-tray [show\|hide]` | Visible | Set tray visibility. Bare flag toggles it. |
 | `--help`, `-h` | Off | Print usage. |
 
-`--config` paths are converted to absolute paths during parsing. Startup options cannot be combined with runtime commands.
+The parser makes `--config` paths absolute. Do not combine startup options with runtime commands. Aether can start without configuration, but it then has no windows to manage.
 
 ## Commands
 
 Commands connect to the already-running user-scoped instance. They do not load config files.
 
 ```powershell
-Aether.exe --show-menu
-Aether.exe --hide-menu
+Aether.exe --toggle-menu
+Aether.exe --toggle-menu show
+Aether.exe --toggle-menu hide
 Aether.exe --system-tray hide
 Aether.exe --system-tray show
 Aether.exe --system-tray
-Aether.exe --show windows
-Aether.exe --show config
-Aether.exe --show paths
+Aether.exe --list windows
+Aether.exe --list config
+Aether.exe --list paths
+Aether.exe --show widget-1
+Aether.exe --hide widget-1
 Aether.exe --pause desktop
 Aether.exe --resume desktop
 Aether.exe --status desktop
@@ -53,13 +56,13 @@ Aether.exe --reload-all
 Aether.exe --exit
 ```
 
-`--show-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
+`--toggle-menu` toggles the configured menu. Add `show` or `hide` to force visibility. `--hide <id>` and `--show <id>` target one window. `--list` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 
-Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags are its command-line wrapper. It accepts one newline-delimited serialized `RendererCommand` per connection and returns `OK ...` or `ERR ...`.
+Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection and returns `OK ...` or `ERR ...`.
 
-The anonymous parent/control pipe is state-only. It supports only `GET /v1/pipes`, returning control-channel state and backend snapshots. Other `/v1/*` routes return `404`.
+The inherited controller channel supports `GET /v1/pipes` and `PUT /v1/logging/batch-limits`. Other `/v1/*` routes return `404` from Aether. Chronos handles backend routes and log intake on its side of the channel.
 
 The tray menu exposes the same common actions.
 
@@ -72,4 +75,4 @@ Successful pipe responses start with `OK`. Failures start with `ERR` and are wri
 - `2`: invalid options or invalid renderer configuration.
 - `3`: another instance already owns the renderer, or no running instance accepted a command.
 
-The command transport is a local named pipe. It is intended for same-user control and accepts one serialized command per connection.
+The command transport is a local named pipe. It targets the same user and accepts one serialized command per connection.

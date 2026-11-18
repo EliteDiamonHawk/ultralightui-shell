@@ -156,6 +156,7 @@ public sealed class RendererHostContext : ApplicationContext
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.ShowMenu => SetMenuVisibility(true),
                 RendererCommandKind.HideMenu => SetMenuVisibility(false),
+                RendererCommandKind.ToggleMenu => ToggleMenuVisibility(),
                 RendererCommandKind.HideWindow => SetWindowVisibility(command.TargetId, false),
                 RendererCommandKind.RevealWindow => SetWindowVisibility(command.TargetId, true),
                 RendererCommandKind.Show => ShowTopic(command.Topic),
@@ -239,6 +240,17 @@ public sealed class RendererHostContext : ApplicationContext
         if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
             return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
         if (visible) host.InvokeShowMenu(); else host.InvokeHideMenu();
+        return $"OK {(visible ? "showed" : "hid")} menu";
+    }
+
+    private string ToggleMenuVisibility()
+    {
+        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
+        if (spec == null)
+            return "ERR No menu window is configured.";
+        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
+            return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
+        bool visible = host.InvokeToggleMenu();
         return $"OK {(visible ? "showed" : "hid")} menu";
     }
 

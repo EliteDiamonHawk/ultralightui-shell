@@ -121,22 +121,36 @@ internal static class Program
         AssertEqual(RendererCommandKind.HideWindow, hide.Command.Kind);
         AssertEqual("widget-1", hide.Command.TargetId);
 
-        HostOptions reveal = HostOptions.Parse(new[] { "--reveal=widget-1" });
-        AssertEqual(RendererCommandKind.RevealWindow, reveal.Command.Kind);
-        AssertEqual("widget-1", reveal.Command.TargetId);
+        HostOptions show = HostOptions.Parse(new[] { "--show=widget-1" });
+        AssertEqual(RendererCommandKind.RevealWindow, show.Command.Kind);
+        AssertEqual("widget-1", show.Command.TargetId);
 
-        HostOptions show = HostOptions.Parse(new[] { "--show", "windows" });
-        AssertEqual(RendererCommandKind.Show, show.Command.Kind);
-        AssertEqual("windows", show.Command.Topic);
+        HostOptions list = HostOptions.Parse(new[] { "--list", "windows" });
+        AssertEqual(RendererCommandKind.Show, list.Command.Kind);
+        AssertEqual("windows", list.Command.Topic);
 
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--list" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--reveal", "widget-1" }));
     }
 
     private static void OptionsParseMenuCommands()
     {
-        HostOptions reveal = HostOptions.Parse(new[] { "--show-menu" });
-        AssertEqual(RendererCommandKind.ShowMenu, reveal.Command.Kind);
-        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--reveal-menu" }));
+        HostOptions toggle = HostOptions.Parse(new[] { "--toggle-menu" });
+        AssertEqual(RendererCommandKind.ToggleMenu, toggle.Command.Kind);
+
+        HostOptions emptyInline = HostOptions.Parse(new[] { "--toggle-menu=" });
+        AssertEqual(RendererCommandKind.ToggleMenu, emptyInline.Command.Kind);
+
+        HostOptions show = HostOptions.Parse(new[] { "--toggle-menu", "show" });
+        AssertEqual(RendererCommandKind.ShowMenu, show.Command.Kind);
+
+        HostOptions hide = HostOptions.Parse(new[] { "--toggle-menu=HIDE" });
+        AssertEqual(RendererCommandKind.HideMenu, hide.Command.Kind);
+
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--toggle-menu", "empty" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show-menu" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--hide-menu" }));
     }
 
     private static void OptionsParseSystemTrayCommands()
@@ -262,6 +276,10 @@ internal static class Program
         AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
         AssertEqual(RendererCommandKind.SystemTray, parsed!.Kind);
         AssertEqual(SystemTrayAction.Hide, parsed.TrayAction);
+
+        json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.ToggleMenu));
+        AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
+        AssertEqual(RendererCommandKind.ToggleMenu, parsed!.Kind);
     }
 
     private static void ControlProtocolRoundTrips()

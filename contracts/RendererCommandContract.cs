@@ -17,7 +17,8 @@ public enum RendererCommandKind
     Resume = 9,
     Status = 10,
     Reload = 11,
-    Exit = 12
+    Exit = 12,
+    ToggleMenu = 13
 }
 
 public enum SystemTrayAction
