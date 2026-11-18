@@ -12,6 +12,7 @@ public sealed class RendererHostContext : ApplicationContext
     private readonly CommandPipeServer _commandServer;
     private readonly InputRouter _input;
     private readonly FullscreenMonitor _fullscreenMonitor;
+    private readonly RendererLogger _logger;
     private BackendConnectionManager? _backendManager;
     private readonly object _sync = new();
     private readonly Dictionary<string, RuntimeGroupHost> _groups = new(StringComparer.Ordinal);
@@ -25,6 +26,7 @@ public sealed class RendererHostContext : ApplicationContext
     {
         _options = options;
         _lease = lease;
+        _logger = new RendererLogger();
         _configPaths = options.ConfigPaths.ToArray();
         RendererPaths.Resolve(options.UltralightRoot).EnsureWritableRoot();
         _dispatcher.CreateControl();
@@ -37,6 +39,14 @@ public sealed class RendererHostContext : ApplicationContext
 
         try
         {
+            if (options.ControlReadHandle is { } readHandle && options.ControlWriteHandle is { } writeHandle)
+            {
+                _controlChannel = new ControlPipeChannel(readHandle, writeHandle, HandleControlRequest);
+                _logger.AttachControlChannel(_controlChannel);
+                _controlChannel.Start();
+            }
+            _logger.Info("renderer.starting");
+
             foreach (KeyValuePair<string, RuntimeGroupHost> pair in CreateGroups(_specs))
                 _groups.Add(pair.Key, pair.Value);
 
@@ -45,11 +55,6 @@ public sealed class RendererHostContext : ApplicationContext
             _fullscreenMonitor.Start();
             _commandServer = new CommandPipeServer(HandleCommand);
             _commandServer.Start();
-            if (options.ControlReadHandle is { } readHandle && options.ControlWriteHandle is { } writeHandle)
-            {
-                _controlChannel = new ControlPipeChannel(readHandle, writeHandle, HandleControlRequest);
-                _controlChannel.Start();
-            }
             _backendManager = new BackendConnectionManager(_controlChannel);
             _menu = BuildMenu();
             _tray = new NotifyIcon
@@ -59,10 +64,16 @@ public sealed class RendererHostContext : ApplicationContext
                 ContextMenuStrip = _menu,
                 Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
             };
+            _logger.Info("renderer.ready", new Dictionary<string, string?>
+            {
+                ["configuredWindows"] = _specs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["controllerConnected"] = (_controlChannel != null).ToString().ToLowerInvariant()
+            });
         }
         catch
         {
             StopGroups();
+            _logger.Dispose();
             _controlChannel?.Dispose();
             _backendManager?.Dispose();
             _dispatcher.Dispose();
@@ -78,7 +89,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             foreach (string groupName in snapshot.Select(spec => spec.ThreadGroup).Distinct(StringComparer.Ordinal))
             {
-                var group = new RuntimeGroupHost(groupName, _options, () => snapshot);
+                var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger);
                 group.Start();
                 result.Add(groupName, group);
             }
@@ -126,9 +137,16 @@ public sealed class RendererHostContext : ApplicationContext
 
     private string HandleCommand(RendererCommand command)
     {
+        _logger.Info("command.received", new Dictionary<string, string?>
+        {
+            ["command"] = command.Kind.ToString(),
+            ["all"] = command.All.ToString().ToLowerInvariant(),
+            ["hasGroup"] = (command.Group != null).ToString().ToLowerInvariant(),
+            ["hasTarget"] = (command.TargetId != null).ToString().ToLowerInvariant()
+        });
         try
         {
-            return command.Kind switch
+            string response = command.Kind switch
             {
                 RendererCommandKind.ApplyConfig => ApplyConfiguration(command.ConfigPaths ?? Array.Empty<string>()),
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
@@ -144,9 +162,23 @@ public sealed class RendererHostContext : ApplicationContext
                 RendererCommandKind.Reload => ReloadConfiguration(command),
                 _ => "ERR Unsupported runtime command."
             };
+            _logger.Log(
+                response.StartsWith("ERR ", StringComparison.Ordinal) ? RendererLogLevel.Warn : RendererLogLevel.Info,
+                response.StartsWith("ERR ", StringComparison.Ordinal) ? "command.failed" : "command.succeeded",
+                new Dictionary<string, string?>
+                {
+                    ["command"] = command.Kind.ToString(),
+                    ["error"] = response.StartsWith("ERR ", StringComparison.Ordinal).ToString().ToLowerInvariant()
+                });
+            return response;
         }
         catch (Exception ex)
         {
+            _logger.Error("command.failed", new Dictionary<string, string?>
+            {
+                ["command"] = command.Kind.ToString(),
+                ["exceptionType"] = ex.GetType().Name
+            });
             return $"ERR {ex.Message}";
         }
     }
@@ -174,6 +206,10 @@ public sealed class RendererHostContext : ApplicationContext
 
         foreach (RuntimeGroupHost group in oldGroups)
             group.Dispose();
+        _logger.Info("config.reload.succeeded", new Dictionary<string, string?>
+        {
+            ["windowCount"] = candidateSpecs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        });
         return "OK configuration applied";
     }
 
@@ -257,6 +293,13 @@ public sealed class RendererHostContext : ApplicationContext
                 control = _controlChannel?.State ?? "standalone",
                 backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>()
             });
+        if (request.Method == "PUT" && request.Path == "/v1/logging/batch-limits")
+        {
+            if (_logger.TryApplyPolicy(request.Body, out RendererLogPolicy policy, out int status, out string error))
+                return new ControlResponse(request.Id, status, policy.ToPayload());
+            return new ControlResponse(request.Id, status,
+                Error: new ControlError(status >= 500 ? "logging_policy_apply_failed" : "logging_policy_invalid", error));
+        }
         return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown control route."));
     }
 
@@ -279,7 +322,6 @@ public sealed class RendererHostContext : ApplicationContext
     {
         IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
         string status = string.Join(Environment.NewLine, targets.Select(group => group.InvokeStatus()));
-        Console.WriteLine(status);
         return $"OK {status}";
     }
 
@@ -336,12 +378,14 @@ public sealed class RendererHostContext : ApplicationContext
         _input.Dispose();
         _fullscreenMonitor.Dispose();
         _commandServer.Dispose();
+        _logger.Info("renderer.stopping");
         _backendManager?.Dispose();
-        _controlChannel?.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
         _menu.Dispose();
         StopGroups();
+        _logger.Dispose();
+        _controlChannel?.Dispose();
         _dispatcher.Dispose();
         Application.ExitThread();
     }

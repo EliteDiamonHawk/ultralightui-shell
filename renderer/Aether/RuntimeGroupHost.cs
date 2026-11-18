@@ -8,17 +8,19 @@ public sealed class RuntimeGroupHost : IDisposable
     private readonly object _sync = new();
     private readonly HostOptions _options;
     private readonly Func<IReadOnlyList<RendererWindowSpec>> _specFactory;
+    private readonly RendererLogger _logger;
     private readonly ManualResetEventSlim _ready = new(false);
     private Thread? _thread;
     private RuntimeGroupContext? _context;
     private Exception? _startupException;
     private int _disposed;
 
-    public RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory)
+    internal RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory, RendererLogger logger)
     {
         Name = name;
         _options = options;
         _specFactory = specFactory;
+        _logger = logger;
     }
 
     public string Name { get; }
@@ -89,20 +91,27 @@ public sealed class RuntimeGroupHost : IDisposable
         RuntimeGroupContext? context = null;
         try
         {
-            context = new RuntimeGroupContext(Name, _options, _specFactory);
+            context = new RuntimeGroupContext(Name, _options, _specFactory, _logger);
             lock (_sync) _context = context;
             _ready.Set();
+            _logger.Info("runtime.group.started", new Dictionary<string, string?> { ["group"] = Name });
             Application.Run(context);
         }
         catch (Exception ex)
         {
             _startupException = ex;
+            _logger.Error("runtime.group.start_failed", new Dictionary<string, string?>
+            {
+                ["group"] = Name,
+                ["exceptionType"] = ex.GetType().Name
+            });
             _ready.Set();
         }
         finally
         {
             context?.Dispose();
             lock (_sync) _context = null;
+            _logger.Info("runtime.group.stopped", new Dictionary<string, string?> { ["group"] = Name });
         }
     }
 }
@@ -113,6 +122,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     private readonly HostOptions _options;
     private readonly Func<IReadOnlyList<RendererWindowSpec>> _specFactory;
+    private readonly RendererLogger _logger;
     private readonly Control _dispatcher = new();
     private readonly object _windowSync = new();
     private readonly UltralightRuntime _runtime;
@@ -135,11 +145,13 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     public RuntimeGroupContext(
         string name,
         HostOptions options,
-        Func<IReadOnlyList<RendererWindowSpec>> specFactory)
+        Func<IReadOnlyList<RendererWindowSpec>> specFactory,
+        RendererLogger logger)
     {
         _name = name;
         _options = options;
         _specFactory = specFactory;
+        _logger = logger;
         _currentSpecs = specFactory().Where(spec => spec.ThreadGroup == name).ToList();
         _dispatcher.CreateControl();
         _runtime = new UltralightRuntime(options.UltralightRoot);
@@ -337,6 +349,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         }
         catch (Exception ex)
         {
+            _logger.Error("runtime.error", new Dictionary<string, string?>
+            {
+                ["group"] = _name,
+                ["exceptionType"] = ex.GetType().Name
+            });
             Console.Error.WriteLine($"[Group:{_name}] {ex.Message}");
         }
     }

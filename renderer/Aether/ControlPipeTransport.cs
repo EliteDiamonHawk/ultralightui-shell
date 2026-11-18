@@ -153,7 +153,7 @@ internal static class ControlPipeCodec
     }
 }
 
-internal sealed class ControlPipeChannel : IDisposable
+internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
 {
     private readonly Stream _readStream;
     private readonly Stream _writeStream;
@@ -163,6 +163,7 @@ internal sealed class ControlPipeChannel : IDisposable
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<ControlResponse>> _pending = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Task<ControlResponse>> _inflightRequests = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Fingerprint, string Response, DateTimeOffset Expires)> _idempotency = new(StringComparer.Ordinal);
     private readonly object _idempotencySync = new();
     private int _disconnectSignaled;
@@ -239,33 +240,19 @@ internal sealed class ControlPipeChannel : IDisposable
                     continue;
                 }
 
-                ControlResponse response;
+                ControlResponse? response = null;
                 if (!ControlPipeCodec.TryParseRequest(line, out ControlRequest? request, out ControlError? parseError))
                 {
                     response = new ControlResponse(null, 400, Error: parseError);
                 }
                 else
                 {
-                    string fingerprint = ControlPipeCodec.SerializeRequest(request!);
-                    if (TryGetCached(request!.Id, fingerprint, out ControlResponse? cached, out bool reused))
-                    {
-                        response = reused
-                            ? new ControlResponse(request.Id, 409, Error: new ControlError("request_id_reused", "Request ID was reused with different content."))
-                            : cached!;
-                    }
-                    else
-                    {
-                        try { response = _handler(request); }
-                        catch (Exception ex)
-                        {
-                            response = new ControlResponse(request.Id, 500,
-                                Error: new ControlError("internal_error", ex.Message));
-                        }
-                        Cache(request.Id, fingerprint, response);
-                    }
+                    Task<ControlResponse> responseTask = GetRequestTask(request!);
+                    _ = WriteRequestResponseAsync(request!.Id, responseTask);
                 }
 
-                await WriteAsync(ControlPipeCodec.Serialize(response), _shutdown.Token).ConfigureAwait(false);
+                if (response != null)
+                    await WriteAsync(ControlPipeCodec.Serialize(response), _shutdown.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
@@ -280,6 +267,48 @@ internal sealed class ControlPipeChannel : IDisposable
                 if (Interlocked.Exchange(ref _disconnectSignaled, 1) == 0)
                     Disconnected?.Invoke();
             }
+        }
+    }
+
+    private Task<ControlResponse> GetRequestTask(ControlRequest request)
+    {
+        string fingerprint = ControlPipeCodec.SerializeRequest(request);
+        return _inflightRequests.GetOrAdd(request.Id, _ => Task.Run(() => ExecuteRequest(request, fingerprint), _shutdown.Token));
+    }
+
+    private ControlResponse ExecuteRequest(ControlRequest request, string fingerprint)
+    {
+        if (TryGetCached(request.Id, fingerprint, out ControlResponse? cached, out bool reused))
+        {
+            return reused
+                ? new ControlResponse(request.Id, 409, Error: new ControlError("request_id_reused", "Request ID was reused with different content."))
+                : cached!;
+        }
+
+        ControlResponse response;
+        try { response = _handler(request); }
+        catch (Exception ex)
+        {
+            response = new ControlResponse(request.Id, 500,
+                Error: new ControlError("internal_error", ex.Message));
+        }
+        Cache(request.Id, fingerprint, response);
+        return response;
+    }
+
+    private async Task WriteRequestResponseAsync(string requestId, Task<ControlResponse> responseTask)
+    {
+        try
+        {
+            ControlResponse response = await responseTask.ConfigureAwait(false);
+            await WriteAsync(ControlPipeCodec.Serialize(response), _shutdown.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
+        finally
+        {
+            _inflightRequests.TryRemove(requestId, out _);
         }
     }
 

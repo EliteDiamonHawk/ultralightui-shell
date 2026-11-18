@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text.Json;
 using Aether;
 
 namespace Aether.Tests;
@@ -31,6 +32,12 @@ internal static class Program
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
             (nameof(CommandProtocolRoundTrips), CommandProtocolRoundTrips)
             ,(nameof(ControlProtocolRoundTrips), ControlProtocolRoundTrips)
+            ,(nameof(LoggingPolicyParsesAndBounds), LoggingPolicyParsesAndBounds)
+            ,(nameof(LoggingPolicyRejectsInvalid), LoggingPolicyRejectsInvalid)
+            ,(nameof(LoggerUsesConsoleWithoutController), LoggerUsesConsoleWithoutController)
+            ,(nameof(LoggerRedactsProperties), LoggerRedactsProperties)
+            ,(nameof(LoggerBatchesThroughController), LoggerBatchesThroughController)
+            ,(nameof(LoggerDisableFlushesBeforeDisabling), LoggerDisableFlushesBeforeDisabling)
         };
 
         int failures = 0;
@@ -270,6 +277,94 @@ internal static class Program
         AssertTrue(ControlPipeCodec.TryParseResponse(response, out ControlResponse? parsed));
         AssertEqual(id, parsed!.Id);
         AssertEqual(200, parsed.Status);
+    }
+
+    private static void LoggingPolicyParsesAndBounds()
+    {
+        string json = "{\"enabled\":true,\"maxEvents\":4,\"maxBytes\":8192,\"flushIntervalMs\":500}";
+        using JsonDocument document = JsonDocument.Parse(json);
+        AssertTrue(RendererLogPolicy.TryParse(document.RootElement, new RendererLogPolicy(), out RendererLogPolicy policy, out string error));
+        AssertEqual("", error);
+        AssertTrue(policy.Enabled);
+        AssertEqual(4, policy.MaxEvents);
+        AssertEqual(8192, policy.MaxBytes);
+        AssertEqual(500, policy.FlushIntervalMs);
+    }
+
+    private static void LoggingPolicyRejectsInvalid()
+    {
+        using JsonDocument document = JsonDocument.Parse("{\"maxEvents\":0}");
+        AssertFalse(RendererLogPolicy.TryParse(document.RootElement, new RendererLogPolicy(), out _, out string error));
+        AssertTrue(error.Contains("maxEvents", StringComparison.Ordinal));
+    }
+
+    private static void LoggerUsesConsoleWithoutController()
+    {
+        var output = new List<RendererLogEvent>();
+        using var logger = new RendererLogger(consoleSink: output.Add);
+        logger.Info("renderer.ready");
+        AssertEqual(1, output.Count);
+        AssertEqual("renderer.ready", output[0].EventName);
+    }
+
+    private static void LoggerRedactsProperties()
+    {
+        var output = new List<RendererLogEvent>();
+        using var logger = new RendererLogger(consoleSink: output.Add);
+        logger.Info("runtime.error", new Dictionary<string, string?>
+        {
+            ["group"] = "private-group",
+            ["path"] = "C:\\private\\file",
+            ["exceptionType"] = "InvalidOperationException"
+        });
+        AssertTrue(output[0].Properties["group"]!.StartsWith("sha256:", StringComparison.Ordinal));
+        AssertEqual("[redacted]", output[0].Properties["path"]);
+        AssertEqual("InvalidOperationException", output[0].Properties["exceptionType"]);
+    }
+
+    private static void LoggerBatchesThroughController()
+    {
+        var transport = new FakeLogTransport();
+        using var logger = new RendererLogger(transport, _ => { });
+        using JsonDocument document = JsonDocument.Parse("{\"maxEvents\":1}");
+        AssertTrue(logger.TryApplyPolicy(document.RootElement, out _, out int status, out _));
+        AssertEqual(200, status);
+        logger.Info("command.received");
+        AssertTrue(SpinWait.SpinUntil(() => transport.Requests.Count > 0, 2000));
+        AssertEqual("/v1/logs", transport.Requests[0].Path);
+        AssertEqual(1, transport.Requests[0].Batch.Events.Count);
+    }
+
+    private static void LoggerDisableFlushesBeforeDisabling()
+    {
+        var transport = new FakeLogTransport();
+        using var logger = new RendererLogger(transport, _ => { });
+        logger.Info("renderer.ready");
+        using JsonDocument document = JsonDocument.Parse("{\"enabled\":false}");
+        AssertTrue(logger.TryApplyPolicy(document.RootElement, out RendererLogPolicy policy, out int status, out _));
+        AssertEqual(200, status);
+        AssertFalse(policy.Enabled);
+        AssertTrue(transport.Requests.Any(request => request.Path == "/v1/logs"));
+    }
+
+    private sealed class FakeLogTransport : IRendererLogTransport
+    {
+        public string State { get; private set; } = "connected";
+        public event Action? Disconnected;
+        public List<(string Path, RendererLogBatch Batch)> Requests { get; } = new();
+
+        public Task<ControlResponse> SendAsync(string method, string path, object? body, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            if (body is RendererLogBatch batch)
+                Requests.Add((path, batch));
+            return Task.FromResult(new ControlResponse(Guid.NewGuid().ToString("D"), 202, new { accepted = 1 }));
+        }
+
+        public void Disconnect()
+        {
+            State = "disconnected";
+            Disconnected?.Invoke();
+        }
     }
 
     private static string WriteTemp(string content)
