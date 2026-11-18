@@ -8,16 +8,23 @@ internal sealed class RendererJsBridge : IDisposable
     private readonly RendererWindowSpec _spec;
     private readonly BackendConnectionManager? _backends;
     private readonly ControlPipeChannel? _control;
+    private readonly Func<Action, bool> _ownerPoster;
     private readonly UltralightNative.JsFunctionCallback _openPipeCallback;
     private IntPtr _api;
     private IntPtr _view;
     private bool _attached;
+    private int _disposed;
 
-    public RendererJsBridge(RendererWindowSpec spec, BackendConnectionManager? backends = null, ControlPipeChannel? control = null)
+    public RendererJsBridge(
+        RendererWindowSpec spec,
+        Func<Action, bool> ownerPoster,
+        BackendConnectionManager? backends = null,
+        ControlPipeChannel? control = null)
     {
         _spec = spec;
         _backends = backends;
         _control = control;
+        _ownerPoster = ownerPoster;
         if (_backends != null)
             _backends.StreamEventReceived += OnStreamEvent;
         _openPipeCallback = OpenPipe;
@@ -128,9 +135,17 @@ internal sealed class RendererJsBridge : IDisposable
         }
     }
 
-    public void EmitStreamEvent(string streamId, object data, string type = "json")
+    private void EmitStreamEvent(string streamId, object data, string type = "json")
     {
-        if (!_attached || _api == IntPtr.Zero)
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        _ownerPoster(() => EmitStreamEventOnOwner(streamId, data, type));
+    }
+
+    private void EmitStreamEventOnOwner(string streamId, object data, string type)
+    {
+        if (Volatile.Read(ref _disposed) != 0 || !_attached || _api == IntPtr.Zero)
             return;
         string args = JsonSerializer.Serialize(new[] { new { streamId, data, type } });
         UltralightNative.ulJSAPIEmitEventJSON(_api, "stream", args);
@@ -138,14 +153,18 @@ internal sealed class RendererJsBridge : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        if (_backends != null)
+            _backends.StreamEventReceived -= OnStreamEvent;
+
         if (_api != IntPtr.Zero && _view != IntPtr.Zero && _attached)
         {
             try { UltralightNative.ulViewDetachJSAPI(_view, _api); } catch { }
         }
         if (_api != IntPtr.Zero)
             UltralightNative.ulDestroyJSAPI(_api);
-        if (_backends != null)
-            _backends.StreamEventReceived -= OnStreamEvent;
         _api = IntPtr.Zero;
         _view = IntPtr.Zero;
         _attached = false;
@@ -168,6 +187,9 @@ internal sealed class RendererJsBridge : IDisposable
 
     private void OnStreamEvent(BackendEvent value)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
         if (value.Name == "stream.data" && value.Data is JsonElement data)
             EmitStreamEvent(value.StreamId, data, value.Type);
         else if (value.Name == "stream.overflow")

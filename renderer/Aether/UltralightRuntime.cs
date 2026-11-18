@@ -57,7 +57,10 @@ public sealed class UltralightRuntime : IDisposable
             throw new InvalidOperationException("Ultralight AppCore could not be initialized.");
     }
 
-    public AppWindow CreateWindow(RendererWindowSpec spec, TimeSpan timeout)
+    public AppWindow CreateWindow(
+        RendererWindowSpec spec,
+        TimeSpan timeout,
+        Func<Action, bool>? ownerPoster = null)
     {
         IntPtr monitor = ResolveMonitor(spec);
         double scale = Math.Max(0.01, UltralightNative.ulMonitorGetScale(monitor));
@@ -110,7 +113,11 @@ public sealed class UltralightRuntime : IDisposable
 
             if (spec.Bridge?.IsEnabled(spec.Url) == true)
             {
-                bridge = new RendererJsBridge(spec, _backends, _control);
+                bridge = new RendererJsBridge(
+                    spec,
+                    ownerPoster ?? throw new InvalidOperationException("Ultralight bridge requires an owner-thread dispatcher."),
+                    _backends,
+                    _control);
                 bridge.Attach(view);
             }
 

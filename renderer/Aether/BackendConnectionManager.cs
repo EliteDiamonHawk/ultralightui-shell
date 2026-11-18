@@ -14,6 +14,7 @@ internal sealed class BackendConnectionManager : IDisposable
     private readonly ConcurrentDictionary<string, JsonSchemaDescriptor> _schemas = new(StringComparer.Ordinal);
     private readonly string _sid = WindowsIdentityHelper.GetCurrentSid();
     private readonly string _sessionId = Guid.NewGuid().ToString("D");
+    private int _disposed;
 
     public BackendConnectionManager(ControlPipeChannel? control)
     {
@@ -106,6 +107,9 @@ internal sealed class BackendConnectionManager : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         if (_control != null)
             _control.Disconnected -= OnControlDisconnected;
         foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections)
@@ -120,6 +124,7 @@ internal sealed class BackendConnectionManager : IDisposable
         }
         _connections.Clear();
         _schemas.Clear();
+        StreamEventReceived = null;
     }
 
     private void OnControlDisconnected()
@@ -133,15 +138,20 @@ internal sealed class BackendConnectionManager : IDisposable
 
     private void OnBackendEvent(BackendEvent value)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
         if (value.Name == "stream.overflow")
         {
-            StreamEventReceived?.Invoke(value);
+            if (Volatile.Read(ref _disposed) == 0)
+                StreamEventReceived?.Invoke(value);
             return;
         }
         if (value.Name != "stream.data" || value.Type != "json" || value.Data is not JsonElement data ||
             !_schemas.TryGetValue(value.StreamId, out JsonSchemaDescriptor? schema) || !schema.Matches(data))
             return;
-        StreamEventReceived?.Invoke(value);
+        if (Volatile.Read(ref _disposed) == 0)
+            StreamEventReceived?.Invoke(value);
     }
 }
 

@@ -77,9 +77,9 @@ public sealed class RendererHostContext : ApplicationContext
         catch
         {
             StopGroups();
+            _backendManager?.Dispose();
             _logger.Dispose();
             _controlChannel?.Dispose();
-            _backendManager?.Dispose();
             _dispatcher.Dispose();
             throw;
         }
@@ -195,22 +195,80 @@ public sealed class RendererHostContext : ApplicationContext
 
         RendererConfiguration candidate = RendererConfiguration.Load(paths);
         IReadOnlyList<RendererWindowSpec> candidateSpecs = candidate.ResolveWindowSpecs();
-        Dictionary<string, RuntimeGroupHost> candidateGroups = CreateGroups(candidateSpecs);
-
         RuntimeGroupHost[] oldGroups;
+        IReadOnlyList<RendererWindowSpec> oldSpecs;
         lock (_sync)
         {
             oldGroups = _groups.Values.ToArray();
-            _groups.Clear();
-            foreach (KeyValuePair<string, RuntimeGroupHost> pair in candidateGroups)
-                _groups.Add(pair.Key, pair.Value);
-            _configuration = candidate;
-            _specs = candidateSpecs;
-            _configPaths = paths.ToArray();
+            oldSpecs = _specs.ToArray();
         }
 
-        foreach (RuntimeGroupHost group in oldGroups)
-            group.Dispose();
+        bool sameTopology = oldGroups.Select(group => group.Name).ToHashSet(StringComparer.Ordinal)
+            .SetEquals(candidateSpecs.Select(spec => spec.ThreadGroup));
+        if (sameTopology)
+        {
+            var reloaded = new List<RuntimeGroupHost>();
+            try
+            {
+                foreach (RuntimeGroupHost group in oldGroups)
+                {
+                    group.InvokeReload(candidateSpecs);
+                    reloaded.Add(group);
+                }
+            }
+            catch
+            {
+                foreach (RuntimeGroupHost group in reloaded)
+                {
+                    try { group.InvokeReload(oldSpecs); }
+                    catch (Exception rollbackError) { Console.Error.WriteLine($"[Reload] rollback failed for {group.Name}: {rollbackError.Message}"); }
+                }
+                throw;
+            }
+
+            lock (_sync)
+            {
+                _configuration = candidate;
+                _specs = candidateSpecs;
+                _configPaths = paths.ToArray();
+            }
+        }
+        else
+        {
+            StopGroups();
+            Dictionary<string, RuntimeGroupHost> candidateGroups;
+            try
+            {
+                candidateGroups = CreateGroups(candidateSpecs);
+            }
+            catch
+            {
+                try
+                {
+                    Dictionary<string, RuntimeGroupHost> restoredGroups = CreateGroups(oldSpecs);
+                    lock (_sync)
+                    {
+                        foreach (KeyValuePair<string, RuntimeGroupHost> pair in restoredGroups)
+                            _groups.Add(pair.Key, pair.Value);
+                    }
+                }
+                catch (Exception restoreError)
+                {
+                    Console.Error.WriteLine($"[Reload] old configuration restore failed: {restoreError.Message}");
+                }
+                throw;
+            }
+
+            lock (_sync)
+            {
+                foreach (KeyValuePair<string, RuntimeGroupHost> pair in candidateGroups)
+                    _groups.Add(pair.Key, pair.Value);
+                _configuration = candidate;
+                _specs = candidateSpecs;
+                _configPaths = paths.ToArray();
+            }
+        }
+
         _logger.Info("config.reload.succeeded", new Dictionary<string, string?>
         {
             ["windowCount"] = candidateSpecs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -399,7 +457,6 @@ public sealed class RendererHostContext : ApplicationContext
         _fullscreenMonitor.Dispose();
         _commandServer.Dispose();
         _logger.Info("renderer.stopping");
-        _backendManager?.Dispose();
         if (_tray != null)
         {
             _tray.Visible = false;
@@ -407,6 +464,7 @@ public sealed class RendererHostContext : ApplicationContext
         }
         _menu?.Dispose();
         StopGroups();
+        _backendManager?.Dispose();
         _logger.Dispose();
         _controlChannel?.Dispose();
         _dispatcher.Dispose();

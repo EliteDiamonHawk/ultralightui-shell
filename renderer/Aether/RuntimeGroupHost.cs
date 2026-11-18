@@ -58,6 +58,7 @@ public sealed class RuntimeGroupHost : IDisposable
     public void InvokeHideWindow(string? id) => Invoke(context => context.SetWindowVisible(id, false));
     public void InvokeRevealWindow(string? id) => Invoke(context => context.SetWindowVisible(id, true));
     public void InvokeReload() => Invoke(context => context.Reload());
+    public void InvokeReload(IReadOnlyList<RendererWindowSpec> specs) => Invoke(context => context.Reload(specs));
     public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => Invoke(context => context.GetWindowSnapshots());
 
     public void Stop()
@@ -332,8 +333,14 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     public void Reload()
     {
-        _currentSpecs = _specFactory().Where(spec => spec.ThreadGroup == _name).ToList();
-        ReplaceWindows(_currentSpecs);
+        Reload(_specFactory());
+    }
+
+    public void Reload(IReadOnlyList<RendererWindowSpec> specs)
+    {
+        List<RendererWindowSpec> candidateSpecs = specs.Where(spec => spec.ThreadGroup == _name).ToList();
+        ReplaceWindows(candidateSpecs);
+        _currentSpecs = candidateSpecs;
     }
 
     private void Tick()
@@ -415,7 +422,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private AppWindow CreateWindow(RendererWindowSpec spec)
     {
-        AppWindow window = _runtime.CreateWindow(spec, _options.StartupTimeout);
+        AppWindow window = _runtime.CreateWindow(spec, _options.StartupTimeout, PostOwner);
         window.OwnerThreadId = Environment.CurrentManagedThreadId;
         window.OwnerInvoker = action => InvokeOwner(action);
         NativeMethods.POINT center = new()
@@ -554,6 +561,21 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 action();
             else
                 _dispatcher.Invoke(action);
+            return true;
+        }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    private bool PostOwner(Action action)
+    {
+        if (_dispatcher.IsDisposed)
+            return false;
+        try
+        {
+            if (Environment.CurrentManagedThreadId == _ownerThreadId)
+                action();
+            else
+                _dispatcher.BeginInvoke(action);
             return true;
         }
         catch (InvalidOperationException) { return false; }
