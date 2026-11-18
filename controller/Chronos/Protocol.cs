@@ -17,6 +17,8 @@ internal sealed record ControlResponse(string? Id, int Status, JsonElement? Body
         new(id, status, Error: new ControlError(code, message, details));
 }
 
+internal sealed record ControlEvent(string Name, JsonElement? Body);
+
 internal static class ControlCodec
 {
     public const int MaxFrameBytes = 1024 * 1024;
@@ -94,6 +96,28 @@ internal static class ControlCodec
             return root.ValueKind == JsonValueKind.Object &&
                    root.TryGetProperty("event", out JsonElement eventValue) && eventValue.ValueKind == JsonValueKind.String &&
                    root.TryGetProperty("id", out JsonElement idValue) && idValue.ValueKind == JsonValueKind.Null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static bool TryParseEvent(string line, out ControlEvent? controlEvent)
+    {
+        controlEvent = null;
+        if (Encoding.UTF8.GetByteCount(line) > MaxFrameBytes)
+            return false;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("id", out JsonElement id) || id.ValueKind != JsonValueKind.Null ||
+                !root.TryGetProperty("event", out JsonElement name) || name.ValueKind != JsonValueKind.String)
+                return false;
+            controlEvent = new ControlEvent(name.GetString() ?? "", root.TryGetProperty("body", out JsonElement body) && body.ValueKind != JsonValueKind.Null ? body.Clone() : null);
+            return controlEvent.Name.Length > 0;
         }
         catch (JsonException)
         {

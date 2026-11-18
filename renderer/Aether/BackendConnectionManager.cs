@@ -11,6 +11,7 @@ internal sealed class BackendConnectionManager : IDisposable
 {
     private readonly ControlPipeChannel? _control;
     private readonly ConcurrentDictionary<string, BackendPipeConnection> _connections = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, JsonSchemaDescriptor> _schemas = new(StringComparer.Ordinal);
     private readonly string _sid = WindowsIdentityHelper.GetCurrentSid();
     private readonly string _sessionId = Guid.NewGuid().ToString("D");
 
@@ -20,6 +21,8 @@ internal sealed class BackendConnectionManager : IDisposable
         if (_control != null)
             _control.Disconnected += OnControlDisconnected;
     }
+
+    public event Action<BackendEvent>? StreamEventReceived;
 
     public async Task<BackendPipeConnection> GetOrConnectAsync(string backendId, CancellationToken cancellationToken = default)
     {
@@ -41,11 +44,16 @@ internal sealed class BackendConnectionManager : IDisposable
 
         if (response.Error != null || response.Status >= 300)
             throw new InvalidOperationException(response.Error?.Message ?? $"Backend connection failed with status {response.Status}.");
-        if (response.Body is not JsonElement body || !body.TryGetProperty("pipeName", out JsonElement pipeNameElement))
+        if (response.Body is not JsonElement body ||
+            !body.TryGetProperty("protocol", out JsonElement protocol) || !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
+            !body.TryGetProperty("backendId", out JsonElement returnedId) || returnedId.GetString() != backendId ||
+            !body.TryGetProperty("expiresAt", out JsonElement expiry) || !DateTimeOffset.TryParse(expiry.GetString(), out DateTimeOffset expiresAt) || expiresAt <= DateTimeOffset.UtcNow ||
+            !body.TryGetProperty("pipeName", out JsonElement pipeNameElement))
             throw new InvalidOperationException("Control returned no backend pipe name.");
 
         string pipeName = pipeNameElement.GetString() ?? "";
         var connection = await BackendPipeConnection.ConnectAsync(backendId, pipeName, cancellationToken).ConfigureAwait(false);
+        connection.EventReceived += OnBackendEvent;
         if (_connections.TryGetValue(backendId, out BackendPipeConnection? previous))
             previous.Dispose();
         _connections[backendId] = connection;
@@ -67,6 +75,31 @@ internal sealed class BackendConnectionManager : IDisposable
         }
     }
 
+    public async Task<BackendStreamDescriptor> OpenStreamAsync(string backendId, string dataId, string type, CancellationToken cancellationToken = default)
+    {
+        if (type != "json" || string.IsNullOrWhiteSpace(dataId))
+            throw new InvalidOperationException("Only non-empty json streams are supported.");
+        BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
+        ControlResponse response = await connection.SendAsync("POST", "/v1/streams", new { dataId, type }, cancellationToken).ConfigureAwait(false);
+        if (response.Error != null || response.Status >= 300 || response.Body is not JsonElement body ||
+            !body.TryGetProperty("streamId", out JsonElement streamId) || streamId.ValueKind != JsonValueKind.String ||
+            !body.TryGetProperty("type", out JsonElement returnedType) || returnedType.GetString() != type ||
+            !body.TryGetProperty("schema", out JsonElement schema))
+            throw new InvalidOperationException(response.Error?.Message ?? "Backend returned an invalid stream descriptor.");
+        BackendStreamDescriptor descriptor = new(streamId.GetString()!, type, JsonSchemaDescriptor.Parse(schema));
+        _schemas[descriptor.StreamId] = descriptor.Schema;
+        return descriptor;
+    }
+
+    public async Task CloseStreamAsync(string backendId, string streamId, CancellationToken cancellationToken = default)
+    {
+        BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
+        ControlResponse response = await connection.SendAsync("DELETE", $"/v1/streams/{Uri.EscapeDataString(streamId)}", null, cancellationToken).ConfigureAwait(false);
+        if (response.Error != null || response.Status >= 300)
+            throw new InvalidOperationException(response.Error?.Message ?? "Backend stream close failed.");
+        _schemas.TryRemove(streamId, out _);
+    }
+
     public IReadOnlyList<BackendPipeSnapshot> Snapshot() => _connections.Values
         .Select(connection => new BackendPipeSnapshot(connection.BackendId, connection.State, connection.QueueDepth))
         .ToArray();
@@ -75,9 +108,18 @@ internal sealed class BackendConnectionManager : IDisposable
     {
         if (_control != null)
             _control.Disconnected -= OnControlDisconnected;
-        foreach (BackendPipeConnection connection in _connections.Values)
-            connection.Dispose();
+        foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections)
+        {
+            try
+            {
+                if (_control?.State == "connected")
+                    _control.SendAsync("DELETE", $"/v1/backends/{Uri.EscapeDataString(pair.Key)}/connect", new { sessionId = _sessionId }, TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            }
+            catch { }
+            pair.Value.Dispose();
+        }
         _connections.Clear();
+        _schemas.Clear();
     }
 
     private void OnControlDisconnected()
@@ -87,6 +129,19 @@ internal sealed class BackendConnectionManager : IDisposable
             if (_connections.TryRemove(pair.Key, out BackendPipeConnection? connection))
                 connection.Dispose();
         }
+    }
+
+    private void OnBackendEvent(BackendEvent value)
+    {
+        if (value.Name == "stream.overflow")
+        {
+            StreamEventReceived?.Invoke(value);
+            return;
+        }
+        if (value.Name != "stream.data" || value.Type != "json" || value.Data is not JsonElement data ||
+            !_schemas.TryGetValue(value.StreamId, out JsonSchemaDescriptor? schema) || !schema.Matches(data))
+            return;
+        StreamEventReceived?.Invoke(value);
     }
 }
 
@@ -113,6 +168,7 @@ internal sealed class BackendPipeConnection : IDisposable
     public string BackendId { get; }
     public string State { get; private set; }
     public int QueueDepth => _pending.Count;
+    public event Action<BackendEvent>? EventReceived;
 
     public static async Task<BackendPipeConnection> ConnectAsync(string backendId, string pipeName, CancellationToken cancellationToken)
     {
@@ -173,7 +229,11 @@ internal sealed class BackendPipeConnection : IDisposable
                 if (line == null)
                     break;
                 if (!ControlPipeCodec.TryParseResponse(line, out ControlResponse? response) || response?.Id == null)
+                {
+                    if (TryParseEvent(line, out BackendEvent? backendEvent))
+                        EventReceived?.Invoke(backendEvent!);
                     continue;
+                }
                 if (_pending.TryGetValue(response.Id, out TaskCompletionSource<ControlResponse>? completion))
                     completion.TrySetResult(response);
             }
@@ -185,6 +245,24 @@ internal sealed class BackendPipeConnection : IDisposable
             foreach (TaskCompletionSource<ControlResponse> completion in _pending.Values)
                 completion.TrySetException(ex);
         }
+    }
+
+    private static bool TryParseEvent(string line, out BackendEvent? backendEvent)
+    {
+        backendEvent = null;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (!root.TryGetProperty("id", out JsonElement id) || id.ValueKind != JsonValueKind.Null ||
+                !root.TryGetProperty("event", out JsonElement name) || name.ValueKind != JsonValueKind.String ||
+                !root.TryGetProperty("streamId", out JsonElement stream) || stream.ValueKind != JsonValueKind.String ||
+                !root.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String)
+                return false;
+            backendEvent = new BackendEvent(name.GetString()!, stream.GetString()!, type.GetString()!, root.TryGetProperty("data", out JsonElement data) ? data.Clone() : null);
+            return true;
+        }
+        catch (JsonException) { return false; }
     }
 }
 

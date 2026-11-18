@@ -9,18 +9,22 @@ public sealed class RuntimeGroupHost : IDisposable
     private readonly HostOptions _options;
     private readonly Func<IReadOnlyList<RendererWindowSpec>> _specFactory;
     private readonly RendererLogger _logger;
+    private readonly BackendConnectionManager? _backends;
+    private readonly ControlPipeChannel? _control;
     private readonly ManualResetEventSlim _ready = new(false);
     private Thread? _thread;
     private RuntimeGroupContext? _context;
     private Exception? _startupException;
     private int _disposed;
 
-    internal RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory, RendererLogger logger)
+    internal RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory, RendererLogger logger, BackendConnectionManager? backends = null, ControlPipeChannel? control = null)
     {
         Name = name;
         _options = options;
         _specFactory = specFactory;
         _logger = logger;
+        _backends = backends;
+        _control = control;
     }
 
     public string Name { get; }
@@ -91,7 +95,7 @@ public sealed class RuntimeGroupHost : IDisposable
         RuntimeGroupContext? context = null;
         try
         {
-            context = new RuntimeGroupContext(Name, _options, _specFactory, _logger);
+            context = new RuntimeGroupContext(Name, _options, _specFactory, _logger, _backends, _control);
             lock (_sync) _context = context;
             _ready.Set();
             _logger.Info("runtime.group.started", new Dictionary<string, string?> { ["group"] = Name });
@@ -123,6 +127,8 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly HostOptions _options;
     private readonly Func<IReadOnlyList<RendererWindowSpec>> _specFactory;
     private readonly RendererLogger _logger;
+    private readonly BackendConnectionManager? _backends;
+    private readonly ControlPipeChannel? _control;
     private readonly Control _dispatcher = new();
     private readonly object _windowSync = new();
     private readonly UltralightRuntime _runtime;
@@ -146,15 +152,19 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         string name,
         HostOptions options,
         Func<IReadOnlyList<RendererWindowSpec>> specFactory,
-        RendererLogger logger)
+        RendererLogger logger,
+        BackendConnectionManager? backends = null,
+        ControlPipeChannel? control = null)
     {
         _name = name;
         _options = options;
         _specFactory = specFactory;
         _logger = logger;
+        _backends = backends;
+        _control = control;
         _currentSpecs = specFactory().Where(spec => spec.ThreadGroup == name).ToList();
         _dispatcher.CreateControl();
-        _runtime = new UltralightRuntime(options.UltralightRoot);
+        _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control);
         _embedder = new DesktopEmbedder(options.Verbose);
         _startMenuController = new StartMenuWindowController(options.Verbose);
         _timer = new System.Windows.Forms.Timer { Interval = 16 };
@@ -282,7 +292,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             RendererWindowSpec? spec = _specFactory().FirstOrDefault(item => item.ThreadGroup == _name && item.Kind == WindowKind.StartMenu);
             if (spec == null)
-                throw new InvalidOperationException("No start-menu window is configured.");
+                throw new InvalidOperationException("No menu window is configured.");
             CreateAndAttach(spec, true);
         }
         if (!_paused && _startMenu != null)

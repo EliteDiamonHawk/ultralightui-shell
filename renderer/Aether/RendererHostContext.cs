@@ -7,8 +7,8 @@ public sealed class RendererHostContext : ApplicationContext
     private readonly HostOptions _options;
     private readonly SingleInstanceLease _lease;
     private readonly Control _dispatcher = new();
-    private readonly NotifyIcon _tray;
-    private readonly ContextMenuStrip _menu;
+    private readonly NotifyIcon? _tray;
+    private readonly ContextMenuStrip? _menu;
     private readonly CommandPipeServer _commandServer;
     private readonly InputRouter _input;
     private readonly FullscreenMonitor _fullscreenMonitor;
@@ -47,6 +47,8 @@ public sealed class RendererHostContext : ApplicationContext
             }
             _logger.Info("renderer.starting");
 
+            _backendManager = new BackendConnectionManager(_controlChannel);
+
             foreach (KeyValuePair<string, RuntimeGroupHost> pair in CreateGroups(_specs))
                 _groups.Add(pair.Key, pair.Value);
 
@@ -55,15 +57,17 @@ public sealed class RendererHostContext : ApplicationContext
             _fullscreenMonitor.Start();
             _commandServer = new CommandPipeServer(HandleCommand);
             _commandServer.Start();
-            _backendManager = new BackendConnectionManager(_controlChannel);
-            _menu = BuildMenu();
-            _tray = new NotifyIcon
+            if (!options.NoTray)
             {
-                Text = "Aether",
-                Icon = SystemIcons.Application,
-                ContextMenuStrip = _menu,
-                Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
-            };
+                _menu = BuildMenu();
+                _tray = new NotifyIcon
+                {
+                    Text = "Aether",
+                    Icon = SystemIcons.Application,
+                    ContextMenuStrip = _menu,
+                    Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
+                };
+            }
             _logger.Info("renderer.ready", new Dictionary<string, string?>
             {
                 ["configuredWindows"] = _specs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -89,7 +93,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             foreach (string groupName in snapshot.Select(spec => spec.ThreadGroup).Distinct(StringComparer.Ordinal))
             {
-                var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger);
+                var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger, _backendManager, _controlChannel);
                 group.Start();
                 result.Add(groupName, group);
             }
@@ -210,6 +214,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             ["windowCount"] = candidateSpecs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
         });
+        _controlChannel?.TrySendEvent("config.changed", new { files = _configPaths });
         return "OK configuration applied";
     }
 
@@ -242,6 +247,8 @@ public sealed class RendererHostContext : ApplicationContext
         bool visible = false;
         _dispatcher.Invoke(() =>
         {
+            if (_tray == null)
+                throw new InvalidOperationException("Aether tray is disabled for this process.");
             visible = action switch
             {
                 SystemTrayAction.Show => true,
@@ -264,6 +271,7 @@ public sealed class RendererHostContext : ApplicationContext
         if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
             return $"ERR Window group '{spec.ThreadGroup}' is not running.";
         if (visible) host.InvokeRevealWindow(id); else host.InvokeHideWindow(id);
+        _controlChannel?.TrySendEvent("window.changed", new { id, visible });
         return $"OK {(visible ? "revealed" : "hid")} {id}";
     }
 
@@ -380,9 +388,12 @@ public sealed class RendererHostContext : ApplicationContext
         _commandServer.Dispose();
         _logger.Info("renderer.stopping");
         _backendManager?.Dispose();
-        _tray.Visible = false;
-        _tray.Dispose();
-        _menu.Dispose();
+        if (_tray != null)
+        {
+            _tray.Visible = false;
+            _tray.Dispose();
+        }
+        _menu?.Dispose();
         StopGroups();
         _logger.Dispose();
         _controlChannel?.Dispose();

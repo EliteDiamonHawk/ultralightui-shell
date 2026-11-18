@@ -13,4 +13,8 @@
     <RootNamespace>Chronos</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\RendererContracts.csproj" />
+  </ItemGroup>
+
 </Project>

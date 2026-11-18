@@ -47,6 +47,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             _renderer = startedRenderer;
             _commands = new RendererCommandService(new AetherCommandClient());
             _renderer.Control.Disconnected += OnControlDisconnected;
+            _renderer.Control.EventReceived += OnRendererEvent;
             _renderer.ProcessExited += OnRendererExited;
             WaitForRenderer(configPaths);
 
@@ -73,7 +74,11 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
         if (!_commands.IsConnected)
+        {
+            if (_renderer.Process.HasExited && _renderer.Process.ExitCode == 3)
+                throw new InvalidOperationException("Aether is already running outside Chronos; attach/adopt is not supported.");
             throw new InvalidOperationException("Aether did not accept commands during startup.");
+        }
 
         if (expectedConfig.Count > 0 && !PathsEqual(expectedConfig, capabilities.ConfigFiles))
             throw new InvalidOperationException("Aether accepted a configuration different from requested startup paths.");
@@ -182,6 +187,26 @@ internal sealed class ChronosHostContext : ApplicationContext
         _backends.RevokeAll();
         _commands.MarkDisconnected();
         Diagnostic("Renderer control channel disconnected.");
+    }
+
+    private void OnRendererEvent(string eventName, System.Text.Json.JsonElement? body)
+    {
+        if (eventName is not ("config.changed" or "window.changed"))
+            return;
+        try
+        {
+            _dispatcher.BeginInvoke((Action)(() =>
+            {
+                try
+                {
+                    RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
+                    if (eventName == "config.changed" && capabilities.ConfigFiles.Count > 0)
+                        PersistAcceptedConfig(capabilities.ConfigFiles);
+                }
+                catch (Exception ex) { Diagnostic($"Could not refresh renderer state: {ex.Message}"); }
+            }));
+        }
+        catch (InvalidOperationException) { }
     }
 
     private void OnRendererExited()

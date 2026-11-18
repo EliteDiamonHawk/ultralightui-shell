@@ -1,41 +1,9 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using KhaosShell.Contracts;
 
 namespace Chronos;
-
-internal enum AetherCommandKind
-{
-    None,
-    Show,
-    SystemTray,
-    ShowMenu,
-    HideMenu,
-    HideWindow,
-    RevealWindow,
-    ApplyConfig,
-    Pause,
-    Resume,
-    Status,
-    Reload,
-    Exit
-}
-
-internal enum AetherTrayAction
-{
-    Toggle,
-    Show,
-    Hide
-}
-
-internal sealed record AetherCommand(
-    AetherCommandKind Kind,
-    string? Group = null,
-    bool All = false,
-    string? TargetId = null,
-    string? Topic = null,
-    IReadOnlyList<string>? ConfigPaths = null,
-    AetherTrayAction TrayAction = AetherTrayAction.Toggle);
 
 internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null);
 
@@ -54,7 +22,7 @@ internal sealed class AetherCommandClient
             await pipe.ConnectAsync(timeoutSource.Token).ConfigureAwait(false);
             using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
-            await writer.WriteLineAsync(JsonSerializer.Serialize(command).AsMemory(), timeoutSource.Token).ConfigureAwait(false);
+            await writer.WriteLineAsync(RendererCommandCodec.Serialize(command).AsMemory(), timeoutSource.Token).ConfigureAwait(false);
             string response = await reader.ReadLineAsync(timeoutSource.Token).ConfigureAwait(false) ?? "ERR No response from Aether.";
             return response.StartsWith("ERR ", StringComparison.Ordinal)
                 ? new AetherCommandResult(false, response, response[4..])
@@ -213,8 +181,7 @@ internal sealed class RendererCommandService
         }
 
         var groups = windowValues.Select(item => item.Group).Where(item => item != null).Distinct(StringComparer.Ordinal).Cast<string>().ToArray();
-        bool hasMenu = windowValues.Any(item => string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase) ||
-                                                string.Equals(item.Kind, "start-menu", StringComparison.OrdinalIgnoreCase));
+        bool hasMenu = windowValues.Any(item => string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase));
         string pipeState = ControlCodec.GetString(pipesRoot, "control") ?? "unknown";
         return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState);
     }

@@ -97,7 +97,7 @@ Give `menu` the same geometry and URL fields as a widget. Add these fields when 
 | `transparent` | No | `true` | Transparent Ultralight window. |
 | `thread-group` | No | `menu` | Runtime group. |
 
-`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--reveal-menu` creates it again.
+`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--show-menu` creates it again.
 
 ## Thread groups and reload
 

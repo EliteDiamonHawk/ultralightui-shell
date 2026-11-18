@@ -110,12 +110,14 @@ internal sealed class BackendManager : IDisposable
     private readonly string _sid;
     private readonly object _sync = new();
     private readonly Dictionary<string, BackendRuntime> _runtimes = new(StringComparer.Ordinal);
+    private readonly System.Threading.Timer _expiryTimer;
     private bool _disposed;
 
     public BackendManager(BackendRegistry registry)
     {
         _registry = registry;
         _sid = GetCurrentSid();
+        _expiryTimer = new System.Threading.Timer(_ => ExpireGrants(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
     public BackendGrant Connect(string backendId, string rendererSid, int rendererPid, string rendererSessionId)
@@ -192,6 +194,7 @@ internal sealed class BackendManager : IDisposable
 
     public void Dispose()
     {
+        _expiryTimer.Dispose();
         lock (_sync)
         {
             if (_disposed)
@@ -211,6 +214,7 @@ internal sealed class BackendManager : IDisposable
             FileName = definition.Executable,
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardOutput = true,
             WorkingDirectory = string.IsNullOrWhiteSpace(definition.WorkingDirectory)
                 ? Path.GetDirectoryName(Path.GetFullPath(definition.Executable)) ?? AppContext.BaseDirectory
                 : definition.WorkingDirectory
@@ -229,15 +233,90 @@ internal sealed class BackendManager : IDisposable
             startInfo.Environment[key] = value;
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        if (!process.Start())
-            throw new BackendException(500, "backend_start_failed", "Backend process did not start.");
+        try
+        {
+            if (!process.Start())
+                throw new BackendException(500, "backend_start_failed", "Backend process did not start.");
+        }
+        catch (BackendException)
+        {
+            process.Dispose();
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)
+        {
+            process.Dispose();
+            throw new BackendException(500, "backend_start_failed", $"Backend process could not start: {ex.Message}");
+        }
         if (process.HasExited)
         {
             int exitCode = process.ExitCode;
             process.Dispose();
             throw new BackendException(500, "backend_start_failed", $"Backend process exited during startup with code {exitCode}.");
         }
+
+        BackendReadySignal ready;
+        try
+        {
+            string? line = process.StandardOutput.ReadLineAsync()
+                .WaitAsync(TimeSpan.FromSeconds(5))
+                .GetAwaiter()
+                .GetResult();
+            ready = ParseReadySignal(line, backendId, pipeName);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException or JsonException or InvalidOperationException)
+        {
+            StopRuntime(new BackendRuntime(backendId, pipeName, process));
+            throw new BackendException(500, "backend_ready_timeout", $"Backend did not become ready: {ex.Message}");
+        }
+
+        if (!string.Equals(ready.Sid, _sid, StringComparison.OrdinalIgnoreCase))
+        {
+            StopRuntime(new BackendRuntime(backendId, pipeName, process));
+            throw new BackendException(500, "backend_acl_invalid", "Backend readiness SID does not match current user.");
+        }
         return new BackendRuntime(backendId, pipeName, process);
+    }
+
+    private static BackendReadySignal ParseReadySignal(string? line, string backendId, string expectedPipeName)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            throw new InvalidOperationException("Backend readiness signal was empty.");
+
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("ready", out JsonElement ready) || ready.ValueKind != JsonValueKind.True ||
+            !root.TryGetProperty("protocol", out JsonElement protocol) || !protocol.TryGetInt32(out int version) || version != 1 ||
+            !root.TryGetProperty("backendId", out JsonElement id) || id.GetString() != backendId ||
+            !root.TryGetProperty("sid", out JsonElement sid) || sid.ValueKind != JsonValueKind.String ||
+            !root.TryGetProperty("pipeName", out JsonElement pipe) || pipe.ValueKind != JsonValueKind.String)
+            throw new InvalidOperationException("Backend readiness signal is invalid.");
+
+        string returnedPipe = pipe.GetString() ?? "";
+        string normalizedExpected = expectedPipeName.StartsWith("\\\\.\\pipe\\", StringComparison.OrdinalIgnoreCase)
+            ? expectedPipeName[9..]
+            : expectedPipeName;
+        string normalizedReturned = returnedPipe.StartsWith("\\\\.\\pipe\\", StringComparison.OrdinalIgnoreCase)
+            ? returnedPipe[9..]
+            : returnedPipe;
+        if (!string.Equals(normalizedExpected, normalizedReturned, StringComparison.Ordinal))
+            throw new InvalidOperationException("Backend readiness pipe name does not match launch contract.");
+
+        return new BackendReadySignal(sid.GetString() ?? "");
+    }
+
+    private void ExpireGrants()
+    {
+        try
+        {
+            lock (_sync)
+            {
+                if (!_disposed)
+                    PruneExpiredLocked();
+            }
+        }
+        catch { }
     }
 
     private void PruneExpiredLocked()
@@ -292,6 +371,8 @@ internal sealed class BackendManager : IDisposable
         public Process Process { get; }
         public Dictionary<string, DateTimeOffset> Grants { get; } = new(StringComparer.Ordinal);
     }
+
+    private sealed record BackendReadySignal(string Sid);
 }
 
 internal sealed class BackendException : Exception

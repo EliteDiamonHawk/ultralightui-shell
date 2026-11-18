@@ -84,8 +84,7 @@ internal sealed class RendererSession : IDisposable
             startInfo.ArgumentList.Add("--config");
             startInfo.ArgumentList.Add(configPath);
         }
-        startInfo.ArgumentList.Add("--system-tray");
-        startInfo.ArgumentList.Add("hide");
+        startInfo.ArgumentList.Add("--no-tray");
         startInfo.ArgumentList.Add("--control-read-handle");
         startInfo.ArgumentList.Add(childReadHandle);
         startInfo.ArgumentList.Add("--control-write-handle");

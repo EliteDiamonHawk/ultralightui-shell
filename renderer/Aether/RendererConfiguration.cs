@@ -347,7 +347,7 @@ public sealed class RendererConfiguration
 
     private static StartMenuDefinition ParseStartMenu(JsonElement element)
     {
-        const string prefix = "Start menu";
+        const string prefix = "Menu";
         RequireKind(element, JsonValueKind.Object, prefix);
         ValidateProperties(element, prefix,
             "id", "x", "y", "pos-scaled", "pos-scale", "size-scaled", "size-scale", "anchor",
@@ -396,7 +396,7 @@ public sealed class RendererConfiguration
             "none" => StartMenuHiddenBehavior.None,
             "pause" or "suspend" => StartMenuHiddenBehavior.Pause,
             "unload" => StartMenuHiddenBehavior.Unload,
-            _ => throw new RendererConfigurationException("Start menu hidden-behavior must be none, pause, suspend, or unload.")
+            _ => throw new RendererConfigurationException("Menu hidden-behavior must be none, pause, suspend, or unload.")
         };
     }
 

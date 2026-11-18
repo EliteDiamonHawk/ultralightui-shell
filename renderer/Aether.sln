@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aether", "Aether\Aether.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aether.Tests", "Aether.Tests\Aether.Tests.csproj", "{A7F7BB3A-EAB5-4EF7-9EC1-70AE6B5B1202}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RendererContracts", "..\contracts\RendererContracts.csproj", "{C3A1D5E7-4B6F-48A0-9C2D-7E8F1A2B3C4D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,5 +22,9 @@ Global
 		{A7F7BB3A-EAB5-4EF7-9EC1-70AE6B5B1202}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A7F7BB3A-EAB5-4EF7-9EC1-70AE6B5B1202}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A7F7BB3A-EAB5-4EF7-9EC1-70AE6B5B1202}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3A1D5E7-4B6F-48A0-9C2D-7E8F1A2B3C4D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3A1D5E7-4B6F-48A0-9C2D-7E8F1A2B3C4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3A1D5E7-4B6F-48A0-9C2D-7E8F1A2B3C4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3A1D5E7-4B6F-48A0-9C2D-7E8F1A2B3C4D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

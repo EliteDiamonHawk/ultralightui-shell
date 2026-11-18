@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Json;
 
 namespace Chronos;
 
@@ -31,6 +32,7 @@ internal sealed class ControlChannel : IDisposable
 
     public string State { get; private set; } = "connected";
     public event Action? Disconnected;
+    public event Action<string, JsonElement?>? EventReceived;
 
     public void Start() => _loop = Task.Run(RunAsync);
 
@@ -98,8 +100,11 @@ internal sealed class ControlChannel : IDisposable
                     continue;
                 }
 
-                if (ControlCodec.IsUnsolicitedEvent(line))
+                if (ControlCodec.TryParseEvent(line, out ControlEvent? controlEvent))
+                {
+                    EventReceived?.Invoke(controlEvent!.Name, controlEvent.Body);
                     continue;
+                }
 
                 if (!ControlCodec.TryParseRequest(line, out ControlRequest? request, out ControlError? parseError, out string? requestId))
                 {
@@ -146,6 +151,10 @@ internal sealed class ControlChannel : IDisposable
         try
         {
             response = await _handler(request).ConfigureAwait(false);
+        }
+        catch (BackendException ex)
+        {
+            response = ControlResponse.Failure(request.Id, ex.Status, ex.Code, ex.Message);
         }
         catch (LogStoreException ex)
         {

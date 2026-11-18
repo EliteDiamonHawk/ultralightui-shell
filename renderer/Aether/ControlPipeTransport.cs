@@ -19,6 +19,8 @@ internal sealed record ControlResponse(
     object? Body = null,
     ControlError? Error = null);
 
+internal sealed record ControlEvent(string Name, JsonElement? Body);
+
 internal static class ControlPipeCodec
 {
     public const int MaxFrameBytes = 1024 * 1024;
@@ -97,6 +99,13 @@ internal static class ControlPipeCodec
         body = request.Body
     }, JsonOptions);
 
+    public static string SerializeEvent(string name, object? body = null) => JsonSerializer.Serialize(new
+    {
+        id = (string?)null,
+        @event = name,
+        body = body == null ? (JsonElement?)null : SerializeBody(body)
+    }, JsonOptions);
+
     public static JsonElement SerializeBody(object body) =>
         JsonSerializer.SerializeToElement(body, JsonOptions);
 
@@ -129,6 +138,28 @@ internal static class ControlPipeCodec
             }
             response = new ControlResponse(id, statusCode, body, error);
             return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static bool TryParseEvent(string line, out ControlEvent? controlEvent)
+    {
+        controlEvent = null;
+        if (Encoding.UTF8.GetByteCount(line) > MaxFrameBytes)
+            return false;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("id", out JsonElement id) || id.ValueKind != JsonValueKind.Null ||
+                !root.TryGetProperty("event", out JsonElement name) || name.ValueKind != JsonValueKind.String)
+                return false;
+            controlEvent = new ControlEvent(name.GetString() ?? "", root.TryGetProperty("body", out JsonElement body) && body.ValueKind != JsonValueKind.Null ? body.Clone() : null);
+            return controlEvent.Name.Length > 0;
         }
         catch (JsonException)
         {
@@ -240,6 +271,9 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
                     continue;
                 }
 
+                if (ControlPipeCodec.TryParseEvent(line, out ControlEvent? controlEvent))
+                    continue;
+
                 ControlResponse? response = null;
                 if (!ControlPipeCodec.TryParseRequest(line, out ControlRequest? request, out ControlError? parseError))
                 {
@@ -268,6 +302,18 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
                     Disconnected?.Invoke();
             }
         }
+    }
+
+    public Task SendEventAsync(string name, object? body = null, CancellationToken cancellationToken = default) =>
+        WriteAsync(ControlPipeCodec.SerializeEvent(name, body), cancellationToken);
+
+    public void TrySendEvent(string name, object? body = null)
+    {
+        _ = SendEventAsync(name, body).ContinueWith(
+            _ => { },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 
     private Task<ControlResponse> GetRequestTask(ControlRequest request)

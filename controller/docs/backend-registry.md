@@ -31,7 +31,15 @@ a random private pipe name and launches the backend with:
 ```
 
 Backend must create the private named-pipe server with an ACL restricted to the
-current user SID and implement backend protocol 1. Chronos returns a five-minute
-grant to Aether, never exposes the name to page JavaScript, and never proxies
-backend payloads. Grants revoke on DELETE, expiry, renderer disconnect, or
-shutdown.
+current user SID and implement backend protocol 1. Before Chronos grants access,
+backend must write one readiness JSON line to stdout:
+
+```json
+{"ready":true,"protocol":1,"backendId":"nyx","sid":"S-1-5-21-...","pipeName":"KhaosShell-Backend-..."}
+```
+
+Chronos validates readiness, identity, SID, and pipe name within five seconds.
+Failure stops backend and returns a structured startup error. Chronos returns a
+five-minute grant to Aether, never exposes the name to page JavaScript, and never
+proxies backend payloads. Grants revoke on DELETE, expiry, renderer disconnect,
+or shutdown.

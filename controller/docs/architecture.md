@@ -6,7 +6,7 @@
 loads persistence and the optional backend registry, resolves Aether, creates
 two anonymous pipes, and launches Aether with inherited handle arguments.
 
-Chronos always passes `--system-tray hide`; the controller owns the product
+Chronos always passes `--no-tray`; the controller owns the product
 tray. After Aether accepts its existing `Aether.Commands` pipe, Chronos queries
 config, windows, and pipe state. Accepted config paths are then persisted.
 

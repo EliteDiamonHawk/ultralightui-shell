@@ -38,10 +38,10 @@ The host periodically reconciles native geometry. A repeated geometry error usua
 
 ## Menu does not remain visible
 
-`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--reveal-menu` recreates it. Test with:
+`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--show-menu` recreates it. Test with:
 
 ```powershell
-Aether.exe --reveal-menu
+Aether.exe --show-menu
 Aether.exe --status-all
 ```
 

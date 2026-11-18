@@ -1,40 +1,9 @@
 using System.Globalization;
-using System.Text.Json;
+using KhaosShell.Contracts;
+using RendererCommandKind = KhaosShell.Contracts.RendererCommandKind;
+using SystemTrayAction = KhaosShell.Contracts.SystemTrayAction;
 
 namespace Aether;
-
-public enum RendererCommandKind
-{
-    None,
-    Show,
-    SystemTray,
-    ShowMenu,
-    HideMenu,
-    HideWindow,
-    RevealWindow,
-    ApplyConfig,
-    Pause,
-    Resume,
-    Status,
-    Reload,
-    Exit
-}
-
-public enum SystemTrayAction
-{
-    Toggle,
-    Show,
-    Hide
-}
-
-public sealed record RendererCommand(
-    RendererCommandKind Kind,
-    string? Group = null,
-    bool All = false,
-    string? TargetId = null,
-    string? Topic = null,
-    IReadOnlyList<string>? ConfigPaths = null,
-    SystemTrayAction TrayAction = SystemTrayAction.Toggle);
 
 public sealed class HostOptions
 {
@@ -47,6 +16,7 @@ public sealed class HostOptions
     public int ReconcileIntervalMs { get; private init; } = 250;
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
     public bool Verbose { get; private init; }
+    public bool NoTray { get; private init; }
     public bool ShowHelp { get; private init; }
     public SystemTrayAction? InitialSystemTrayAction { get; private init; }
     public RendererCommand Command { get; private init; } = new(RendererCommandKind.None);
@@ -60,6 +30,7 @@ public sealed class HostOptions
         IntPtr? controlReadHandle = null;
         IntPtr? controlWriteHandle = null;
         bool verbose = false;
+        bool noTray = false;
         bool showHelp = false;
         SystemTrayAction? systemTrayAction = null;
         RendererCommand? command = null;
@@ -92,6 +63,12 @@ public sealed class HostOptions
                     EnsureNoCommand(command, option);
                     verbose = true;
                     break;
+                case "--no-tray":
+                    EnsureNoCommand(command, option);
+                    if (inlineValue != null)
+                        throw new OptionException($"{option} does not accept a value.");
+                    noTray = true;
+                    break;
                 case "--system-tray":
                     EnsureNoCommand(command, option);
                     if (systemTrayAction != null)
@@ -121,7 +98,7 @@ public sealed class HostOptions
                 case "--show":
                     SetCommand(ref command, new(RendererCommandKind.Show, Topic: NextRequiredTopic(args, ref index, inlineValue, option)), option);
                     break;
-                case "--reveal-menu":
+                case "--show-menu":
                     SetCommand(ref command, new(RendererCommandKind.ShowMenu), option);
                     break;
                 case "--hide-menu":
@@ -152,7 +129,7 @@ public sealed class HostOptions
 
         if (command != null)
         {
-            if (configPaths.Count > 0 || ultralightRoot != null || verbose || reconcileMs != 250 || startupTimeoutMs != 30_000 || controlReadHandle != null || controlWriteHandle != null || systemTrayAction != null)
+            if (configPaths.Count > 0 || ultralightRoot != null || verbose || noTray || reconcileMs != 250 || startupTimeoutMs != 30_000 || controlReadHandle != null || controlWriteHandle != null || systemTrayAction != null)
                 throw new OptionException("Runtime commands cannot be combined with startup options.");
             return new HostOptions { Command = command };
         }
@@ -169,6 +146,7 @@ public sealed class HostOptions
             ReconcileIntervalMs = reconcileMs,
             StartupTimeout = TimeSpan.FromMilliseconds(startupTimeoutMs),
             Verbose = verbose,
+            NoTray = noTray,
             InitialSystemTrayAction = systemTrayAction
         };
     }
@@ -178,7 +156,7 @@ public sealed class HostOptions
 
         Usage:
           Aether.exe [--config <path> ...] [options]
-          Aether.exe --reveal-menu | --hide-menu
+          Aether.exe --show-menu | --hide-menu
           Aether.exe --hide <id> | --reveal <id>
           Aether.exe --show pipes|config|windows|paths
           Aether.exe --system-tray [show|hide]
@@ -196,10 +174,11 @@ public sealed class HostOptions
           --control-read-handle <n>     Inherited control-to-renderer pipe handle.
           --control-write-handle <n>    Inherited renderer-to-control pipe handle.
           --verbose                      Log embedding diagnostics.
+          --no-tray                      Do not construct an Aether tray icon.
           --system-tray [show|hide]      Set tray visibility; bare flag toggles it.
 
         Runtime commands:
-          --reveal-menu, --hide-menu     Reveal or hide configured menu.
+          --show-menu, --hide-menu       Show or hide configured menu.
           --hide <id>, --reveal <id>     Hide or reveal one window.
           --show <topic>                 Show pipes, config, windows, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.
@@ -293,19 +272,7 @@ public sealed class OptionException : Exception
 
 internal static class RendererCommandProtocol
 {
-    public static string Serialize(RendererCommand command) => JsonSerializer.Serialize(command);
+    public static string Serialize(RendererCommand command) => RendererCommandCodec.Serialize(command);
 
-    public static bool TryParse(string text, out RendererCommand? command)
-    {
-        try
-        {
-            command = JsonSerializer.Deserialize<RendererCommand>(text);
-            return command != null && command.Kind != RendererCommandKind.None;
-        }
-        catch (JsonException)
-        {
-            command = null;
-            return false;
-        }
-    }
+    public static bool TryParse(string text, out RendererCommand? command) => RendererCommandCodec.TryParse(text, out command);
 }

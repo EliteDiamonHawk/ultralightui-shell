@@ -59,7 +59,7 @@ public sealed class StartMenuWindowController : IStartMenuWindowPlacement
                 GetPlacementFlags(show)))
         {
             throw new InvalidOperationException(
-                $"Could not position start-menu window: {FormatWin32Error(Marshal.GetLastPInvokeError())}");
+                $"Could not position menu window: {FormatWin32Error(Marshal.GetLastPInvokeError())}");
         }
         window.TopmostPlacementApplied = true;
         if (_verbose)
@@ -69,7 +69,7 @@ public sealed class StartMenuWindowController : IStartMenuWindowPlacement
     private static void EnsureWindow(AppWindow window)
     {
         if (!NativeWindowApi.IsWindow(window.Hwnd))
-            throw new InvalidOperationException($"Start-menu window is no longer valid: {window.LogicalId}");
+            throw new InvalidOperationException($"Menu window is no longer valid: {window.LogicalId}");
     }
 
     private static string FormatWin32Error(int error) =>

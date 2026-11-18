@@ -18,7 +18,8 @@ Startup options:
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `--config <path>` | Required | JSON config; repeatable. |
+| `--config <path>` | Optional | JSON config; repeatable. |
+| `--no-tray` | Off | Do not construct Aether's tray icon. |
 | `--ultralight-root <path>` | Bundled output | External SDK root containing `bin\` and `resources\`. |
 | `--reconcile-ms <n>` | `250` | Native window geometry reconciliation interval. |
 | `--startup-timeout-ms <n>` | `30000` | Per-window Ultralight readiness timeout. |
@@ -33,7 +34,7 @@ Startup options:
 Commands connect to the already-running user-scoped instance. They do not load config files.
 
 ```powershell
-Aether.exe --reveal-menu
+Aether.exe --show-menu
 Aether.exe --hide-menu
 Aether.exe --system-tray hide
 Aether.exe --system-tray show
@@ -52,7 +53,7 @@ Aether.exe --reload-all
 Aether.exe --exit
 ```
 
-`--reveal-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
+`--show-menu` and `--hide-menu` target the configured menu. `--hide <id>` and `--reveal <id>` target one window. `--show` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 

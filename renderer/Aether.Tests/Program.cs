@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Text.Json;
 using Aether;
+using KhaosShell.Contracts;
 
 namespace Aether.Tests;
 
@@ -133,9 +134,9 @@ internal static class Program
 
     private static void OptionsParseMenuCommands()
     {
-        HostOptions reveal = HostOptions.Parse(new[] { "--reveal-menu" });
+        HostOptions reveal = HostOptions.Parse(new[] { "--show-menu" });
         AssertEqual(RendererCommandKind.ShowMenu, reveal.Command.Kind);
-        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show-menu" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--reveal-menu" }));
     }
 
     private static void OptionsParseSystemTrayCommands()
@@ -252,6 +253,7 @@ internal static class Program
     private static void CommandProtocolRoundTrips()
     {
         string json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.Reload, "desktop"));
+        AssertTrue(json.Contains("\"version\":1", StringComparison.Ordinal));
         AssertTrue(RendererCommandProtocol.TryParse(json, out RendererCommand? parsed));
         AssertEqual(RendererCommandKind.Reload, parsed!.Kind);
         AssertEqual("desktop", parsed.Group);
@@ -277,6 +279,10 @@ internal static class Program
         AssertTrue(ControlPipeCodec.TryParseResponse(response, out ControlResponse? parsed));
         AssertEqual(id, parsed!.Id);
         AssertEqual(200, parsed.Status);
+
+        string eventJson = ControlPipeCodec.SerializeEvent("window.changed", new { id = "widget-1" });
+        AssertTrue(ControlPipeCodec.TryParseEvent(eventJson, out ControlEvent? controlEvent));
+        AssertEqual("window.changed", controlEvent!.Name);
     }
 
     private static void LoggingPolicyParsesAndBounds()

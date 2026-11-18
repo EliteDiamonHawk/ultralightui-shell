@@ -3,9 +3,13 @@ namespace Aether;
 public sealed class UltralightRuntime : IDisposable
 {
     private IntPtr _app;
+    private readonly BackendConnectionManager? _backends;
+    private readonly ControlPipeChannel? _control;
 
-    public UltralightRuntime(string? ultralightRoot = null)
+    internal UltralightRuntime(string? ultralightRoot = null, BackendConnectionManager? backends = null, ControlPipeChannel? control = null)
     {
+        _backends = backends;
+        _control = control;
         string stage = "runtime file validation";
         try
         {
@@ -106,7 +110,7 @@ public sealed class UltralightRuntime : IDisposable
 
             if (spec.Bridge?.IsEnabled(spec.Url) == true)
             {
-                bridge = new RendererJsBridge(spec);
+                bridge = new RendererJsBridge(spec, _backends, _control);
                 bridge.Attach(view);
             }
 
