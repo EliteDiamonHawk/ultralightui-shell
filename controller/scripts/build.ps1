@@ -1,0 +1,22 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string] $Configuration = 'Release',
+    [switch] $NoRestore,
+    [string[]] $Arguments = @()
+)
+
+$ErrorActionPreference = 'Stop'
+$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$SolutionPath = Join-Path $RepositoryRoot 'Chronos.sln'
+$DotnetArguments = @('build', $SolutionPath, '--configuration', $Configuration, '-m:1')
+if ($NoRestore) { $DotnetArguments += '--no-restore' }
+$DotnetArguments += $Arguments
+
+Push-Location $RepositoryRoot
+try {
+    & dotnet @DotnetArguments
+    $ExitCode = $LASTEXITCODE
+}
+finally { Pop-Location }
+exit $ExitCode

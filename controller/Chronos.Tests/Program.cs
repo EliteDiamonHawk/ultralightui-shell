@@ -1,0 +1,176 @@
+using System.Text.Json;
+using Chronos;
+
+namespace Chronos.Tests;
+
+internal static class Program
+{
+    [STAThread]
+    private static int Main()
+    {
+        var tests = new (string Name, Action Test)[]
+        {
+            (nameof(OptionsParseAllFlags), OptionsParseAllFlags),
+            (nameof(OptionsRejectsConflictingWinFlags), OptionsRejectsConflictingWinFlags),
+            (nameof(ControlCodecRoundTrips), ControlCodecRoundTrips),
+            (nameof(ControlCodecRejectsOversizedFrame), ControlCodecRejectsOversizedFrame),
+            (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
+            (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
+            (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
+            (nameof(BackendRegistryLoadsDefinitions), BackendRegistryLoadsDefinitions),
+            (nameof(WinGestureTrackerDistinguishesTapAndCombo), WinGestureTrackerDistinguishesTapAndCombo)
+        };
+
+        int failures = 0;
+        foreach ((string name, Action test) in tests)
+        {
+            try
+            {
+                test();
+                Console.WriteLine($"PASS {name}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.Error.WriteLine($"FAIL {name}: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine($"{tests.Length - failures}/{tests.Length} unit tests passed.");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static void OptionsParseAllFlags()
+    {
+        ControllerOptions options = ControllerOptions.Parse(new[]
+        {
+            "--config", "one.json", "--config=two.json", "--no-last-config", "--no-tray",
+            "--win-menu-toggle", "--renderer-path", "Aether.exe"
+        });
+        AssertEqual(2, options.ConfigPaths.Count);
+        AssertTrue(options.NoLastConfig);
+        AssertTrue(options.NoTray);
+        AssertEqual(true, options.WinMenuToggle);
+        AssertTrue(Path.IsPathRooted(options.RendererPath));
+    }
+
+    private static void OptionsRejectsConflictingWinFlags() =>
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--win-menu-toggle", "--no-win-menu-toggle" }));
+
+    private static void ControlCodecRoundTrips()
+    {
+        string id = Guid.NewGuid().ToString("D");
+        string requestJson = ControlCodec.SerializeRequest(new ControlRequest(id, "GET", "/v1/pipes", null));
+        AssertTrue(ControlCodec.TryParseRequest(requestJson, out ControlRequest? request, out ControlError? requestError, out _));
+        AssertEqual(null, requestError);
+        AssertEqual("GET", request!.Method);
+
+        string responseJson = ControlCodec.SerializeResponse(ControlResponse.Success(id, 200, new { ok = true }));
+        AssertTrue(ControlCodec.TryParseResponse(responseJson, out ControlResponse? response));
+        AssertEqual(id, response!.Id);
+        AssertEqual(200, response.Status);
+        AssertTrue(ControlCodec.IsUnsolicitedEvent("{\"id\":null,\"event\":\"window.changed\"}"));
+    }
+
+    private static void ControlCodecRejectsOversizedFrame()
+    {
+        string line = new string('x', ControlCodec.MaxFrameBytes + 1);
+        AssertFalse(ControlCodec.TryParseRequest(line, out _, out ControlError? error, out _));
+        AssertEqual("frame_too_large", error!.Code);
+    }
+
+    private static void PersistenceRoundTrips()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-tests-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var persistence = new PersistenceStore(paths);
+            persistence.WriteState(new[] { Path.Combine(root, "one.json") });
+            persistence.WriteSettings(true);
+            AssertEqual(1, persistence.ReadState().Files.Count);
+            AssertTrue(persistence.ReadSettings().WinMenuToggleEnabled);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void BackendRegistryTreatsMissingAsEmpty()
+    {
+        BackendRegistry registry = BackendRegistry.Load(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
+        AssertEqual(0, registry.Definitions.Count);
+    }
+
+    private static void LogStoreDurablyDeduplicatesBatches()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-logs-{Guid.NewGuid():N}");
+        string batchId = Guid.NewGuid().ToString("D");
+        string sessionId = Guid.NewGuid().ToString("D");
+        try
+        {
+            var store = new LogStore(root);
+            using JsonDocument document = JsonDocument.Parse($"{{\"protocolVersion\":1,\"batchId\":\"{batchId}\",\"processId\":42,\"sessionId\":\"{sessionId}\",\"events\":[{{\"eventId\":\"{Guid.NewGuid():D}\",\"timestampUtc\":\"2026-11-17T00:00:00Z\",\"level\":\"info\",\"eventName\":\"renderer.ready\",\"properties\":{{\"path\":\"redacted\",\"windowCount\":\"1\"}}}}]}}");
+            LogBatchResult first = store.Accept(document.RootElement);
+            LogBatchResult second = store.Accept(document.RootElement);
+            AssertFalse(first.Duplicate);
+            AssertTrue(second.Duplicate);
+            AssertEqual(1, Directory.GetFiles(root, "*.ndjson").Length);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void BackendRegistryLoadsDefinitions()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"chronos-registry-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, "{\"schemaVersion\":1,\"backends\":{\"nyx\":{\"executable\":\"nyx.exe\",\"arguments\":[\"--test\"],\"environment\":{\"MODE\":\"test\"}}}}\n");
+            BackendRegistry registry = BackendRegistry.Load(path);
+            AssertTrue(registry.Definitions.ContainsKey("nyx"));
+            AssertEqual("nyx.exe", registry.Definitions["nyx"].Executable);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    private static void WinGestureTrackerDistinguishesTapAndCombo()
+    {
+        var tracker = new WinGestureTracker();
+        AssertEqual(WinGestureDecision.Suppress, tracker.Handle(NativeMethods.VK_LWIN, true, false, false));
+        AssertEqual(WinGestureDecision.Toggle, tracker.Handle(NativeMethods.VK_LWIN, false, true, false));
+
+        AssertEqual(WinGestureDecision.Suppress, tracker.Handle(NativeMethods.VK_LWIN, true, false, false));
+        AssertEqual(WinGestureDecision.ReplayAndSuppress, tracker.Handle('R', true, false, false));
+        AssertEqual(WinGestureDecision.ReplayAndSuppress, tracker.Handle(NativeMethods.VK_LWIN, false, true, false));
+    }
+
+    private static void AssertTrue(bool value)
+    {
+        if (!value) throw new InvalidOperationException("Expected true.");
+    }
+
+    private static void AssertFalse(bool value)
+    {
+        if (value) throw new InvalidOperationException("Expected false.");
+    }
+
+    private static void AssertEqual<T>(T expected, T actual)
+    {
+        if (!EqualityComparer<T>.Default.Equals(expected, actual))
+            throw new InvalidOperationException($"Expected '{expected}', got '{actual}'.");
+    }
+
+    private static void AssertThrows<T>(Action action) where T : Exception
+    {
+        try { action(); }
+        catch (T) { return; }
+        throw new InvalidOperationException($"Expected {typeof(T).Name}.");
+    }
+}
