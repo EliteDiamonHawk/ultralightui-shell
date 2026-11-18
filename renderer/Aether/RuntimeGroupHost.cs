@@ -260,7 +260,8 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             if (window.State is AppWindowState.Closed or AppWindowState.Failed)
                 continue;
-            ApplySuspension(window);
+            if (window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
+                ApplySuspension(window);
             if (window.Kind == WindowKind.StartMenu)
             {
                 if (paused) _startMenuController.Hide(window);
@@ -268,7 +269,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             }
             else
             {
-                ApplyWindowVisibility(window);
+                ApplyWindowVisibility(window, keepVisibleWhenPaused: true);
             }
         }
         _timer.Interval = paused ? 1000 : 16;
@@ -497,7 +498,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         }
     }
 
-    private void ApplyWindowVisibility(AppWindow window)
+    private void ApplyWindowVisibility(AppWindow window, bool keepVisibleWhenPaused = false)
     {
         if (window.Kind == WindowKind.StartMenu)
         {
@@ -505,7 +506,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             return;
         }
 
-        if (window.DesiredVisible && !_paused)
+        if (window.DesiredVisible && (!_paused || keepVisibleWhenPaused))
         {
             NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
             window.IsVisible = true;
@@ -529,11 +530,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private void ApplySuspension(AppWindow window)
     {
-        bool suspended = _paused ||
-            (window.Kind is WindowKind.Wallpaper or WindowKind.Widget && window.FullscreenOccluded);
-        window.DesiredSuspended = suspended;
-        if (_runtime.TrySetSuspended(window, suspended))
-            window.RendererSuspended = suspended;
+        bool viewSuspended = window.FullscreenOccluded;
+        window.DesiredSuspended = _paused || viewSuspended;
+        if (_runtime.TrySetSuspended(window, viewSuspended))
+            window.RendererSuspended = viewSuspended;
     }
 
     private void RemoveAndDestroy(AppWindow window)
