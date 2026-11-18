@@ -16,7 +16,7 @@ public sealed record RendererPaths(
         if (string.IsNullOrWhiteSpace(localAppData))
             localAppData = AppContext.BaseDirectory;
 
-        string root = Path.Combine(localAppData, "ultralightui-shell");
+        string root = Path.Combine(localAppData, "KhaosShell");
         string executableBase = Path.GetFullPath(AppContext.BaseDirectory);
         string sdkRoot = string.IsNullOrWhiteSpace(ultralightRoot)
             ? executableBase
