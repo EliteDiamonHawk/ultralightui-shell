@@ -73,6 +73,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     public bool TrayEnabled => _tray != null;
     public bool TrayVisible => _tray?.Visible == true;
     public IReadOnlyList<ThemeDefinition> Themes => _themes.Themes;
+    public string ThemesDirectory => _paths.ThemesDirectory;
 
     public ShellUiSnapshot GetUiSnapshot() => new(
         _commands.Capabilities,
@@ -182,6 +183,19 @@ internal sealed class ChronosHostContext : ApplicationContext
             _pendingThemeId = null;
             _pendingThemeGeneration = null;
         }
+    }
+
+    public Task<AetherCommandResult> UnloadThemeAsync()
+    {
+        StopRenderer(requestExit: false);
+        _activeThemeId = null;
+        _activeThemeGeneration = 0;
+        _pendingThemeId = null;
+        _pendingThemeGeneration = null;
+        _themeOrigin = "None";
+        PersistAcceptedConfig(Array.Empty<string>(), null);
+        NotifyUiStateChanged();
+        return Task.FromResult(new AetherCommandResult(true, "OK theme unloaded"));
     }
 
     public void SetCurrentWinToggle(bool enabled)

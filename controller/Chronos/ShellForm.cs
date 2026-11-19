@@ -121,7 +121,8 @@ internal sealed class ShellForm : Form
         details.Controls.Add(_themeFiles, 0, 0);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
         buttons.Controls.Add(Button("Import theme", async (_, _) => await ImportThemeAsync()));
-        buttons.Controls.Add(Button("Apply", async (_, _) => await ApplyThemeAsync()));
+        buttons.Controls.Add(Button("Load", async (_, _) => await LoadThemeAsync()));
+        buttons.Controls.Add(Button("Unload", async (_, _) => await UnloadThemeAsync()));
         buttons.Controls.Add(Button("Rename", (_, _) => RenameTheme()));
         buttons.Controls.Add(Button("Remove", (_, _) => RemoveTheme()));
         details.Controls.Add(buttons, 0, 1);
@@ -302,7 +303,8 @@ internal sealed class ShellForm : Form
             Title = "Import theme",
             Filter = "JSON theme files (*.json)|*.json|All files (*.*)|*.*",
             Multiselect = true,
-            CheckFileExists = true
+            CheckFileExists = true,
+            InitialDirectory = _host.ThemesDirectory
         };
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
@@ -313,13 +315,13 @@ internal sealed class ShellForm : Form
         {
             _host.ImportTheme(name, dialog.FileNames);
             Render(_host.GetUiSnapshot());
-            SetOutput("Theme registered. Select it and press Apply.");
+            SetOutput("Theme registered. Select it and press Load.");
         }
         catch (Exception ex) { SetOutput(ex.Message); }
         await Task.CompletedTask;
     }
 
-    private async Task ApplyThemeAsync()
+    private async Task LoadThemeAsync()
     {
         ThemeDefinition? theme = SelectedTheme();
         if (theme == null)
@@ -329,6 +331,8 @@ internal sealed class ShellForm : Form
         }
         await RunAsync(() => _host.ApplyThemeAsync(theme));
     }
+
+    private async Task UnloadThemeAsync() => await RunAsync(() => _host.UnloadThemeAsync());
 
     private void RenameTheme()
     {
@@ -440,11 +444,18 @@ internal sealed class ShellForm : Form
             else if (!snapshot.StatusPollingEnabled && _refreshTimer.Enabled)
                 _refreshTimer.Stop();
 
+            Guid? selectedThemeId = SelectedTheme()?.Id;
             _themeItems.Clear();
             _themeItems.AddRange(_host.Themes);
             _themes.Items.Clear();
             foreach (ThemeDefinition theme in _themeItems)
                 _themes.Items.Add(FormatTheme(theme));
+            if (selectedThemeId is { } themeId)
+            {
+                int selectedIndex = _themeItems.FindIndex(theme => theme.Id == themeId);
+                if (selectedIndex >= 0)
+                    _themes.SelectedIndex = selectedIndex;
+            }
 
             _groupItems.Clear();
             _groupItems.AddRange(snapshot.Capabilities.Groups);

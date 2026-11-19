@@ -152,6 +152,7 @@ internal static class Program
             AssertTrue(File.Exists(paths.StateFile));
             AssertTrue(File.Exists(paths.ThemeRegistryFile));
             AssertTrue(File.Exists(paths.SettingsFile));
+            AssertTrue(Directory.Exists(paths.ThemesDirectory));
             AssertEqual(0, persistence.ReadState().Files.Count);
             AssertEqual(0, persistence.ReadThemes().Themes.Count);
             AssertEqual(true, persistence.ReadSettings().TrayEnabled);
