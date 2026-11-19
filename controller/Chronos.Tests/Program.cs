@@ -12,9 +12,12 @@ internal static class Program
         {
             (nameof(OptionsParseAllFlags), OptionsParseAllFlags),
             (nameof(OptionsRejectsConflictingWinFlags), OptionsRejectsConflictingWinFlags),
+            (nameof(OptionsParseStartupOverrides), OptionsParseStartupOverrides),
+            (nameof(OptionsRejectsConflictingStartupOverrides), OptionsRejectsConflictingStartupOverrides),
             (nameof(ControlCodecRoundTrips), ControlCodecRoundTrips),
             (nameof(ControlCodecRejectsOversizedFrame), ControlCodecRejectsOversizedFrame),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
+            (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
             (nameof(BackendRegistryLoadsDefinitions), BackendRegistryLoadsDefinitions),
@@ -57,6 +60,22 @@ internal static class Program
     private static void OptionsRejectsConflictingWinFlags() =>
         AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--win-menu-toggle", "--no-win-menu-toggle" }));
 
+    private static void OptionsParseStartupOverrides()
+    {
+        ControllerOptions options = ControllerOptions.Parse(new[] { "--last-config", "--tray", "--no-status-poll" });
+        AssertFalse(options.NoLastConfig);
+        AssertTrue(options.NoLastConfigSpecified);
+        AssertFalse(options.NoTray);
+        AssertTrue(options.NoTraySpecified);
+        AssertTrue(options.NoStatusPoll);
+    }
+
+    private static void OptionsRejectsConflictingStartupOverrides()
+    {
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--tray", "--no-tray" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--last-config", "--no-last-config" }));
+    }
+
     private static void ControlCodecRoundTrips()
     {
         string id = Guid.NewGuid().ToString("D");
@@ -84,12 +103,39 @@ internal static class Program
         string root = Path.Combine(Path.GetTempPath(), $"chronos-tests-{Guid.NewGuid():N}");
         try
         {
-            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
             var persistence = new PersistenceStore(paths);
             persistence.WriteState(new[] { Path.Combine(root, "one.json") });
             persistence.WriteSettings(true);
             AssertEqual(1, persistence.ReadState().Files.Count);
             AssertTrue(persistence.ReadSettings().WinMenuToggleEnabled);
+            AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
+            AssertFalse(File.Exists(Path.Combine(root, "state.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeRegistryRoundTrips()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-themes-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(root);
+            string first = Path.Combine(root, "one.json");
+            string second = Path.Combine(root, "two.json");
+            File.WriteAllText(first, "{}");
+            File.WriteAllText(second, "{}");
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var persistence = new PersistenceStore(paths);
+            persistence.WriteThemes(new[] { new ThemeDefinition("Dark", new[] { first, second }) });
+            ThemeRegistryState read = persistence.ReadThemes();
+            AssertEqual(1, read.Themes.Count);
+            AssertEqual("Dark", read.Themes[0].Name);
+            AssertEqual(2, read.Themes[0].Files.Count);
+            AssertTrue(paths.ThemeRegistryFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

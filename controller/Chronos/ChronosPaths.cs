@@ -19,11 +19,13 @@ internal sealed record ChronosPaths(
         return new ChronosPaths(
             root,
             chronosRoot,
-            Path.Combine(root, "state.json"),
+            Path.Combine(chronosRoot, "state.json"),
             Path.Combine(root, "settings.json"),
             Path.Combine(chronosRoot, "backend-registry.json"),
             Path.Combine(root, "logs"));
     }
+
+    public string ThemeRegistryFile => Path.Combine(ChronosRoot, "themes.json");
 
     public void EnsureDirectories()
     {

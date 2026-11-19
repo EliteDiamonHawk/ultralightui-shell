@@ -15,7 +15,13 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly RendererSession _renderer;
     private readonly WinMenuToggleController _winToggle;
     private readonly TrayController? _tray;
+    private readonly bool _statusPollingEnabled;
+    private WrapperSettings _settings;
+    private ThemeRegistryState _themes;
+    private ShellForm? _shellForm;
     private bool _exiting;
+
+    public event Action? UiStateChanged;
 
     public ChronosHostContext(ControllerOptions options)
     {
@@ -23,16 +29,20 @@ internal sealed class ChronosHostContext : ApplicationContext
         _paths = ChronosPaths.Resolve();
         _persistence = new PersistenceStore(_paths, Diagnostic);
         _logs = new LogStore(_paths.LogsDirectory);
+        _themes = _persistence.ReadThemes();
+        _settings = _persistence.ReadSettings();
+        _statusPollingEnabled = !options.NoStatusPoll;
         BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, Diagnostic);
         _backends = new BackendManager(registry);
         _dispatcher.CreateControl();
 
         PersistentState state = _persistence.ReadState();
+        bool noLastConfig = options.NoLastConfigSpecified ? options.NoLastConfig : _settings.NoLastConfigNextStart;
         IReadOnlyList<string> configPaths = options.ConfigPaths.Count > 0
             ? options.ConfigPaths
-            : options.NoLastConfig ? Array.Empty<string>() : state.Files;
-        WrapperSettings settings = _persistence.ReadSettings();
-        bool winToggleEnabled = options.WinMenuToggle ?? settings.WinMenuToggleEnabled;
+            : noLastConfig ? Array.Empty<string>() : state.Files;
+        bool noTray = options.NoTraySpecified ? options.NoTray : _settings.NoTrayNextStart;
+        bool winToggleEnabled = options.WinMenuToggle ?? _settings.WinMenuToggleEnabled;
         string rendererPath = RendererLocator.Resolve(options.RendererPath);
 
         RendererSession? startedRenderer = null;
@@ -57,7 +67,8 @@ internal sealed class ChronosHostContext : ApplicationContext
             ConfigureRendererLogging();
             _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
             _winToggle.StateChanged += OnWinToggleChanged;
-            _tray = options.NoTray ? null : new TrayController(_commands, _winToggle, RequestExit, Diagnostic);
+            _tray = noTray ? null : new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic);
+            NotifyUiStateChanged();
         }
         catch
         {
@@ -69,6 +80,96 @@ internal sealed class ChronosHostContext : ApplicationContext
     }
 
     public RendererCapabilities Capabilities => _commands.Capabilities;
+    public bool StatusPollingEnabled => _statusPollingEnabled;
+    public bool TrayEnabled => _tray != null;
+    public IReadOnlyList<ThemeDefinition> Themes => _themes.Themes;
+
+    public ShellUiSnapshot GetUiSnapshot() => new(
+        _commands.Capabilities,
+        _commands.IsConnected,
+        _tray != null,
+        _winToggle.Enabled,
+        _settings,
+        _statusPollingEnabled,
+        _exiting);
+
+    public async Task RefreshUiAsync()
+    {
+        await _commands.RefreshAsync().ConfigureAwait(true);
+        NotifyUiStateChanged();
+    }
+
+    public void ImportTheme(string name, IReadOnlyList<string> files)
+    {
+        string[] normalized = NormalizeThemeFiles(files);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Theme name must not be empty.");
+
+        var next = _themes.Themes.ToList();
+        int duplicate = next.FindIndex(theme => PathsEqual(theme.Files, normalized));
+        var replacement = new ThemeDefinition(name.Trim(), normalized);
+        if (duplicate >= 0)
+            next[duplicate] = replacement;
+        else
+            next.Add(replacement);
+        _persistence.WriteThemes(next);
+        _themes = new ThemeRegistryState(1, next);
+        NotifyUiStateChanged();
+    }
+
+    public void RenameTheme(ThemeDefinition theme, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Theme name must not be empty.");
+        ReplaceTheme(theme, new ThemeDefinition(name.Trim(), theme.Files));
+    }
+
+    public void RemoveTheme(ThemeDefinition theme)
+    {
+        List<ThemeDefinition> next = _themes.Themes.Where(item => !Equals(item, theme)).ToList();
+        _persistence.WriteThemes(next);
+        _themes = new ThemeRegistryState(1, next);
+        NotifyUiStateChanged();
+    }
+
+    public async Task<AetherCommandResult> ApplyThemeAsync(ThemeDefinition theme)
+    {
+        string[] files = NormalizeThemeFiles(theme.Files);
+        AetherCommandResult result = await _commands.ApplyConfigAsync(files).ConfigureAwait(true);
+        if (result.Success)
+        {
+            RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
+            if (PathsEqual(files, capabilities.ConfigFiles))
+                PersistAcceptedConfig(capabilities.ConfigFiles);
+            NotifyUiStateChanged();
+        }
+        return result;
+    }
+
+    public void SetCurrentWinToggle(bool enabled) => _winToggle.SetEnabled(enabled);
+
+    public void UpdateNextStartSettings(bool noTray, bool noLastConfig, bool winMenuToggle)
+    {
+        WrapperSettings next = _settings with
+        {
+            NoTrayNextStart = noTray,
+            NoLastConfigNextStart = noLastConfig,
+            WinMenuToggleEnabled = winMenuToggle
+        };
+        _persistence.WriteSettings(next);
+        _settings = next;
+        NotifyUiStateChanged();
+    }
+
+    public Task<AetherCommandResult> PauseAsync(string? group, bool all) => _commands.PauseAsync(group, all);
+    public Task<AetherCommandResult> ResumeAsync(string? group, bool all) => _commands.ResumeAsync(group, all);
+    public Task<AetherCommandResult> ReloadAsync(string? group, bool all) => _commands.ReloadAsync(group, all);
+    public Task<AetherCommandResult> StatusAsync(string? group, bool all) => _commands.StatusAsync(group, all);
+    public Task<AetherCommandResult> ShowMenuAsync() => _commands.ShowMenuAsync();
+    public Task<AetherCommandResult> HideMenuAsync() => _commands.HideMenuAsync();
+    public Task<AetherCommandResult> ToggleMenuAsync() => _commands.ToggleMenuAsync();
+    public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible) => _commands.SetWindowVisibilityAsync(id, visible);
+    public void RequestExitFromUi() => RequestExit();
 
     private void WaitForRenderer(IReadOnlyList<string> expectedConfig)
     {
@@ -88,6 +189,25 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         try { _persistence.WriteState(configPaths); }
         catch (Exception ex) { Diagnostic($"Could not persist accepted configuration: {ex.Message}"); }
+    }
+
+    private void ReplaceTheme(ThemeDefinition oldTheme, ThemeDefinition replacement)
+    {
+        List<ThemeDefinition> next = _themes.Themes.Select(item => Equals(item, oldTheme) ? replacement : item).ToList();
+        _persistence.WriteThemes(next);
+        _themes = new ThemeRegistryState(1, next);
+        NotifyUiStateChanged();
+    }
+
+    private static string[] NormalizeThemeFiles(IReadOnlyList<string> files)
+    {
+        if (files.Count == 0)
+            throw new InvalidOperationException("Theme requires at least one configuration file.");
+        string[] normalized = files.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        string? missing = normalized.FirstOrDefault(path => !File.Exists(path));
+        if (missing != null)
+            throw new FileNotFoundException($"Configuration file does not exist: {missing}", missing);
+        return normalized;
     }
 
     private void ConfigureRendererLogging()
@@ -186,6 +306,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         _backends.RevokeAll();
         _commands.MarkDisconnected();
+        NotifyUiStateChanged();
         Diagnostic("Renderer control channel disconnected.");
         RequestExitOnDispatcher();
     }
@@ -203,6 +324,7 @@ internal sealed class ChronosHostContext : ApplicationContext
                     RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
                     if (eventName == "config.changed" && capabilities.ConfigFiles.Count > 0)
                         PersistAcceptedConfig(capabilities.ConfigFiles);
+                    NotifyUiStateChanged();
                 }
                 catch (Exception ex) { Diagnostic($"Could not refresh renderer state: {ex.Message}"); }
             }));
@@ -217,6 +339,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             _dispatcher.BeginInvoke((Action)(() =>
             {
                 _commands.MarkDisconnected();
+                NotifyUiStateChanged();
                 Diagnostic("Aether process exited.");
                 RequestExit();
             }));
@@ -232,8 +355,27 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnWinToggleChanged(bool enabled)
     {
-        try { _persistence.WriteSettings(enabled); }
-        catch (Exception ex) { Diagnostic($"Could not persist Win-menu policy: {ex.Message}"); }
+        NotifyUiStateChanged();
+    }
+
+    private void ShowShellForm()
+    {
+        if (_exiting || _tray == null)
+            return;
+        if (_shellForm == null || _shellForm.IsDisposed)
+        {
+            _shellForm = new ShellForm(this);
+            _shellForm.FormClosed += (_, _) => _shellForm = null;
+        }
+        _shellForm.Show();
+        _shellForm.WindowState = FormWindowState.Normal;
+        _shellForm.Activate();
+    }
+
+    private void NotifyUiStateChanged()
+    {
+        try { UiStateChanged?.Invoke(); }
+        catch (Exception ex) { Diagnostic($"UI state update failed: {ex.Message}"); }
     }
 
     private void RequestExit()
@@ -241,6 +383,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         if (_exiting)
             return;
         _exiting = true;
+        try { _shellForm?.CloseForShutdown(); } catch { }
         try { _winToggle.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
         try

@@ -6,6 +6,7 @@ internal sealed class TrayController : IDisposable
 {
     private readonly RendererCommandService _commands;
     private readonly WinMenuToggleController _winToggle;
+    private readonly Action _openShell;
     private readonly Action _exit;
     private readonly Action<string> _diagnostic;
     private readonly NotifyIcon _icon;
@@ -15,11 +16,13 @@ internal sealed class TrayController : IDisposable
     public TrayController(
         RendererCommandService commands,
         WinMenuToggleController winToggle,
+        Action openShell,
         Action exit,
         Action<string> diagnostic)
     {
         _commands = commands;
         _winToggle = winToggle;
+        _openShell = openShell;
         _exit = exit;
         _diagnostic = diagnostic;
         _menu = new ContextMenuStrip();
@@ -31,6 +34,7 @@ internal sealed class TrayController : IDisposable
             ContextMenuStrip = _menu,
             Visible = true
         };
+        _icon.DoubleClick += (_, _) => _openShell();
     }
 
     public void Dispose()
@@ -46,6 +50,10 @@ internal sealed class TrayController : IDisposable
     private void RebuildMenu()
     {
         _menu.Items.Clear();
+        var open = new ToolStripMenuItem("Open KhaosShell");
+        open.Click += (_, _) => _openShell();
+        _menu.Items.Add(open);
+        _menu.Items.Add(new ToolStripSeparator());
         RendererCapabilities capabilities = _commands.Capabilities;
         AddAction("Show menu", () => _commands.ShowMenuAsync(), !capabilities.HasMenu);
         AddAction("Hide menu", () => _commands.HideMenuAsync(), !capabilities.HasMenu);

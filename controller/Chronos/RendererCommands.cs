@@ -5,7 +5,7 @@ using KhaosShell.Contracts;
 
 namespace Chronos;
 
-internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null);
+internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null, bool TransportFailure = false);
 
 internal sealed class AetherCommandClient
 {
@@ -30,11 +30,11 @@ internal sealed class AetherCommandClient
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return new AetherCommandResult(false, "ERR Aether command timed out.", "Aether command timed out.");
+            return new AetherCommandResult(false, "ERR Aether command timed out.", "Aether command timed out.", true);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
-            return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message);
+            return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message, true);
         }
     }
 }
@@ -104,6 +104,18 @@ internal sealed class RendererCommandService
     public Task<AetherCommandResult> ApplyConfigAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default) =>
         SendAsync(new(AetherCommandKind.ApplyConfig, ConfigPaths: paths), cancellationToken);
 
+    public Task<AetherCommandResult> PauseAsync(string? group, bool all, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.Pause, Group: group, All: all), cancellationToken);
+
+    public Task<AetherCommandResult> ResumeAsync(string? group, bool all, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.Resume, Group: group, All: all), cancellationToken);
+
+    public Task<AetherCommandResult> ReloadAsync(string? group, bool all, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.Reload, Group: group, All: all), cancellationToken);
+
+    public Task<AetherCommandResult> StatusAsync(string? group, bool all, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.Status, Group: group, All: all), cancellationToken);
+
     public Task<AetherCommandResult> ExitAsync(CancellationToken cancellationToken = default) =>
         SendAsync(new(AetherCommandKind.Exit), cancellationToken);
 
@@ -139,7 +151,7 @@ internal sealed class RendererCommandService
     private async Task<AetherCommandResult> SendAsync(AetherCommand command, CancellationToken cancellationToken)
     {
         AetherCommandResult result = await _client.SendAsync(command, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
-        if (!result.Success)
+        if (!result.Success && result.TransportFailure)
             MarkDisconnected();
         return result;
     }

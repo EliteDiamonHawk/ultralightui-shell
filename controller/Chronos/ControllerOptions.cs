@@ -9,7 +9,10 @@ internal sealed class ControllerOptions
     public IReadOnlyList<string> ConfigPaths { get; private init; } = Array.Empty<string>();
     public string? RendererPath { get; private init; }
     public bool NoLastConfig { get; private init; }
+    public bool NoLastConfigSpecified { get; private init; }
     public bool NoTray { get; private init; }
+    public bool NoTraySpecified { get; private init; }
+    public bool NoStatusPoll { get; private init; }
     public bool? WinMenuToggle { get; private init; }
     public bool ShowHelp { get; private init; }
 
@@ -18,7 +21,10 @@ internal sealed class ControllerOptions
         var configs = new List<string>();
         string? rendererPath = null;
         bool noLastConfig = false;
+        bool noLastConfigSpecified = false;
         bool noTray = false;
+        bool noTraySpecified = false;
+        bool noStatusPoll = false;
         bool? winMenuToggle = null;
 
         for (int index = 0; index < args.Length; index++)
@@ -49,12 +55,27 @@ internal sealed class ControllerOptions
                 case "--no-last-config":
                     if (inlineValue != null)
                         throw new OptionException("--no-last-config does not accept a value.");
-                    noLastConfig = true;
+                    SetBooleanOption(ref noLastConfig, ref noLastConfigSpecified, true, "--last-config and --no-last-config cannot be combined.");
+                    break;
+                case "--last-config":
+                    if (inlineValue != null)
+                        throw new OptionException("--last-config does not accept a value.");
+                    SetBooleanOption(ref noLastConfig, ref noLastConfigSpecified, false, "--last-config and --no-last-config cannot be combined.");
                     break;
                 case "--no-tray":
                     if (inlineValue != null)
                         throw new OptionException("--no-tray does not accept a value.");
-                    noTray = true;
+                    SetBooleanOption(ref noTray, ref noTraySpecified, true, "--tray and --no-tray cannot be combined.");
+                    break;
+                case "--tray":
+                    if (inlineValue != null)
+                        throw new OptionException("--tray does not accept a value.");
+                    SetBooleanOption(ref noTray, ref noTraySpecified, false, "--tray and --no-tray cannot be combined.");
+                    break;
+                case "--no-status-poll":
+                    if (inlineValue != null)
+                        throw new OptionException("--no-status-poll does not accept a value.");
+                    noStatusPoll = true;
                     break;
                 case "--win-menu-toggle":
                     if (inlineValue != null)
@@ -76,7 +97,10 @@ internal sealed class ControllerOptions
             ConfigPaths = configs,
             RendererPath = rendererPath,
             NoLastConfig = noLastConfig,
+            NoLastConfigSpecified = noLastConfigSpecified,
             NoTray = noTray,
+            NoTraySpecified = noTraySpecified,
+            NoStatusPoll = noStatusPoll,
             WinMenuToggle = winMenuToggle
         };
     }
@@ -90,7 +114,10 @@ internal sealed class ControllerOptions
         Options:
           --config <absolute-path>       Forward configuration file; repeatable.
           --no-last-config               Skip persisted configuration restoration.
+          --last-config                  Restore persisted configuration despite saved preference.
           --no-tray                      Do not create a system-tray icon.
+          --tray                         Create a system-tray icon despite saved preference.
+          --no-status-poll               Disable WinForms status polling; events remain enabled.
           --win-menu-toggle              Enable bare-Win menu interception.
           --no-win-menu-toggle           Disable bare-Win menu interception.
           --renderer-path <absolute-path> Override Aether executable discovery.
@@ -126,6 +153,14 @@ internal sealed class ControllerOptions
         if (current.HasValue)
             throw new OptionException("Win-menu toggle options cannot be combined.");
         current = value;
+    }
+
+    private static void SetBooleanOption(ref bool current, ref bool specified, bool value, string conflict)
+    {
+        if (specified && current != value)
+            throw new OptionException(conflict);
+        current = value;
+        specified = true;
     }
 }
 

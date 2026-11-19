@@ -15,7 +15,7 @@ Aether reports the matching active configuration.
 
 | Component | Owns |
 | --- | --- |
-| Chronos | Aether process, inherited control session, state/settings, tray, Win policy, backend grants, durable log intake |
+| Chronos | Aether process, inherited control session, state/settings/theme register, tray, Win policy, backend grants, durable log intake |
 | Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
@@ -26,10 +26,11 @@ renderer to an old session.
 
 ## Command service
 
-Chronos has no public command pipe. The tray and future WinForms code use one
-typed internal service. That service obtains valid renderer IDs, groups, menu
+Chronos has no public command pipe. Tray and WinForms code use one typed
+internal service. That service obtains valid renderer IDs, groups, menu
 presence, and connection state from Aether inspection output before it creates
-an action.
+an action. WinForms status uses inherited events plus optional timer polling;
+`--no-status-poll` disables only timer polling.
 
 ## Shutdown
 

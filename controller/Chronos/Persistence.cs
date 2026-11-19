@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Chronos;
 
@@ -11,7 +12,21 @@ internal sealed record PersistentState(
 
 internal sealed record WrapperSettings(
     int SchemaVersion = 1,
-    bool WinMenuToggleEnabled = false);
+    bool WinMenuToggleEnabled = false,
+    bool NoTrayNextStart = false,
+    bool NoLastConfigNextStart = false);
+
+internal sealed record ThemeDefinition(
+    string Name,
+    IReadOnlyList<string> Files);
+
+internal sealed record ThemeRegistryState(
+    int SchemaVersion = 1,
+    IReadOnlyList<ThemeDefinition> Entries = null!)
+{
+    [JsonIgnore]
+    public IReadOnlyList<ThemeDefinition> Themes => Entries ?? Array.Empty<ThemeDefinition>();
+}
 
 internal sealed class PersistenceStore
 {
@@ -48,9 +63,28 @@ internal sealed class PersistenceStore
         WriteAtomic(_paths.StateFile, new PersistentState(CurrentSchemaVersion, normalized));
     }
 
-    public void WriteSettings(bool winMenuToggleEnabled)
+    public void WriteSettings(WrapperSettings settings)
     {
-        WriteAtomic(_paths.SettingsFile, new WrapperSettings(CurrentSchemaVersion, winMenuToggleEnabled));
+        WriteAtomic(_paths.SettingsFile, settings with { SchemaVersion = CurrentSchemaVersion });
+    }
+
+    public void WriteSettings(bool winMenuToggleEnabled) =>
+        WriteSettings(new WrapperSettings(CurrentSchemaVersion, winMenuToggleEnabled));
+
+    public ThemeRegistryState ReadThemes()
+    {
+        ThemeRegistryState? themes = Read<ThemeRegistryState>(_paths.ThemeRegistryFile);
+        return themes?.SchemaVersion == CurrentSchemaVersion
+            ? themes
+            : new ThemeRegistryState(CurrentSchemaVersion, Array.Empty<ThemeDefinition>());
+    }
+
+    public void WriteThemes(IReadOnlyList<ThemeDefinition> themes)
+    {
+        ThemeDefinition[] normalized = themes.Select(theme => new ThemeDefinition(
+            theme.Name.Trim(),
+            theme.Files.Select(Path.GetFullPath).ToArray())).ToArray();
+        WriteAtomic(_paths.ThemeRegistryFile, new ThemeRegistryState(CurrentSchemaVersion, normalized));
     }
 
     private T? Read<T>(string path) where T : class

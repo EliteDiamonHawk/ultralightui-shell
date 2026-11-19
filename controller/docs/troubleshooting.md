@@ -7,7 +7,7 @@ Pass `--renderer-path`, place Aether beside Chronos, or install `Aether.exe` at
 
 ## Config not restored
 
-Check `%LOCALAPPDATA%\KhaosShell\state.json`. Chronos writes it after Aether
+Check `%LOCALAPPDATA%\KhaosShell\Chronos\state.json`. Chronos writes it after Aether
 accepts matching paths. Chronos ignores invalid or unsupported state and logs a
 diagnostic.
 
