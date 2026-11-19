@@ -7,8 +7,9 @@ internal sealed record ShellUiSnapshot(
     RendererCapabilities Capabilities,
     bool Connected,
     bool TrayEnabled,
-    bool WinMenuEnabled,
-    WrapperSettings Settings,
+    bool TrayVisible,
+    bool WindowsKeyOverrideEnabled,
+    string ThemeOrigin,
     bool StatusPollingEnabled,
     bool Exiting);
 
@@ -18,16 +19,16 @@ internal sealed class ShellForm : Form
     private readonly ListBox _themes = new();
     private readonly ListBox _groups = new();
     private readonly ListBox _windows = new();
-    private readonly TextBox _configFiles = new();
-    private readonly TextBox _output = new();
+    private readonly RichTextBox _themeFiles = new();
+    private readonly RichTextBox _activeThemeFiles = new();
+    private readonly RichTextBox _statusOutput = new();
     private readonly Label _connection = new();
-    private readonly Label _tray = new();
-    private readonly Label _winMenu = new();
+    private readonly Label _trayStatus = new();
+    private readonly Label _windowsKeyOverrideStatus = new();
     private readonly Label _polling = new();
-    private readonly CheckBox _currentWin = new();
-    private readonly CheckBox _nextNoTray = new();
-    private readonly CheckBox _nextNoLastConfig = new();
-    private readonly CheckBox _nextWinMenu = new();
+    private readonly Label _themeOrigin = new();
+    private readonly CheckBox _trayEnabled = new();
+    private readonly CheckBox _windowsKeyOverride = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
     private readonly List<RendererWindowCapability> _windowItems = new();
@@ -40,10 +41,11 @@ internal sealed class ShellForm : Form
     {
         _host = host;
         Text = "KhaosShell";
-        Width = 760;
-        Height = 620;
-        MinimumSize = new Size(680, 500);
+        Width = 900;
+        Height = 700;
+        MinimumSize = new Size(640, 460);
         StartPosition = FormStartPosition.CenterScreen;
+        FormClosing += OnFormClosing;
 
         BuildUi();
         _host.UiStateChanged += OnHostStateChanged;
@@ -72,141 +74,173 @@ internal sealed class ShellForm : Form
 
     private void BuildUi()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8), RowCount = 5, ColumnCount = 1 };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8), RowCount = 2, ColumnCount = 1 };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
         Controls.Add(root);
 
-        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, AutoSize = true };
-        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddStatusRow(status, 0, "Connection", _connection);
-        AddStatusRow(status, 1, "Tray", _tray);
-        AddStatusRow(status, 2, "Win-key", _winMenu);
-        AddStatusRow(status, 3, "Status polling", _polling);
+        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 2 };
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        AddStatusCell(status, 0, 0, "Connection", _connection);
+        AddStatusCell(status, 2, 0, "Tray", _trayStatus);
+        AddStatusCell(status, 0, 1, "Windows Key Override", _windowsKeyOverrideStatus);
+        AddStatusCell(status, 2, 1, "Polling", _polling);
+        _themeOrigin.Dock = DockStyle.Fill;
+        _themeOrigin.TextAlign = ContentAlignment.MiddleLeft;
+        status.Controls.Add(_themeOrigin, 4, 0);
+        status.SetRowSpan(_themeOrigin, 2);
         root.Controls.Add(status, 0, 0);
 
-        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
-        root.Controls.Add(content, 0, 1);
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs.TabPages.Add(new TabPage("Themes") { Padding = new Padding(6), Controls = { BuildThemesPage() } });
+        tabs.TabPages.Add(new TabPage("Aether commands") { Padding = new Padding(6), Controls = { BuildCommandsPage() } });
+        tabs.TabPages.Add(new TabPage("Status") { Padding = new Padding(6), Controls = { BuildStatusPage() } });
+        tabs.TabPages.Add(new TabPage("Options") { Padding = new Padding(6), Controls = { BuildOptionsPage() } });
+        root.Controls.Add(tabs, 0, 1);
+    }
 
-        var themeBox = new GroupBox { Text = "Themes / config register", Dock = DockStyle.Fill };
-        var themeLayout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), RowCount = 2 };
-        themeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        themeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+    private Control BuildThemesPage()
+    {
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 250, Panel1MinSize = 170, Panel2MinSize = 260 };
         _themes.Dock = DockStyle.Fill;
-        themeLayout.Controls.Add(_themes, 0, 0);
-        var themeButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        themeButtons.Controls.Add(Button("Import", async (_, _) => await ImportThemeAsync()));
-        themeButtons.Controls.Add(Button("Apply", async (_, _) => await ApplyThemeAsync()));
-        themeButtons.Controls.Add(Button("Rename", (_, _) => RenameTheme()));
-        themeButtons.Controls.Add(Button("Remove", (_, _) => RemoveTheme()));
-        themeLayout.Controls.Add(themeButtons, 0, 1);
-        themeBox.Controls.Add(themeLayout);
-        content.Controls.Add(themeBox, 0, 0);
+        _themes.SelectedIndexChanged += (_, _) => RenderSelectedTheme();
+        split.Panel1.Controls.Add(_themes);
 
-        var commandBox = new GroupBox { Text = "Aether commands", Dock = DockStyle.Fill };
-        var commandLayout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), RowCount = 4 };
-        commandLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        commandLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
-        commandLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        commandLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        var menuButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        var details = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
+        details.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        details.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        ConfigureReader(_themeFiles);
+        details.Controls.Add(_themeFiles, 0, 0);
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
+        buttons.Controls.Add(Button("Import theme", async (_, _) => await ImportThemeAsync()));
+        buttons.Controls.Add(Button("Apply", async (_, _) => await ApplyThemeAsync()));
+        buttons.Controls.Add(Button("Rename", (_, _) => RenameTheme()));
+        buttons.Controls.Add(Button("Remove", (_, _) => RemoveTheme()));
+        details.Controls.Add(buttons, 0, 1);
+        split.Panel2.Controls.Add(details);
+        return split;
+    }
+
+    private Control BuildCommandsPage()
+    {
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+
+        var menuButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
         menuButtons.Controls.Add(Button("Show menu", async (_, _) => await RunAsync(_host.ShowMenuAsync)));
         menuButtons.Controls.Add(Button("Hide menu", async (_, _) => await RunAsync(_host.HideMenuAsync)));
         menuButtons.Controls.Add(Button("Toggle menu", async (_, _) => await RunAsync(_host.ToggleMenuAsync)));
-        commandLayout.Controls.Add(menuButtons, 0, 0);
+        menuButtons.Controls.Add(Button("Refresh", async (_, _) => await RefreshAsync(true)));
+        menuButtons.Controls.Add(Button("Exit KhaosShell", (_, _) => _host.RequestExitFromUi()));
+        layout.Controls.Add(menuButtons, 0, 0);
 
-        var groupBox = new GroupBox { Text = "Groups", Dock = DockStyle.Fill };
-        var groupLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-        groupLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        groupLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
-        _groups.Dock = DockStyle.Fill;
-        groupLayout.Controls.Add(_groups, 0, 0);
-        var groupButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        groupButtons.Controls.Add(Button("Pause", async (_, _) => await RunGroupAsync(_host.PauseAsync)));
-        groupButtons.Controls.Add(Button("Resume", async (_, _) => await RunGroupAsync(_host.ResumeAsync)));
-        groupButtons.Controls.Add(Button("Reload", async (_, _) => await RunGroupAsync(_host.ReloadAsync)));
-        groupButtons.Controls.Add(Button("Status", async (_, _) => await RunGroupAsync(_host.StatusAsync)));
-        groupButtons.Controls.Add(Button("All: pause / resume / reload / status", async (_, _) => await RunAllCommandsAsync()));
-        groupLayout.Controls.Add(groupButtons, 1, 0);
-        groupBox.Controls.Add(groupLayout);
-        commandLayout.Controls.Add(groupBox, 0, 1);
-
-        var windowBox = new GroupBox { Text = "Windows", Dock = DockStyle.Fill };
-        var windowLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-        windowLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        windowLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-        _windows.Dock = DockStyle.Fill;
-        windowLayout.Controls.Add(_windows, 0, 0);
-        var windowButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        windowButtons.Controls.Add(Button("Show", async (_, _) => await SetWindowAsync(true)));
-        windowButtons.Controls.Add(Button("Hide", async (_, _) => await SetWindowAsync(false)));
-        windowLayout.Controls.Add(windowButtons, 1, 0);
-        windowBox.Controls.Add(windowLayout);
-        commandLayout.Controls.Add(windowBox, 0, 2);
-
-        var commandBottom = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        commandBottom.Controls.Add(Button("Refresh", async (_, _) => await RefreshAsync(true)));
-        commandBottom.Controls.Add(Button("Exit KhaosShell", (_, _) => _host.RequestExitFromUi()));
-        commandLayout.Controls.Add(commandBottom, 0, 3);
-        commandBox.Controls.Add(commandLayout);
-        content.Controls.Add(commandBox, 1, 0);
-
-        var configBox = new GroupBox { Text = "Current config", Dock = DockStyle.Fill };
-        _configFiles.Multiline = true;
-        _configFiles.ReadOnly = true;
-        _configFiles.ScrollBars = ScrollBars.Vertical;
-        _configFiles.Dock = DockStyle.Fill;
-        configBox.Controls.Add(_configFiles);
-        root.Controls.Add(configBox, 0, 2);
-
-        var settingsBox = new GroupBox { Text = "Next start / current Win-key", Dock = DockStyle.Fill };
-        var settings = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), WrapContents = false };
-        _nextNoTray.Text = "No tray next start";
-        _nextNoLastConfig.Text = "No last config next start";
-        _nextWinMenu.Text = "Win-key menu next start";
-        _currentWin.Text = "Enable Win-key now";
-        foreach (CheckBox box in new[] { _nextNoTray, _nextNoLastConfig, _nextWinMenu, _currentWin })
-        {
-            box.AutoSize = true;
-            box.Margin = new Padding(3, 5, 12, 3);
-            settings.Controls.Add(box);
-        }
-        _nextNoTray.CheckedChanged += (_, _) => UpdateStartupSettings();
-        _nextNoLastConfig.CheckedChanged += (_, _) => UpdateStartupSettings();
-        _nextWinMenu.CheckedChanged += (_, _) => UpdateStartupSettings();
-        _currentWin.CheckedChanged += (_, _) =>
-        {
-            if (!_updating)
-                RunSync(() => _host.SetCurrentWinToggle(_currentWin.Checked));
-        };
-        settingsBox.Controls.Add(settings);
-        root.Controls.Add(settingsBox, 0, 3);
-
-        _output.Multiline = true;
-        _output.ReadOnly = true;
-        _output.ScrollBars = ScrollBars.Vertical;
-        _output.Height = 60;
-        _output.Dock = DockStyle.Fill;
-        root.Controls.Add(_output, 0, 4);
+        layout.Controls.Add(BuildGroupPanel(), 0, 1);
+        layout.Controls.Add(BuildWindowPanel(), 0, 2);
+        return layout;
     }
 
-    private void AddStatusRow(TableLayoutPanel table, int row, string name, Label value)
+    private Control BuildGroupPanel()
     {
-        table.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+        var box = new GroupBox { Text = "Groups", Dock = DockStyle.Fill };
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 260, Panel1MinSize = 150, Panel2MinSize = 180 };
+        _groups.Dock = DockStyle.Fill;
+        split.Panel1.Controls.Add(_groups);
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
+        buttons.Controls.Add(Button("Pause", async (_, _) => await RunGroupAsync(_host.PauseAsync)));
+        buttons.Controls.Add(Button("Resume", async (_, _) => await RunGroupAsync(_host.ResumeAsync)));
+        buttons.Controls.Add(Button("Reload", async (_, _) => await RunGroupAsync(_host.ReloadAsync)));
+        buttons.Controls.Add(Button("Status", async (_, _) => await RunGroupAsync(_host.StatusAsync)));
+        buttons.Controls.Add(Button("Pause all", async (_, _) => await RunAsync(() => _host.PauseAsync(null, true))));
+        buttons.Controls.Add(Button("Resume all", async (_, _) => await RunAsync(() => _host.ResumeAsync(null, true))));
+        buttons.Controls.Add(Button("Reload all", async (_, _) => await RunAsync(() => _host.ReloadAsync(null, true))));
+        buttons.Controls.Add(Button("Status all", async (_, _) => await RunAsync(() => _host.StatusAsync(null, true))));
+        split.Panel2.Controls.Add(buttons);
+        box.Controls.Add(split);
+        return box;
+    }
+
+    private Control BuildWindowPanel()
+    {
+        var box = new GroupBox { Text = "Windows", Dock = DockStyle.Fill };
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 420, Panel1MinSize = 180, Panel2MinSize = 120 };
+        _windows.Dock = DockStyle.Fill;
+        split.Panel1.Controls.Add(_windows);
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
+        buttons.Controls.Add(Button("Show", async (_, _) => await SetWindowAsync(true)));
+        buttons.Controls.Add(Button("Hide", async (_, _) => await SetWindowAsync(false)));
+        split.Panel2.Controls.Add(buttons);
+        box.Controls.Add(split);
+        return box;
+    }
+
+    private Control BuildStatusPage()
+    {
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        layout.Controls.Add(new Label { Text = "Active theme files", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        ConfigureReader(_activeThemeFiles);
+        ConfigureReader(_statusOutput);
+        layout.Controls.Add(_activeThemeFiles, 0, 1);
+        layout.Controls.Add(_statusOutput, 0, 2);
+        return layout;
+    }
+
+    private Control BuildOptionsPage()
+    {
+        var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8) };
+        _trayEnabled.Text = "Tray enabled";
+        _windowsKeyOverride.Text = "Windows Key Override";
+        _trayEnabled.AutoSize = true;
+        _windowsKeyOverride.AutoSize = true;
+        _trayEnabled.CheckedChanged += (_, _) =>
+        {
+            if (!_updating)
+                RunSync(() => _host.SetTrayVisible(_trayEnabled.Checked));
+        };
+        _windowsKeyOverride.CheckedChanged += (_, _) =>
+        {
+            if (!_updating)
+                RunSync(() => _host.SetCurrentWinToggle(_windowsKeyOverride.Checked));
+        };
+        options.Controls.Add(_trayEnabled);
+        options.Controls.Add(_windowsKeyOverride);
+        options.Controls.Add(new Label
+        {
+            Text = "Restore-state is startup-only. Current theme origin appears in status.",
+            AutoSize = true,
+            Margin = new Padding(3, 12, 3, 3)
+        });
+        return options;
+    }
+
+    private static void ConfigureReader(RichTextBox reader)
+    {
+        reader.Dock = DockStyle.Fill;
+        reader.ReadOnly = true;
+        reader.WordWrap = false;
+        reader.ScrollBars = RichTextBoxScrollBars.Both;
+        reader.BackColor = SystemColors.Window;
+    }
+
+    private static void AddStatusCell(TableLayoutPanel table, int column, int row, string name, Label value)
+    {
+        table.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, column, row);
         value.Dock = DockStyle.Fill;
         value.TextAlign = ContentAlignment.MiddleLeft;
-        table.Controls.Add(value, 1, row);
+        table.Controls.Add(value, column + 1, row);
     }
 
     private static Button Button(string text, EventHandler click)
     {
-        var button = new Button { Text = text, AutoSize = true, Height = 26 };
+        var button = new Button { Text = text, AutoSize = true, Height = 28, Margin = new Padding(3) };
         button.Click += click;
         return button;
     }
@@ -215,15 +249,14 @@ internal sealed class ShellForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Import KhaosShell theme/config",
-            Filter = "JSON configuration (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Import theme",
+            Filter = "JSON theme files (*.json)|*.json|All files (*.*)|*.*",
             Multiselect = true,
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
-        string suggested = Path.GetFileNameWithoutExtension(dialog.FileNames[0]);
-        string? name = PromptForName("Import theme", suggested);
+        string? name = PromptForName("Import theme", Path.GetFileNameWithoutExtension(dialog.FileNames[0]));
         if (name == null)
             return;
         try
@@ -287,18 +320,6 @@ internal sealed class ShellForm : Form
         await RunAsync(() => action(group, false));
     }
 
-    private async Task RunAllCommandsAsync()
-    {
-        foreach (Func<Task<AetherCommandResult>> action in new[]
-        {
-            () => _host.PauseAsync(null, true),
-            () => _host.ResumeAsync(null, true),
-            () => _host.ReloadAsync(null, true),
-            () => _host.StatusAsync(null, true)
-        })
-            await RunAsync(action);
-    }
-
     private async Task SetWindowAsync(bool visible)
     {
         if (_windows.SelectedIndex < 0 || _windows.SelectedIndex >= _windowItems.Count)
@@ -339,18 +360,8 @@ internal sealed class ShellForm : Form
             if (showResult)
                 SetOutput("Status refreshed.");
         }
-        catch (Exception ex)
-        {
-            SetOutput(ex.Message);
-        }
+        catch (Exception ex) { SetOutput(ex.Message); }
         finally { _refreshInFlight = false; }
-    }
-
-    private void UpdateStartupSettings()
-    {
-        if (_updating)
-            return;
-        RunSync(() => _host.UpdateNextStartSettings(_nextNoTray.Checked, _nextNoLastConfig.Checked, _nextWinMenu.Checked));
     }
 
     private void Render(ShellUiSnapshot snapshot)
@@ -361,12 +372,16 @@ internal sealed class ShellForm : Form
         try
         {
             _connection.Text = snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
-            _tray.Text = snapshot.TrayEnabled ? "Enabled" : "Disabled (--no-tray)";
-            _winMenu.Text = snapshot.WinMenuEnabled ? "Enabled" : "Disabled";
+            _trayStatus.Text = snapshot.TrayEnabled ? (snapshot.TrayVisible ? "Enabled / visible" : "Enabled / hidden") : "Disabled";
+            _windowsKeyOverrideStatus.Text = snapshot.WindowsKeyOverrideEnabled ? "Enabled" : "Disabled";
             _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--no-status-poll; events active)";
-            _configFiles.Text = snapshot.Capabilities.ConfigFiles.Count == 0
+            _themeOrigin.Text = $"Theme origin: {snapshot.ThemeOrigin}";
+            _activeThemeFiles.Text = snapshot.Capabilities.ConfigFiles.Count == 0
                 ? "(none)"
                 : string.Join(Environment.NewLine, snapshot.Capabilities.ConfigFiles);
+            _trayEnabled.Enabled = snapshot.TrayEnabled;
+            _trayEnabled.Checked = snapshot.TrayVisible;
+            _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
 
             _themeItems.Clear();
             _themeItems.AddRange(_host.Themes);
@@ -385,13 +400,15 @@ internal sealed class ShellForm : Form
             _windows.Items.Clear();
             foreach (RendererWindowCapability window in _windowItems)
                 _windows.Items.Add($"{window.Id} [{window.Kind ?? "window"}] {(window.Visible == true ? "visible" : "hidden/unknown")}");
-
-            _currentWin.Checked = snapshot.WinMenuEnabled;
-            _nextNoTray.Checked = snapshot.Settings.NoTrayNextStart;
-            _nextNoLastConfig.Checked = snapshot.Settings.NoLastConfigNextStart;
-            _nextWinMenu.Checked = snapshot.Settings.WinMenuToggleEnabled;
+            RenderSelectedTheme();
         }
         finally { _updating = false; }
+    }
+
+    private void RenderSelectedTheme()
+    {
+        ThemeDefinition? theme = SelectedTheme();
+        _themeFiles.Text = theme == null ? "Select a theme to view its files." : string.Join(Environment.NewLine, theme.Files);
     }
 
     private ThemeDefinition? SelectedTheme() =>
@@ -412,7 +429,7 @@ internal sealed class ShellForm : Form
         Render(_host.GetUiSnapshot());
     }
 
-    private void SetOutput(string text) => _output.Text = text;
+    private void SetOutput(string text) => _statusOutput.Text = text;
 
     private static string? PromptForName(string title, string initial)
     {

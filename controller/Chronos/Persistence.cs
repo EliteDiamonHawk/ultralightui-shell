@@ -10,12 +10,6 @@ internal sealed record PersistentState(
     public IReadOnlyList<string> Files => LastAcceptedConfigFiles ?? Array.Empty<string>();
 }
 
-internal sealed record WrapperSettings(
-    int SchemaVersion = 1,
-    bool WinMenuToggleEnabled = false,
-    bool NoTrayNextStart = false,
-    bool NoLastConfigNextStart = false);
-
 internal sealed record ThemeDefinition(
     string Name,
     IReadOnlyList<string> Files);
@@ -49,27 +43,11 @@ internal sealed class PersistenceStore
             : new PersistentState(1, Array.Empty<string>());
     }
 
-    public WrapperSettings ReadSettings()
-    {
-        WrapperSettings? settings = Read<WrapperSettings>(_paths.SettingsFile);
-        return settings?.SchemaVersion == CurrentSchemaVersion
-            ? settings
-            : new WrapperSettings();
-    }
-
     public void WriteState(IReadOnlyList<string> files)
     {
         string[] normalized = files.Select(Path.GetFullPath).ToArray();
         WriteAtomic(_paths.StateFile, new PersistentState(CurrentSchemaVersion, normalized));
     }
-
-    public void WriteSettings(WrapperSettings settings)
-    {
-        WriteAtomic(_paths.SettingsFile, settings with { SchemaVersion = CurrentSchemaVersion });
-    }
-
-    public void WriteSettings(bool winMenuToggleEnabled) =>
-        WriteSettings(new WrapperSettings(CurrentSchemaVersion, winMenuToggleEnabled));
 
     public ThemeRegistryState ReadThemes()
     {

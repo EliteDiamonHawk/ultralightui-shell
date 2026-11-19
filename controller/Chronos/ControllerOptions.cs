@@ -8,24 +8,20 @@ internal sealed class ControllerOptions
 
     public IReadOnlyList<string> ConfigPaths { get; private init; } = Array.Empty<string>();
     public string? RendererPath { get; private init; }
-    public bool NoLastConfig { get; private init; }
-    public bool NoLastConfigSpecified { get; private init; }
-    public bool NoTray { get; private init; }
-    public bool NoTraySpecified { get; private init; }
+    public bool? Tray { get; private init; }
+    public bool? RestoreState { get; private init; }
     public bool NoStatusPoll { get; private init; }
-    public bool? WinMenuToggle { get; private init; }
+    public bool? WindowsKeyOverride { get; private init; }
     public bool ShowHelp { get; private init; }
 
     public static ControllerOptions Parse(string[] args)
     {
         var configs = new List<string>();
         string? rendererPath = null;
-        bool noLastConfig = false;
-        bool noLastConfigSpecified = false;
-        bool noTray = false;
-        bool noTraySpecified = false;
+        bool? tray = null;
+        bool? restoreState = null;
         bool noStatusPoll = false;
-        bool? winMenuToggle = null;
+        bool? windowsKeyOverride = null;
 
         for (int index = 0; index < args.Length; index++)
         {
@@ -52,40 +48,19 @@ internal sealed class ControllerOptions
                         throw new OptionException("--renderer-path cannot be specified more than once.");
                     rendererPath = NormalizePath(NextValue(args, ref index, option, inlineValue), option);
                     break;
-                case "--no-last-config":
-                    if (inlineValue != null)
-                        throw new OptionException("--no-last-config does not accept a value.");
-                    SetBooleanOption(ref noLastConfig, ref noLastConfigSpecified, true, "--last-config and --no-last-config cannot be combined.");
-                    break;
-                case "--last-config":
-                    if (inlineValue != null)
-                        throw new OptionException("--last-config does not accept a value.");
-                    SetBooleanOption(ref noLastConfig, ref noLastConfigSpecified, false, "--last-config and --no-last-config cannot be combined.");
-                    break;
-                case "--no-tray":
-                    if (inlineValue != null)
-                        throw new OptionException("--no-tray does not accept a value.");
-                    SetBooleanOption(ref noTray, ref noTraySpecified, true, "--tray and --no-tray cannot be combined.");
-                    break;
                 case "--tray":
-                    if (inlineValue != null)
-                        throw new OptionException("--tray does not accept a value.");
-                    SetBooleanOption(ref noTray, ref noTraySpecified, false, "--tray and --no-tray cannot be combined.");
+                    SetBooleanOption(ref tray, NextBoolean(args, ref index, option, inlineValue), option);
+                    break;
+                case "--restore-state":
+                    SetBooleanOption(ref restoreState, NextBoolean(args, ref index, option, inlineValue), option);
                     break;
                 case "--no-status-poll":
                     if (inlineValue != null)
                         throw new OptionException("--no-status-poll does not accept a value.");
                     noStatusPoll = true;
                     break;
-                case "--win-menu-toggle":
-                    if (inlineValue != null)
-                        throw new OptionException("--win-menu-toggle does not accept a value.");
-                    SetToggle(ref winMenuToggle, true);
-                    break;
-                case "--no-win-menu-toggle":
-                    if (inlineValue != null)
-                        throw new OptionException("--no-win-menu-toggle does not accept a value.");
-                    SetToggle(ref winMenuToggle, false);
+                case "--override-windows-key":
+                    SetBooleanOption(ref windowsKeyOverride, NextBoolean(args, ref index, option, inlineValue), option);
                     break;
                 default:
                     throw new OptionException($"Unknown argument: {argument}");
@@ -96,12 +71,10 @@ internal sealed class ControllerOptions
         {
             ConfigPaths = configs,
             RendererPath = rendererPath,
-            NoLastConfig = noLastConfig,
-            NoLastConfigSpecified = noLastConfigSpecified,
-            NoTray = noTray,
-            NoTraySpecified = noTraySpecified,
+            Tray = tray,
+            RestoreState = restoreState,
             NoStatusPoll = noStatusPoll,
-            WinMenuToggle = winMenuToggle
+            WindowsKeyOverride = windowsKeyOverride
         };
     }
 
@@ -112,14 +85,12 @@ internal sealed class ControllerOptions
           Chronos.exe [options]
 
         Options:
-          --config <absolute-path>       Forward configuration file; repeatable.
-          --no-last-config               Skip persisted configuration restoration.
-          --last-config                  Restore persisted configuration despite saved preference.
-          --no-tray                      Do not create a system-tray icon.
-          --tray                         Create a system-tray icon despite saved preference.
+          --config <absolute-path>       Forward theme file; repeatable.
+          --restore-state <true|false>   Restore persisted theme state; default true.
+          --tray <true|false>            Create Chronos tray icon; default true.
           --no-status-poll               Disable WinForms status polling; events remain enabled.
-          --win-menu-toggle              Enable bare-Win menu interception.
-          --no-win-menu-toggle           Disable bare-Win menu interception.
+          --override-windows-key <true|false>
+                                        Enable Windows Key Override; default false.
           --renderer-path <absolute-path> Override Aether executable discovery.
           --help, -h                     Print this help.
         """;
@@ -148,19 +119,19 @@ internal sealed class ControllerOptions
         }
     }
 
-    private static void SetToggle(ref bool? current, bool value)
+    private static bool NextBoolean(string[] args, ref int index, string option, string? inlineValue)
     {
-        if (current.HasValue)
-            throw new OptionException("Win-menu toggle options cannot be combined.");
-        current = value;
+        string value = NextValue(args, ref index, option, inlineValue);
+        if (!bool.TryParse(value, out bool parsed))
+            throw new OptionException($"{option} requires true or false.");
+        return parsed;
     }
 
-    private static void SetBooleanOption(ref bool current, ref bool specified, bool value, string conflict)
+    private static void SetBooleanOption(ref bool? current, bool value, string option)
     {
-        if (specified && current != value)
-            throw new OptionException(conflict);
+        if (current.HasValue)
+            throw new OptionException($"{option} cannot be specified more than once.");
         current = value;
-        specified = true;
     }
 }
 

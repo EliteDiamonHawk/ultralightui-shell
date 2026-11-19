@@ -4,7 +4,6 @@ internal sealed record ChronosPaths(
     string Root,
     string ChronosRoot,
     string StateFile,
-    string SettingsFile,
     string BackendRegistryFile,
     string LogsDirectory)
 {
@@ -20,7 +19,6 @@ internal sealed record ChronosPaths(
             root,
             chronosRoot,
             Path.Combine(chronosRoot, "state.json"),
-            Path.Combine(root, "settings.json"),
             Path.Combine(chronosRoot, "backend-registry.json"),
             Path.Combine(root, "logs"));
     }

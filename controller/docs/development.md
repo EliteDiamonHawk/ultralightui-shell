@@ -16,5 +16,6 @@ scripts. `run.ps1 -Arguments @('--renderer-path', 'C:\path\Aether.exe')`
 overrides renderer discovery.
 
 Unit tests avoid native Aether and hook installation. Windows integration checks
-should cover inherited control startup, `Aether.Commands`, config restoration,
-tray suppression, backend grant failure, and Win-key shutdown restoration.
+should cover inherited control startup, `Aether.Commands`, theme restoration,
+tray suppression, backend grant failure, and Windows Key Override shutdown
+restoration.

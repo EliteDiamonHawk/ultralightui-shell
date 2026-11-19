@@ -47,33 +47,34 @@ internal static class Program
     {
         ControllerOptions options = ControllerOptions.Parse(new[]
         {
-            "--config", "one.json", "--config=two.json", "--no-last-config", "--no-tray",
-            "--win-menu-toggle", "--renderer-path", "Aether.exe"
+            "--config", "one.json", "--config=two.json", "--restore-state=false", "--tray=false",
+            "--override-windows-key", "true", "--renderer-path", "Aether.exe"
         });
         AssertEqual(2, options.ConfigPaths.Count);
-        AssertTrue(options.NoLastConfig);
-        AssertTrue(options.NoTray);
-        AssertEqual(true, options.WinMenuToggle);
+        AssertEqual(false, options.RestoreState);
+        AssertEqual(false, options.Tray);
+        AssertEqual(true, options.WindowsKeyOverride);
         AssertTrue(Path.IsPathRooted(options.RendererPath));
     }
 
     private static void OptionsRejectsConflictingWinFlags() =>
-        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--win-menu-toggle", "--no-win-menu-toggle" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--win-menu-toggle" }));
 
     private static void OptionsParseStartupOverrides()
     {
-        ControllerOptions options = ControllerOptions.Parse(new[] { "--last-config", "--tray", "--no-status-poll" });
-        AssertFalse(options.NoLastConfig);
-        AssertTrue(options.NoLastConfigSpecified);
-        AssertFalse(options.NoTray);
-        AssertTrue(options.NoTraySpecified);
+        ControllerOptions options = ControllerOptions.Parse(new[] { "--restore-state", "true", "--tray", "true", "--no-status-poll" });
+        AssertEqual(true, options.RestoreState);
+        AssertEqual(true, options.Tray);
         AssertTrue(options.NoStatusPoll);
     }
 
     private static void OptionsRejectsConflictingStartupOverrides()
     {
-        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--tray", "--no-tray" }));
-        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--last-config", "--no-last-config" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--tray" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--no-tray" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--no-last-config" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--restore-state", "maybe" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--override-windows-key", "maybe" }));
     }
 
     private static void ControlCodecRoundTrips()
@@ -103,12 +104,10 @@ internal static class Program
         string root = Path.Combine(Path.GetTempPath(), $"chronos-tests-{Guid.NewGuid():N}");
         try
         {
-            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
             var persistence = new PersistenceStore(paths);
             persistence.WriteState(new[] { Path.Combine(root, "one.json") });
-            persistence.WriteSettings(true);
             AssertEqual(1, persistence.ReadState().Files.Count);
-            AssertTrue(persistence.ReadSettings().WinMenuToggleEnabled);
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
         }
@@ -128,7 +127,7 @@ internal static class Program
             string second = Path.Combine(root, "two.json");
             File.WriteAllText(first, "{}");
             File.WriteAllText(second, "{}");
-            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "settings.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
             var persistence = new PersistenceStore(paths);
             persistence.WriteThemes(new[] { new ThemeDefinition("Dark", new[] { first, second }) });
             ThemeRegistryState read = persistence.ReadThemes();

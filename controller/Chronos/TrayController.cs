@@ -47,6 +47,14 @@ internal sealed class TrayController : IDisposable
         _menu.Dispose();
     }
 
+    public bool Visible => !_disposed && _icon.Visible;
+
+    public void SetVisible(bool visible)
+    {
+        if (!_disposed)
+            _icon.Visible = visible;
+    }
+
     private void RebuildMenu()
     {
         _menu.Items.Clear();
@@ -76,7 +84,7 @@ internal sealed class TrayController : IDisposable
             _menu.Items.Add(windows);
         }
 
-        var winItem = new ToolStripMenuItem("Win-menu toggle")
+        var winItem = new ToolStripMenuItem("Windows Key Override")
         {
             Checked = _winToggle.Enabled,
             CheckOnClick = false

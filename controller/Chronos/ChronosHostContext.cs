@@ -16,8 +16,8 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly WinMenuToggleController _winToggle;
     private readonly TrayController? _tray;
     private readonly bool _statusPollingEnabled;
-    private WrapperSettings _settings;
     private ThemeRegistryState _themes;
+    private string _themeOrigin;
     private ShellForm? _shellForm;
     private bool _exiting;
 
@@ -30,19 +30,21 @@ internal sealed class ChronosHostContext : ApplicationContext
         _persistence = new PersistenceStore(_paths, Diagnostic);
         _logs = new LogStore(_paths.LogsDirectory);
         _themes = _persistence.ReadThemes();
-        _settings = _persistence.ReadSettings();
         _statusPollingEnabled = !options.NoStatusPoll;
         BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, Diagnostic);
         _backends = new BackendManager(registry);
         _dispatcher.CreateControl();
 
         PersistentState state = _persistence.ReadState();
-        bool noLastConfig = options.NoLastConfigSpecified ? options.NoLastConfig : _settings.NoLastConfigNextStart;
+        bool restoreState = options.RestoreState ?? true;
         IReadOnlyList<string> configPaths = options.ConfigPaths.Count > 0
             ? options.ConfigPaths
-            : noLastConfig ? Array.Empty<string>() : state.Files;
-        bool noTray = options.NoTraySpecified ? options.NoTray : _settings.NoTrayNextStart;
-        bool winToggleEnabled = options.WinMenuToggle ?? _settings.WinMenuToggleEnabled;
+            : restoreState ? state.Files : Array.Empty<string>();
+        _themeOrigin = options.ConfigPaths.Count > 0
+            ? "Explicit CLI"
+            : restoreState && state.Files.Count > 0 ? "Restored state" : "None";
+        bool trayEnabled = options.Tray ?? true;
+        bool winToggleEnabled = options.WindowsKeyOverride ?? false;
         string rendererPath = RendererLocator.Resolve(options.RendererPath);
 
         RendererSession? startedRenderer = null;
@@ -67,7 +69,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             ConfigureRendererLogging();
             _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
             _winToggle.StateChanged += OnWinToggleChanged;
-            _tray = noTray ? null : new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic);
+            _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
             NotifyUiStateChanged();
         }
         catch
@@ -82,14 +84,16 @@ internal sealed class ChronosHostContext : ApplicationContext
     public RendererCapabilities Capabilities => _commands.Capabilities;
     public bool StatusPollingEnabled => _statusPollingEnabled;
     public bool TrayEnabled => _tray != null;
+    public bool TrayVisible => _tray?.Visible == true;
     public IReadOnlyList<ThemeDefinition> Themes => _themes.Themes;
 
     public ShellUiSnapshot GetUiSnapshot() => new(
         _commands.Capabilities,
         _commands.IsConnected,
         _tray != null,
+        _tray?.Visible == true,
         _winToggle.Enabled,
-        _settings,
+        _themeOrigin,
         _statusPollingEnabled,
         _exiting);
 
@@ -140,7 +144,10 @@ internal sealed class ChronosHostContext : ApplicationContext
         {
             RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
             if (PathsEqual(files, capabilities.ConfigFiles))
+            {
                 PersistAcceptedConfig(capabilities.ConfigFiles);
+                _themeOrigin = "UI-applied";
+            }
             NotifyUiStateChanged();
         }
         return result;
@@ -148,16 +155,9 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     public void SetCurrentWinToggle(bool enabled) => _winToggle.SetEnabled(enabled);
 
-    public void UpdateNextStartSettings(bool noTray, bool noLastConfig, bool winMenuToggle)
+    public void SetTrayVisible(bool visible)
     {
-        WrapperSettings next = _settings with
-        {
-            NoTrayNextStart = noTray,
-            NoLastConfigNextStart = noLastConfig,
-            WinMenuToggleEnabled = winMenuToggle
-        };
-        _persistence.WriteSettings(next);
-        _settings = next;
+        _tray?.SetVisible(visible);
         NotifyUiStateChanged();
     }
 
@@ -202,11 +202,11 @@ internal sealed class ChronosHostContext : ApplicationContext
     private static string[] NormalizeThemeFiles(IReadOnlyList<string> files)
     {
         if (files.Count == 0)
-            throw new InvalidOperationException("Theme requires at least one configuration file.");
+            throw new InvalidOperationException("Theme requires at least one theme file.");
         string[] normalized = files.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         string? missing = normalized.FirstOrDefault(path => !File.Exists(path));
         if (missing != null)
-            throw new FileNotFoundException($"Configuration file does not exist: {missing}", missing);
+            throw new FileNotFoundException($"Theme file does not exist: {missing}", missing);
         return normalized;
     }
 
@@ -323,7 +323,10 @@ internal sealed class ChronosHostContext : ApplicationContext
                 {
                     RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
                     if (eventName == "config.changed" && capabilities.ConfigFiles.Count > 0)
+                    {
                         PersistAcceptedConfig(capabilities.ConfigFiles);
+                        _themeOrigin = "Aether event";
+                    }
                     NotifyUiStateChanged();
                 }
                 catch (Exception ex) { Diagnostic($"Could not refresh renderer state: {ex.Message}"); }

@@ -2,23 +2,21 @@
 
 Chronos stores data under `%LOCALAPPDATA%\KhaosShell\`:
 
-- `Chronos\state.json`: schema version and last successfully accepted absolute config
+- `Chronos\state.json`: schema version and last successfully accepted absolute theme
   file list.
-- `Chronos\themes.json`: registered theme names and absolute config-file bundles.
-- `settings.json`: schema version and next-start wrapper preferences for tray,
-  last-config restoration, and Win-menu toggle.
+- `Chronos\themes.json`: registered theme names and absolute theme-file bundles.
 - `logs\`: durable renderer batches and Chronos diagnostics.
 - `Chronos\backend-registry.json`: optional backend definitions.
 
 Chronos writes each file through a same-directory temporary file, flushes the
 file, and replaces the previous version. Chronos treats missing, malformed, or
 unsupported-version files as absent and records a diagnostic. Startup can then
-continue. Chronos normalizes config paths to absolute paths and writes them
-only after Aether reports matching active configuration. Legacy root-level state
+continue. Chronos normalizes theme paths to absolute paths and writes them
+only after Aether reports matching active theme. Legacy root-level state
 and theme files are not read.
 
-`--no-last-config` skips restoration but does not clear `Chronos\state.json`.
-`--no-tray` is process-lifetime state unless selected as a next-start preference
-in KhaosShell UI. `--tray` and `--last-config` override saved next-start
-preferences for one launch. `--no-status-poll` disables only UI timer polling;
-inherited renderer events remain active.
+`--restore-state false` skips startup theme-state restoration but does not clear
+`Chronos\state.json`. `--tray false` suppresses Chronos tray creation for the
+launch. `--no-status-poll` disables only UI timer polling; inherited renderer
+events remain active. Current UI toggles are not persisted as next-start
+settings.

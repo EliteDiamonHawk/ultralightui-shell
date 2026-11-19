@@ -133,7 +133,7 @@ internal sealed class WinMenuToggleController : IDisposable
         if (_hook == IntPtr.Zero)
         {
             _enabled = false;
-            _diagnostic("Win-menu keyboard hook could not be installed; normal input remains enabled.");
+            _diagnostic("Windows Key Override hook could not be installed; normal input remains enabled.");
             StateChanged?.Invoke(false);
             return;
         }
@@ -210,7 +210,7 @@ internal sealed class WinMenuToggleController : IDisposable
             }
             catch (Exception ex)
             {
-                _diagnostic($"Win-menu toggle failed: {ex.Message}");
+                _diagnostic($"Windows Key Override failed: {ex.Message}");
                 SendWinTap(NativeMethods.VK_LWIN);
             }
         });
