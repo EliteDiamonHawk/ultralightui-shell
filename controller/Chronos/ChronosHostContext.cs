@@ -12,10 +12,11 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly BackendManager _backends;
     private readonly Control _dispatcher = new();
     private readonly RendererCommandService _commands;
-    private readonly RendererSession _renderer;
+    private RendererSession? _renderer;
     private readonly WinMenuToggleController _winToggle;
     private readonly TrayController? _tray;
-    private readonly bool _statusPollingEnabled;
+    private bool _statusPollingEnabled;
+    private PersistentSettings _settings;
     private ThemeRegistryState _themes;
     private string _themeOrigin;
     private Guid? _activeThemeId;
@@ -34,13 +35,14 @@ internal sealed class ChronosHostContext : ApplicationContext
         _persistence = new PersistenceStore(_paths, Diagnostic);
         _logs = new LogStore(_paths.LogsDirectory);
         _themes = _persistence.ReadThemes();
-        _statusPollingEnabled = !options.NoStatusPoll;
+        _settings = _persistence.ReadSettings();
+        _statusPollingEnabled = options.StatusPolling ?? _settings.StatusPollingEnabled;
         BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, Diagnostic);
         _backends = new BackendManager(registry);
         _dispatcher.CreateControl();
 
         PersistentState state = _persistence.ReadState();
-        bool restoreState = options.RestoreState ?? true;
+        bool restoreState = options.RestoreState ?? _settings.RestoreState;
         ThemeDefinition? restoredTheme = restoreState && state.ActiveThemeId is { } activeThemeId
             ? _themes.Themes.FirstOrDefault(theme => theme.Id == activeThemeId)
             : restoreState
@@ -53,42 +55,17 @@ internal sealed class ChronosHostContext : ApplicationContext
         _themeOrigin = options.ConfigPaths.Count > 0
             ? "Explicit CLI"
             : restoredTheme != null ? "Restored state" : "None";
-        bool trayEnabled = options.Tray ?? true;
-        bool winToggleEnabled = options.WindowsKeyOverride ?? false;
-        string rendererPath = RendererLocator.Resolve(options.RendererPath);
+        bool trayEnabled = options.Tray ?? _settings.TrayEnabled;
+        bool winToggleEnabled = options.WindowsKeyOverride ?? _settings.WindowsKeyOverride;
+        _commands = new RendererCommandService(new AetherCommandClient());
+        _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
+        _winToggle.StateChanged += OnWinToggleChanged;
+        _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
-        RendererSession? startedRenderer = null;
-        try
-        {
-            startedRenderer = RendererSession.Start(
-                rendererPath,
-                configPaths,
-                HandleControlRequestAsync,
-                line => Diagnostic($"[Aether] {line}"),
-                line => Diagnostic($"[Aether] {line}"));
-            _renderer = startedRenderer;
-            _commands = new RendererCommandService(new AetherCommandClient());
-            _renderer.Control.Disconnected += OnControlDisconnected;
-            _renderer.Control.EventReceived += OnRendererEvent;
-            _renderer.ProcessExited += OnRendererExited;
-            WaitForRenderer(configPaths);
-
-            if (configPaths.Count > 0)
-                PersistAcceptedConfig(configPaths);
-
-            ConfigureRendererLogging();
-            _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
-            _winToggle.StateChanged += OnWinToggleChanged;
-            _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
+        if (configPaths.Count > 0)
+            StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
+        else
             NotifyUiStateChanged();
-        }
-        catch
-        {
-            try { startedRenderer?.Dispose(); } catch { }
-            _backends.Dispose();
-            _dispatcher.Dispose();
-            throw;
-        }
     }
 
     public RendererCapabilities Capabilities => _commands.Capabilities;
@@ -105,10 +82,16 @@ internal sealed class ChronosHostContext : ApplicationContext
         _winToggle.Enabled,
         _themeOrigin,
         _statusPollingEnabled,
-        _exiting);
+        _exiting,
+        _settings);
 
     public async Task RefreshUiAsync()
     {
+        if (!_commands.IsTransportAvailable)
+        {
+            NotifyUiStateChanged();
+            return;
+        }
         await _commands.RefreshAsync().ConfigureAwait(true);
         NotifyUiStateChanged();
     }
@@ -150,6 +133,16 @@ internal sealed class ChronosHostContext : ApplicationContext
     public async Task<AetherCommandResult> ApplyThemeAsync(ThemeDefinition theme)
     {
         string[] files = NormalizeThemeFiles(theme.Files);
+        bool startedForTheme = false;
+        if (!_commands.IsTransportAvailable)
+        {
+            if (_renderer != null)
+                StopRenderer(requestExit: false);
+            if (!StartRenderer(Array.Empty<string>(), _options.RendererPath, _settings.RendererPath))
+                return AetherCommandResult.Failure("Renderer is unavailable; theme was not applied.");
+            startedForTheme = true;
+        }
+
         long generation = checked(_activeThemeGeneration + 1);
         _pendingThemeId = theme.Id;
         _pendingThemeGeneration = generation;
@@ -166,9 +159,23 @@ internal sealed class ChronosHostContext : ApplicationContext
                     PersistAcceptedConfig(capabilities.ConfigFiles, _activeThemeId);
                     _themeOrigin = "UI-applied";
                 }
+                else if (startedForTheme)
+                {
+                    StopRenderer(requestExit: false);
+                }
                 NotifyUiStateChanged();
             }
+            else if (startedForTheme)
+            {
+                StopRenderer(requestExit: false);
+            }
             return result;
+        }
+        catch
+        {
+            if (startedForTheme)
+                StopRenderer(requestExit: false);
+            throw;
         }
         finally
         {
@@ -177,11 +184,39 @@ internal sealed class ChronosHostContext : ApplicationContext
         }
     }
 
-    public void SetCurrentWinToggle(bool enabled) => _winToggle.SetEnabled(enabled);
+    public void SetCurrentWinToggle(bool enabled)
+    {
+        _winToggle.SetEnabled(enabled);
+        UpdateSettings(_settings with { WindowsKeyOverride = _winToggle.Enabled });
+    }
 
     public void SetTrayVisible(bool visible)
     {
         _tray?.SetVisible(visible);
+        UpdateSettings(_settings with { TrayEnabled = visible });
+    }
+
+    public void SetStatusPolling(bool enabled)
+    {
+        _statusPollingEnabled = enabled;
+        UpdateSettings(_settings with { StatusPollingEnabled = enabled });
+    }
+
+    public void SetRestoreState(bool enabled)
+    {
+        UpdateSettings(_settings with { RestoreState = enabled });
+    }
+
+    public void SetRendererPath(string? path)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path.Trim());
+        UpdateSettings(_settings with { RendererPath = normalized });
+    }
+
+    private void UpdateSettings(PersistentSettings settings)
+    {
+        _persistence.WriteSettings(settings);
+        _settings = settings;
         NotifyUiStateChanged();
     }
 
@@ -198,9 +233,10 @@ internal sealed class ChronosHostContext : ApplicationContext
     private void WaitForRenderer(IReadOnlyList<string> expectedConfig)
     {
         RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
+        RendererSession? renderer = _renderer;
         if (!_commands.IsConnected)
         {
-            if (_renderer.Process.HasExited && _renderer.Process.ExitCode == 3)
+            if (renderer?.Process.HasExited == true && renderer.Process.ExitCode == 3)
                 throw new InvalidOperationException("Aether is already running outside Chronos; attach/adopt is not supported.");
             throw new InvalidOperationException("Aether did not accept commands during startup.");
         }
@@ -209,6 +245,95 @@ internal sealed class ChronosHostContext : ApplicationContext
             throw new InvalidOperationException("Aether accepted a configuration different from requested startup paths.");
 
         _activeThemeGeneration = capabilities.ThemeGeneration ?? 0;
+    }
+
+    private bool StartRenderer(
+        IReadOnlyList<string> configPaths,
+        string? explicitRendererPath,
+        string? persistedRendererPath)
+    {
+        if (_renderer != null)
+            return _commands.IsTransportAvailable;
+
+        RendererSession? startedRenderer = null;
+        try
+        {
+            string rendererPath = ResolveRendererPath(explicitRendererPath, persistedRendererPath);
+            _commands.BeginConnection();
+            startedRenderer = RendererSession.Start(
+                rendererPath,
+                configPaths,
+                HandleControlRequestAsync,
+                line => Diagnostic($"[Aether] {line}"),
+                line => Diagnostic($"[Aether] {line}"));
+            _renderer = startedRenderer;
+            startedRenderer.Control.Disconnected += OnControlDisconnected;
+            startedRenderer.Control.EventReceived += OnRendererEvent;
+            startedRenderer.ProcessExited += OnRendererExited;
+            WaitForRenderer(configPaths);
+
+            if (configPaths.Count > 0)
+                PersistAcceptedConfig(configPaths);
+
+            ConfigureRendererLogging();
+            NotifyUiStateChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Diagnostic($"Aether startup failed; Chronos remains available: {ex.Message}");
+            if (startedRenderer != null)
+            {
+                try { startedRenderer.Dispose(); } catch { }
+            }
+            _renderer = null;
+            _commands.MarkDisconnected();
+            NotifyUiStateChanged();
+            return false;
+        }
+    }
+
+    private void StopRenderer(bool requestExit)
+    {
+        RendererSession? renderer = _renderer;
+        _renderer = null;
+        if (renderer == null)
+        {
+            _commands.MarkDisconnected();
+            return;
+        }
+
+        renderer.Control.Disconnected -= OnControlDisconnected;
+        renderer.Control.EventReceived -= OnRendererEvent;
+        renderer.ProcessExited -= OnRendererExited;
+        try
+        {
+            if (requestExit && _commands.IsConnected)
+                _commands.ExitAsync().GetAwaiter().GetResult();
+        }
+        catch { }
+        if (requestExit && !renderer.WaitForExit(TimeSpan.FromSeconds(10)))
+            Diagnostic("Aether did not exit gracefully; terminating it.");
+        renderer.Dispose();
+        _commands.MarkDisconnected();
+        _backends.RevokeAll();
+    }
+
+    private void DiagnosticStaleRendererPath(string path) =>
+        Diagnostic($"Persisted renderer path was not found; using normal discovery: {path}");
+
+    private string ResolveRendererPath(string? explicitPath, string? persistedPath)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitPath))
+            return RendererLocator.Resolve(explicitPath);
+        if (string.IsNullOrWhiteSpace(persistedPath))
+            return RendererLocator.Resolve(null);
+        try { return RendererLocator.Resolve(persistedPath); }
+        catch (FileNotFoundException)
+        {
+            DiagnosticStaleRendererPath(persistedPath);
+            return RendererLocator.Resolve(null);
+        }
     }
 
     private void PersistAcceptedConfig(IReadOnlyList<string> configPaths, Guid? themeId = null)
@@ -238,9 +363,12 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void ConfigureRendererLogging()
     {
+        RendererSession? session = _renderer;
+        if (session == null)
+            return;
         try
         {
-            _renderer.Control.SendAsync(
+            session.Control.SendAsync(
                     "PUT",
                     "/v1/logging/batch-limits",
                     new { enabled = true, maxEvents = 32, maxBytes = 65536, flushIntervalMs = 250 },
@@ -260,7 +388,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         {
             return ControlResponse.Success(request.Id, 200, new
             {
-                control = _renderer.Control.State,
+                control = _renderer?.Control.State ?? "disconnected",
                 direction = "bidirectional",
                 backends = _backends.Snapshot()
             });
@@ -294,24 +422,28 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private ControlResponse HandleBackendConnect(ControlRequest request, string backendId)
     {
+        RendererSession? session = _renderer;
+        if (session == null)
+            return ControlResponse.Failure(request.Id, 503, "renderer_unavailable", "Renderer is not running.");
+
         if (!ControlCodec.TryGetObject(request.Body, out System.Text.Json.JsonElement body) ||
             !body.TryGetProperty("protocol", out System.Text.Json.JsonElement protocol) ||
             !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
-            !body.TryGetProperty("renderer", out System.Text.Json.JsonElement renderer) || renderer.ValueKind != System.Text.Json.JsonValueKind.Object)
+            !body.TryGetProperty("renderer", out System.Text.Json.JsonElement rendererBody) || rendererBody.ValueKind != System.Text.Json.JsonValueKind.Object)
             return ControlResponse.Failure(request.Id, 400, "backend_request_invalid", "Backend connect body is invalid.");
 
-        int pid = renderer.TryGetProperty("pid", out System.Text.Json.JsonElement pidValue) && pidValue.TryGetInt32(out int parsedPid)
+        int pid = rendererBody.TryGetProperty("pid", out System.Text.Json.JsonElement pidValue) && pidValue.TryGetInt32(out int parsedPid)
             ? parsedPid
             : 0;
-        string sid = ControlCodec.GetString(renderer, "sid") ?? "";
-        string sessionId = ControlCodec.GetString(renderer, "sessionId") ?? "";
-        if (pid != _renderer.Process.Id)
+        string sid = ControlCodec.GetString(rendererBody, "sid") ?? "";
+        string sessionId = ControlCodec.GetString(rendererBody, "sessionId") ?? "";
+        if (pid != session.Process.Id)
             return ControlResponse.Failure(request.Id, 403, "backend_renderer_unauthorized", "Renderer process identity is invalid.");
 
-        Guid? themeId = Guid.TryParse(ControlCodec.GetString(renderer, "themeId"), out Guid parsedThemeId)
+        Guid? themeId = Guid.TryParse(ControlCodec.GetString(rendererBody, "themeId"), out Guid parsedThemeId)
             ? parsedThemeId
             : null;
-        long? generation = renderer.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
+        long? generation = rendererBody.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
             generationValue.TryGetInt64(out long parsedGeneration)
             ? parsedGeneration
             : null;
@@ -343,11 +475,7 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnControlDisconnected()
     {
-        _backends.RevokeAll();
-        _commands.MarkDisconnected();
-        NotifyUiStateChanged();
-        Diagnostic("Renderer control channel disconnected.");
-        RequestExitOnDispatcher();
+        RequestRendererUnavailable("Renderer control channel disconnected.");
     }
 
     private void OnRendererEvent(string eventName, System.Text.Json.JsonElement? body)
@@ -385,22 +513,20 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnRendererExited()
     {
+        RequestRendererUnavailable("Aether process exited.");
+    }
+
+    private void RequestRendererUnavailable(string message)
+    {
         try
         {
             _dispatcher.BeginInvoke((Action)(() =>
             {
-                _commands.MarkDisconnected();
+                StopRenderer(requestExit: false);
                 NotifyUiStateChanged();
-                Diagnostic("Aether process exited.");
-                RequestExit();
+                Diagnostic(message);
             }));
         }
-        catch (InvalidOperationException) { }
-    }
-
-    private void RequestExitOnDispatcher()
-    {
-        try { _dispatcher.BeginInvoke((Action)RequestExit); }
         catch (InvalidOperationException) { }
     }
 
@@ -437,16 +563,8 @@ internal sealed class ChronosHostContext : ApplicationContext
         try { _shellForm?.CloseForShutdown(); } catch { }
         try { _winToggle.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
-        try
-        {
-            if (_commands.IsConnected)
-                _commands.ExitAsync().GetAwaiter().GetResult();
-        }
-        catch { }
-        if (!_renderer.WaitForExit(TimeSpan.FromSeconds(10)))
-            Diagnostic("Aether did not exit gracefully; terminating it.");
+        StopRenderer(requestExit: true);
         _backends.Dispose();
-        _renderer.Dispose();
         _dispatcher.Dispose();
         Application.ExitThread();
     }

@@ -16,6 +16,8 @@ internal static class Program
             (nameof(OptionsRejectsConflictingStartupOverrides), OptionsRejectsConflictingStartupOverrides),
             (nameof(ControlCodecRoundTrips), ControlCodecRoundTrips),
             (nameof(ControlCodecRejectsOversizedFrame), ControlCodecRejectsOversizedFrame),
+            (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
+            (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
@@ -48,12 +50,13 @@ internal static class Program
         ControllerOptions options = ControllerOptions.Parse(new[]
         {
             "--config", "one.json", "--config=two.json", "--restore-state=false", "--tray=false",
-            "--override-windows-key", "true", "--renderer-path", "Aether.exe"
+            "--override-windows-key", "true", "--status-poll=false", "--renderer-path", "Aether.exe"
         });
         AssertEqual(2, options.ConfigPaths.Count);
         AssertEqual(false, options.RestoreState);
         AssertEqual(false, options.Tray);
         AssertEqual(true, options.WindowsKeyOverride);
+        AssertEqual(false, options.StatusPolling);
         AssertTrue(Path.IsPathRooted(options.RendererPath));
     }
 
@@ -62,10 +65,10 @@ internal static class Program
 
     private static void OptionsParseStartupOverrides()
     {
-        ControllerOptions options = ControllerOptions.Parse(new[] { "--restore-state", "true", "--tray", "true", "--no-status-poll" });
+        ControllerOptions options = ControllerOptions.Parse(new[] { "--restore-state", "true", "--tray", "true", "--status-poll", "true" });
         AssertEqual(true, options.RestoreState);
         AssertEqual(true, options.Tray);
-        AssertTrue(options.NoStatusPoll);
+        AssertEqual(true, options.StatusPolling);
     }
 
     private static void OptionsRejectsConflictingStartupOverrides()
@@ -75,6 +78,7 @@ internal static class Program
         AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--no-last-config" }));
         AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--restore-state", "maybe" }));
         AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--override-windows-key", "maybe" }));
+        AssertThrows<OptionException>(() => ControllerOptions.Parse(new[] { "--no-status-poll" }));
     }
 
     private static void ControlCodecRoundTrips()
@@ -99,6 +103,16 @@ internal static class Program
         AssertEqual("frame_too_large", error!.Code);
     }
 
+    private static void RendererCommandsStayUnavailableWithoutRenderer()
+    {
+        var service = new RendererCommandService(new AetherCommandClient());
+        RendererCapabilities capabilities = service.RefreshAsync().GetAwaiter().GetResult();
+        AssertFalse(service.IsTransportAvailable);
+        AssertFalse(service.IsConnected);
+        AssertEqual(0, capabilities.ConfigFiles.Count);
+        AssertEqual("disconnected", capabilities.PipeState);
+    }
+
     private static void PersistenceRoundTrips()
     {
         string root = Path.Combine(Path.GetTempPath(), $"chronos-tests-{Guid.NewGuid():N}");
@@ -111,8 +125,41 @@ internal static class Program
             Guid themeId = Guid.NewGuid();
             persistence.WriteState(new[] { Path.Combine(root, "one.json") }, themeId);
             AssertEqual(themeId, persistence.ReadState().ActiveThemeId);
+            persistence.WriteSettings(new PersistentSettings(RendererPath: Path.Combine(root, "Aether.exe"), TrayEnabled: false, RestoreState: false, WindowsKeyOverride: true, StatusPollingEnabled: false));
+            PersistentSettings settings = persistence.ReadSettings();
+            AssertFalse(settings.TrayEnabled);
+            AssertFalse(settings.RestoreState);
+            AssertTrue(settings.WindowsKeyOverride);
+            AssertFalse(settings.StatusPollingEnabled);
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void MissingPersistenceFilesCreateDefaults()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-missing-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var diagnostics = new List<string>();
+            var persistence = new PersistenceStore(paths, diagnostics.Add);
+
+            AssertTrue(File.Exists(paths.StateFile));
+            AssertTrue(File.Exists(paths.ThemeRegistryFile));
+            AssertTrue(File.Exists(paths.SettingsFile));
+            AssertEqual(0, persistence.ReadState().Files.Count);
+            AssertEqual(0, persistence.ReadThemes().Themes.Count);
+            AssertEqual(true, persistence.ReadSettings().TrayEnabled);
+
+            BackendRegistry registry = BackendRegistry.Load(paths.BackendRegistryFile, diagnostics.Add);
+            AssertTrue(File.Exists(paths.BackendRegistryFile));
+            AssertEqual(0, registry.Definitions.Count);
+            AssertEqual(0, diagnostics.Count);
         }
         finally
         {

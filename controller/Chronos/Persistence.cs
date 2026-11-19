@@ -24,9 +24,18 @@ internal sealed record ThemeRegistryState(
     public IReadOnlyList<ThemeDefinition> Themes => Entries ?? Array.Empty<ThemeDefinition>();
 }
 
+internal sealed record PersistentSettings(
+    int SchemaVersion = 1,
+    bool TrayEnabled = true,
+    bool RestoreState = true,
+    bool WindowsKeyOverride = false,
+    bool StatusPollingEnabled = true,
+    string? RendererPath = null);
+
 internal sealed class PersistenceStore
 {
     private const int CurrentSchemaVersion = 2;
+    private const int CurrentSettingsSchemaVersion = 1;
     private readonly ChronosPaths _paths;
     private readonly Action<string> _diagnostic;
 
@@ -35,6 +44,9 @@ internal sealed class PersistenceStore
         _paths = paths;
         _diagnostic = diagnostic ?? (_ => { });
         _paths.EnsureDirectories();
+        EnsureFile(_paths.StateFile, new PersistentState(CurrentSchemaVersion, Array.Empty<string>()), _diagnostic);
+        EnsureFile(_paths.ThemeRegistryFile, new ThemeRegistryState(CurrentSchemaVersion, Array.Empty<ThemeDefinition>()), _diagnostic);
+        EnsureFile(_paths.SettingsFile, new PersistentSettings(CurrentSettingsSchemaVersion), _diagnostic);
     }
 
     public PersistentState ReadState()
@@ -52,6 +64,19 @@ internal sealed class PersistenceStore
     {
         string[] normalized = files.Select(Path.GetFullPath).ToArray();
         WriteAtomic(_paths.StateFile, new PersistentState(CurrentSchemaVersion, normalized, activeThemeId));
+    }
+
+    public PersistentSettings ReadSettings()
+    {
+        PersistentSettings? settings = Read<PersistentSettings>(_paths.SettingsFile);
+        return settings?.SchemaVersion == CurrentSettingsSchemaVersion
+            ? settings
+            : new PersistentSettings(CurrentSettingsSchemaVersion);
+    }
+
+    public void WriteSettings(PersistentSettings settings)
+    {
+        WriteAtomic(_paths.SettingsFile, settings with { SchemaVersion = CurrentSettingsSchemaVersion });
     }
 
     public ThemeRegistryState ReadThemes()
@@ -81,6 +106,21 @@ internal sealed class PersistenceStore
         theme.Name.Trim(),
         theme.Files.Select(Path.GetFullPath).ToArray(),
         theme.Id == Guid.Empty ? Guid.NewGuid() : theme.Id);
+
+    internal static void EnsureFile(string path, object value, Action<string> diagnostic)
+    {
+        if (File.Exists(path))
+            return;
+
+        try
+        {
+            WriteAtomic(path, value);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostic($"Could not create default persistence file '{path}': {ex.Message}");
+        }
+    }
 
     private T? Read<T>(string path) where T : class
     {
@@ -119,6 +159,7 @@ internal sealed class PersistenceStore
                 try { File.Replace(temporary, path, null); }
                 catch (PlatformNotSupportedException) { File.Move(temporary, path, true); }
                 catch (IOException) { File.Move(temporary, path, true); }
+                catch (UnauthorizedAccessException) { File.Move(temporary, path, true); }
             }
             else
             {

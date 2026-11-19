@@ -13,8 +13,9 @@ diagnostic.
 
 ## Control disconnected
 
-The renderer session is no longer usable. Chronos revokes backend grants and
-does not reuse inherited handles. Restart KhaosShell to create a fresh session.
+The renderer session is no longer usable. Chronos revokes backend grants,
+keeps its tray/UI alive, and starts a fresh Aether session when a theme is
+applied again.
 
 ## Windows Key Override remains disabled
 

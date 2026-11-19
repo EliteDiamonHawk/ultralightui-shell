@@ -19,7 +19,7 @@ Startup options:
 | `--config <path>` | Forward one configuration path; repeatable. Chronos stores its absolute form. |
 | `--restore-state <true\|false>` | Restore persisted theme state; default `true`. |
 | `--tray <true\|false>` | Create Chronos tray icon; default `true`. |
-| `--no-status-poll` | Disable WinForms timer status polling; event updates remain active. |
+| `--status-poll <true\|false>` | Enable WinForms timer status polling; events remain active. |
 | `--override-windows-key <true\|false>` | Enable Windows Key Override; default `false`. |
 | `--renderer-path <path>` | Override Aether executable discovery. |
 
@@ -32,6 +32,7 @@ Chronos resolves Aether from `--renderer-path`, beside Chronos, or
 %LOCALAPPDATA%\KhaosShell\
   Chronos\state.json
   Chronos\themes.json
+  Chronos\settings.json
   logs\
   Chronos\backend-registry.json
 ```

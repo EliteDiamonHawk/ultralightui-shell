@@ -11,7 +11,8 @@ internal sealed record ShellUiSnapshot(
     bool WindowsKeyOverrideEnabled,
     string ThemeOrigin,
     bool StatusPollingEnabled,
-    bool Exiting);
+    bool Exiting,
+    PersistentSettings Settings);
 
 internal sealed class ShellForm : Form
 {
@@ -29,6 +30,9 @@ internal sealed class ShellForm : Form
     private readonly Label _themeOrigin = new();
     private readonly CheckBox _trayEnabled = new();
     private readonly CheckBox _windowsKeyOverride = new();
+    private readonly CheckBox _statusPollingEnabled = new();
+    private readonly CheckBox _restoreState = new();
+    private readonly TextBox _rendererPath = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
     private readonly List<RendererWindowCapability> _windowItems = new();
@@ -198,8 +202,12 @@ internal sealed class ShellForm : Form
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8) };
         _trayEnabled.Text = "Tray enabled";
         _windowsKeyOverride.Text = "Windows Key Override";
+        _statusPollingEnabled.Text = "Status polling enabled";
+        _restoreState.Text = "Restore theme state on launch";
         _trayEnabled.AutoSize = true;
         _windowsKeyOverride.AutoSize = true;
+        _statusPollingEnabled.AutoSize = true;
+        _restoreState.AutoSize = true;
         _trayEnabled.CheckedChanged += (_, _) =>
         {
             if (!_updating)
@@ -210,11 +218,32 @@ internal sealed class ShellForm : Form
             if (!_updating)
                 RunSync(() => _host.SetCurrentWinToggle(_windowsKeyOverride.Checked));
         };
+        _statusPollingEnabled.CheckedChanged += (_, _) =>
+        {
+            if (!_updating)
+                RunSync(() => _host.SetStatusPolling(_statusPollingEnabled.Checked));
+        };
+        _restoreState.CheckedChanged += (_, _) =>
+        {
+            if (!_updating)
+                RunSync(() => _host.SetRestoreState(_restoreState.Checked));
+        };
+        _rendererPath.Dock = DockStyle.Top;
+        _rendererPath.Width = 520;
+        _rendererPath.PlaceholderText = "Default Aether discovery";
+        var rendererButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
+        rendererButtons.Controls.Add(new Label { Text = "Renderer path", AutoSize = true, Padding = new Padding(0, 7, 8, 0) });
+        rendererButtons.Controls.Add(_rendererPath);
+        rendererButtons.Controls.Add(Button("Browse", (_, _) => BrowseRendererPath()));
+        rendererButtons.Controls.Add(Button("Save", (_, _) => SaveRendererPath()));
         options.Controls.Add(_trayEnabled);
         options.Controls.Add(_windowsKeyOverride);
+        options.Controls.Add(_statusPollingEnabled);
+        options.Controls.Add(_restoreState);
+        options.Controls.Add(rendererButtons);
         options.Controls.Add(new Label
         {
-            Text = "Restore-state is startup-only. Current theme origin appears in status.",
+            Text = "Restore theme state applies at launch. Current theme origin appears in status.",
             AutoSize = true,
             Margin = new Padding(3, 12, 3, 3)
         });
@@ -374,7 +403,7 @@ internal sealed class ShellForm : Form
             _connection.Text = snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
             _trayStatus.Text = snapshot.TrayEnabled ? (snapshot.TrayVisible ? "Enabled / visible" : "Enabled / hidden") : "Disabled";
             _windowsKeyOverrideStatus.Text = snapshot.WindowsKeyOverrideEnabled ? "Enabled" : "Disabled";
-            _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--no-status-poll; events active)";
+            _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--status-poll false; events active)";
             _themeOrigin.Text = $"Theme origin: {snapshot.ThemeOrigin}";
             _activeThemeFiles.Text = snapshot.Capabilities.ConfigFiles.Count == 0
                 ? "(none)"
@@ -382,6 +411,13 @@ internal sealed class ShellForm : Form
             _trayEnabled.Enabled = snapshot.TrayEnabled;
             _trayEnabled.Checked = snapshot.TrayVisible;
             _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+            _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
+            _restoreState.Checked = snapshot.Settings.RestoreState;
+            _rendererPath.Text = snapshot.Settings.RendererPath ?? string.Empty;
+            if (snapshot.StatusPollingEnabled && !_refreshTimer.Enabled)
+                _refreshTimer.Start();
+            else if (!snapshot.StatusPollingEnabled && _refreshTimer.Enabled)
+                _refreshTimer.Stop();
 
             _themeItems.Clear();
             _themeItems.AddRange(_host.Themes);
@@ -430,6 +466,21 @@ internal sealed class ShellForm : Form
     }
 
     private void SetOutput(string text) => _statusOutput.Text = text;
+
+    private void BrowseRendererPath()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Select Aether renderer",
+            Filter = "Aether executable (Aether.exe)|Aether.exe|Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            FileName = _rendererPath.Text
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            _rendererPath.Text = dialog.FileName;
+    }
+
+    private void SaveRendererPath() => RunSync(() => _host.SetRendererPath(_rendererPath.Text));
 
     private static string? PromptForName(string title, string initial)
     {

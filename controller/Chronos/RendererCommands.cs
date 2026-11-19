@@ -5,7 +5,10 @@ using KhaosShell.Contracts;
 
 namespace Chronos;
 
-internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null, bool TransportFailure = false);
+internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null, bool TransportFailure = false)
+{
+    public static AetherCommandResult Failure(string message) => new(false, $"ERR {message}", message);
+}
 
 internal sealed class AetherCommandClient
 {
@@ -65,6 +68,7 @@ internal sealed class RendererCommandService
     private readonly object _sync = new();
     private RendererCapabilities _capabilities = RendererCapabilities.Empty;
     private bool _connected;
+    private bool _transportAvailable;
 
     public RendererCommandService(AetherCommandClient client) => _client = client;
 
@@ -73,9 +77,19 @@ internal sealed class RendererCommandService
         get { lock (_sync) return _connected; }
     }
 
+    public bool IsTransportAvailable
+    {
+        get { lock (_sync) return _transportAvailable; }
+    }
+
     public RendererCapabilities Capabilities
     {
         get { lock (_sync) return _capabilities; }
+    }
+
+    public void BeginConnection()
+    {
+        lock (_sync) _transportAvailable = true;
     }
 
     public async Task<RendererCapabilities> RefreshAsync(CancellationToken cancellationToken = default)
@@ -163,13 +177,20 @@ internal sealed class RendererCommandService
     {
         lock (_sync)
         {
+            _transportAvailable = false;
             _connected = false;
-            _capabilities = _capabilities with { PipeState = "disconnected" };
+            _capabilities = RendererCapabilities.Empty;
         }
     }
 
     private async Task<AetherCommandResult> SendAsync(AetherCommand command, CancellationToken cancellationToken)
     {
+        lock (_sync)
+        {
+            if (!_transportAvailable)
+                return AetherCommandResult.Failure("Renderer is not running.");
+        }
+
         RendererCommand request;
         lock (_sync)
         {

@@ -24,6 +24,7 @@ internal sealed record ChronosPaths(
     }
 
     public string ThemeRegistryFile => Path.Combine(ChronosRoot, "themes.json");
+    public string SettingsFile => Path.Combine(ChronosRoot, "settings.json");
 
     public void EnsureDirectories()
     {

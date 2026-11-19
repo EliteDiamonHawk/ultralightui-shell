@@ -6,19 +6,31 @@ Chronos stores data under `%LOCALAPPDATA%\KhaosShell\`:
   accepted absolute theme file list.
 - `Chronos\themes.json`: registered theme IDs, names, and absolute theme-file
   bundles.
+- `Chronos\settings.json`: persisted Chronos runtime defaults.
 - `logs\`: durable renderer batches and Chronos diagnostics.
 - `Chronos\backend-registry.json`: optional backend definitions.
 
 Chronos writes each file through a same-directory temporary file, flushes the
-file, and replaces the previous version. Chronos treats missing, malformed, or
-unsupported-version files as absent and records a diagnostic. Startup can then
-continue. Chronos normalizes theme paths to absolute paths and writes them
-only after Aether reports matching active theme. Missing or removed active theme
-IDs are not restored. Legacy root-level state
-and theme files are not read.
+file, and replaces the previous version. At startup, Chronos creates missing
+state, theme, settings, and backend-registry files with empty/default values.
+Existing malformed or unsupported-version files are treated as absent and are
+not overwritten; malformed-file diagnostics are recorded where applicable. If
+default-file creation fails, Chronos keeps the in-memory defaults and continues.
+Chronos normalizes
+theme paths to absolute paths and writes them only after Aether reports matching
+active theme. Missing or removed active theme IDs are not restored. Legacy
+root-level state and theme files are not read.
+
+Settings contain tray visibility, restore-state behavior, Windows Key Override,
+status polling, and optional renderer path. UI changes write settings
+immediately. Explicit CLI values override them for current launch only.
+
+If no explicit or restored theme exists, Chronos starts without Aether and
+waits for a theme selection. Renderer startup failure does not discard the
+Chronos UI or theme registry.
 
 `--restore-state false` skips startup theme-state restoration but does not clear
 `Chronos\state.json`. `--tray false` suppresses Chronos tray creation for the
-launch. `--no-status-poll` disables only UI timer polling; inherited renderer
-events remain active. Current UI toggles are not persisted as next-start
-settings.
+launch. `--status-poll false` disables only UI timer polling; inherited renderer
+events remain active. Explicit CLI values override persisted settings for the
+current launch. UI changes update persisted settings atomically.

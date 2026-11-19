@@ -10,7 +10,7 @@ internal sealed class ControllerOptions
     public string? RendererPath { get; private init; }
     public bool? Tray { get; private init; }
     public bool? RestoreState { get; private init; }
-    public bool NoStatusPoll { get; private init; }
+    public bool? StatusPolling { get; private init; }
     public bool? WindowsKeyOverride { get; private init; }
     public bool ShowHelp { get; private init; }
 
@@ -20,7 +20,7 @@ internal sealed class ControllerOptions
         string? rendererPath = null;
         bool? tray = null;
         bool? restoreState = null;
-        bool noStatusPoll = false;
+        bool? statusPolling = null;
         bool? windowsKeyOverride = null;
 
         for (int index = 0; index < args.Length; index++)
@@ -54,10 +54,8 @@ internal sealed class ControllerOptions
                 case "--restore-state":
                     SetBooleanOption(ref restoreState, NextBoolean(args, ref index, option, inlineValue), option);
                     break;
-                case "--no-status-poll":
-                    if (inlineValue != null)
-                        throw new OptionException("--no-status-poll does not accept a value.");
-                    noStatusPoll = true;
+                case "--status-poll":
+                    SetBooleanOption(ref statusPolling, NextBoolean(args, ref index, option, inlineValue), option);
                     break;
                 case "--override-windows-key":
                     SetBooleanOption(ref windowsKeyOverride, NextBoolean(args, ref index, option, inlineValue), option);
@@ -73,7 +71,7 @@ internal sealed class ControllerOptions
             RendererPath = rendererPath,
             Tray = tray,
             RestoreState = restoreState,
-            NoStatusPoll = noStatusPoll,
+            StatusPolling = statusPolling,
             WindowsKeyOverride = windowsKeyOverride
         };
     }
@@ -88,7 +86,7 @@ internal sealed class ControllerOptions
           --config <absolute-path>       Forward theme file; repeatable.
           --restore-state <true|false>   Restore persisted theme state; default true.
           --tray <true|false>            Create Chronos tray icon; default true.
-          --no-status-poll               Disable WinForms status polling; events remain enabled.
+          --status-poll <true|false>     Enable WinForms status polling; events remain active.
           --override-windows-key <true|false>
                                         Enable Windows Key Override; default false.
           --renderer-path <absolute-path> Override Aether executable discovery.

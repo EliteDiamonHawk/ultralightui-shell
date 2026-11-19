@@ -3,7 +3,12 @@
 ## Startup
 
 `Program` parses controller options, acquires the user-scoped Chronos mutex,
-loads persistence and the optional backend registry, resolves Aether, creates
+loads persistence and the optional backend registry, then creates Chronos's
+tray/UI state. Chronos launches Aether only when explicit or restored theme
+configuration exists. With no theme loaded, Chronos remains alive and waits
+for the user to apply one.
+
+When a theme is applied without a renderer, Chronos resolves Aether, creates
 two anonymous pipes, and launches Aether with inherited handle arguments.
 
 Chronos always passes Aether's `--no-tray`, so the controller owns the product
@@ -21,14 +26,14 @@ control channel, and command server alive.
 
 | Component | Owns |
 | --- | --- |
-| Chronos | Aether process, inherited control session, state/settings/theme register, tray, Win policy, backend grants, durable log intake |
+| Chronos | Aether process, inherited control session, state/settings/theme register, tray, Windows Key Override policy, backend grants, durable log intake |
 | Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
-Control EOF marks session unavailable, revokes backend grants, and shuts down
-Chronos when Aether was launched by it. Chronos also shuts down when its
-managed Aether process exits. Theme activation generations fence stale
-configuration events and requests without replacing transport handles.
+Control EOF marks the renderer session unavailable, revokes backend grants,
+and keeps Chronos alive so the user can select another theme. Chronos shuts
+down Aether only during Chronos shutdown. Theme activation generations fence
+stale configuration events and requests without replacing transport handles.
 
 ## Command service
 
@@ -36,7 +41,7 @@ Chronos has no public command pipe. Tray and WinForms code use one typed
 internal service. That service obtains valid renderer IDs, groups, menu
 presence, and connection state from Aether inspection output before it creates
 an action. WinForms status uses inherited events plus optional timer polling;
-`--no-status-poll` disables only timer polling.
+`--status-poll false` disables only timer polling.
 
 ## Shutdown
 

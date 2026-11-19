@@ -22,7 +22,13 @@ internal sealed class BackendRegistry
     {
         diagnostic ??= _ => { };
         if (!File.Exists(path))
+        {
+            PersistenceStore.EnsureFile(
+                path,
+                new { schemaVersion = 1, backends = new Dictionary<string, BackendDefinition>(StringComparer.Ordinal) },
+                diagnostic);
             return new BackendRegistry(new Dictionary<string, BackendDefinition>(StringComparer.Ordinal));
+        }
 
         try
         {
