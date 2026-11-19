@@ -19,6 +19,7 @@ internal sealed class ControlChannel : IDisposable
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly object _cacheSync = new();
     private int _disconnectSignaled;
+    private int _disposed;
     private Task? _loop;
 
     public ControlChannel(Stream readStream, Stream writeStream, Func<ControlRequest, Task<ControlResponse>> handler)
@@ -69,7 +70,7 @@ internal sealed class ControlChannel : IDisposable
 
     public void Dispose()
     {
-        if (State == "closed")
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
         State = "closed";
         FailPending(new IOException("Control channel closed."));
@@ -77,10 +78,16 @@ internal sealed class ControlChannel : IDisposable
         try { _readStream.Dispose(); } catch { }
         try { _writeStream.Dispose(); } catch { }
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-        _reader.Dispose();
-        _writer.Dispose();
-        _writeLock.Dispose();
-        _shutdown.Dispose();
+        DisposeQuietly(_reader);
+        DisposeQuietly(_writer);
+        DisposeQuietly(_writeLock);
+        DisposeQuietly(_shutdown);
+    }
+
+    private static void DisposeQuietly(IDisposable disposable)
+    {
+        try { disposable.Dispose(); }
+        catch { }
     }
 
     private async Task RunAsync()

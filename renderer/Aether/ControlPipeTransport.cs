@@ -198,6 +198,7 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
     private readonly Dictionary<string, (string Fingerprint, string Response, DateTimeOffset Expires)> _idempotency = new(StringComparer.Ordinal);
     private readonly object _idempotencySync = new();
     private int _disconnectSignaled;
+    private int _disposed;
     private Task? _loop;
 
     public ControlPipeChannel(IntPtr readHandle, IntPtr writeHandle, Func<ControlRequest, ControlResponse> handler)
@@ -242,16 +243,24 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         State = "closed";
         FailPending(new IOException("Control channel closed."));
         _shutdown.Cancel();
         try { _readStream.Dispose(); } catch { }
         try { _writeStream.Dispose(); } catch { }
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-        _writer.Dispose();
-        _reader.Dispose();
-        _writeLock.Dispose();
-        _shutdown.Dispose();
+        DisposeQuietly(_writer);
+        DisposeQuietly(_reader);
+        DisposeQuietly(_writeLock);
+        DisposeQuietly(_shutdown);
+    }
+
+    private static void DisposeQuietly(IDisposable disposable)
+    {
+        try { disposable.Dispose(); }
+        catch { }
     }
 
     private async Task RunAsync()

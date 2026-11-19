@@ -249,6 +249,8 @@ internal sealed class ChronosHostContext : ApplicationContext
                 _commands.ExitAsync().GetAwaiter().GetResult();
         }
         catch { }
+        if (!_renderer.WaitForExit(TimeSpan.FromSeconds(10)))
+            Diagnostic("Aether did not exit gracefully; terminating it.");
         _backends.Dispose();
         _renderer.Dispose();
         _dispatcher.Dispose();

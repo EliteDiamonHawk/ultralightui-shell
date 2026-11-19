@@ -34,5 +34,6 @@ an action.
 ## Shutdown
 
 Shutdown disables and unhooks Win policy, removes tray UI, requests Aether
-exit, revokes backend grants, disposes control streams, and releases the
-mutex.
+exit, waits up to ten seconds for Aether to terminate, then revokes backend
+grants, disposes control streams, and releases the mutex. Aether is
+force-terminated only if graceful shutdown times out.

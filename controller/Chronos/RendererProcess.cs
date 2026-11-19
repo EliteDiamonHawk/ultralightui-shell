@@ -59,6 +59,17 @@ internal sealed class RendererSession : IDisposable
     public ControlChannel Control => _control;
     public event Action? ProcessExited;
 
+    public bool WaitForExit(TimeSpan timeout)
+    {
+        try
+        {
+            if (_process.HasExited)
+                return true;
+            return _process.WaitForExit(timeout);
+        }
+        catch (InvalidOperationException) { return true; }
+    }
+
     public static RendererSession Start(
         string rendererPath,
         IReadOnlyList<string> configPaths,
@@ -135,7 +146,10 @@ internal sealed class RendererSession : IDisposable
         try
         {
             if (!_process.HasExited)
+            {
                 _process.Kill(entireProcessTree: true);
+                _process.WaitForExit(TimeSpan.FromSeconds(5));
+            }
         }
         catch { }
         _process.Dispose();
