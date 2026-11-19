@@ -13,7 +13,9 @@ internal sealed class BackendConnectionManager : IDisposable
     private readonly ConcurrentDictionary<string, BackendPipeConnection> _connections = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JsonSchemaDescriptor> _schemas = new(StringComparer.Ordinal);
     private readonly string _sid = WindowsIdentityHelper.GetCurrentSid();
-    private readonly string _sessionId = Guid.NewGuid().ToString("D");
+    private string _sessionId = Guid.NewGuid().ToString("D");
+    private Guid? _themeId;
+    private long? _themeGeneration;
     private int _disposed;
 
     public BackendConnectionManager(ControlPipeChannel? control)
@@ -38,7 +40,14 @@ internal sealed class BackendConnectionManager : IDisposable
             new
             {
                 protocol = 1,
-                renderer = new { pid = Environment.ProcessId, sid = _sid, sessionId = _sessionId }
+                renderer = new
+                {
+                    pid = Environment.ProcessId,
+                    sid = _sid,
+                    sessionId = _sessionId,
+                    themeId = _themeId,
+                    themeGeneration = _themeGeneration
+                }
             },
             TimeSpan.FromSeconds(30),
             cancellationToken).ConfigureAwait(false);
@@ -105,6 +114,43 @@ internal sealed class BackendConnectionManager : IDisposable
         .Select(connection => new BackendPipeSnapshot(connection.BackendId, connection.State, connection.QueueDepth))
         .ToArray();
 
+    public void RotateThemeScope(Guid? themeId = null, long? themeGeneration = null)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        RotateThemeScopeCore(themeId, themeGeneration);
+    }
+
+    private void RotateThemeScopeCore(Guid? themeId = null, long? themeGeneration = null)
+    {
+
+        foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections.ToArray())
+        {
+            if (_connections.TryRemove(pair.Key, out BackendPipeConnection? connection))
+            {
+                try
+                {
+                    if (_control?.State == "connected")
+                    {
+                        _control.SendAsync(
+                            "DELETE",
+                            $"/v1/backends/{Uri.EscapeDataString(pair.Key)}/connect",
+                            new { sessionId = _sessionId },
+                            TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                    }
+                }
+                catch { }
+                connection.Dispose();
+            }
+        }
+
+        _schemas.Clear();
+        _sessionId = Guid.NewGuid().ToString("D");
+        _themeId = themeId;
+        _themeGeneration = themeGeneration;
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -112,17 +158,7 @@ internal sealed class BackendConnectionManager : IDisposable
 
         if (_control != null)
             _control.Disconnected -= OnControlDisconnected;
-        foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections)
-        {
-            try
-            {
-                if (_control?.State == "connected")
-                    _control.SendAsync("DELETE", $"/v1/backends/{Uri.EscapeDataString(pair.Key)}/connect", new { sessionId = _sessionId }, TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
-            }
-            catch { }
-            pair.Value.Dispose();
-        }
-        _connections.Clear();
+        RotateThemeScopeCore();
         _schemas.Clear();
         StreamEventReceived = null;
     }

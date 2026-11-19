@@ -280,6 +280,19 @@ internal static class Program
         json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.ToggleMenu));
         AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
         AssertEqual(RendererCommandKind.ToggleMenu, parsed!.Kind);
+
+        Guid themeId = Guid.NewGuid();
+        Guid activationId = Guid.NewGuid();
+        json = RendererCommandProtocol.Serialize(new RendererCommand(
+            RendererCommandKind.ApplyConfig,
+            ConfigPaths: new[] { "theme.json" },
+            ThemeId: themeId,
+            ThemeActivationId: activationId,
+            ThemeGeneration: 7));
+        AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
+        AssertEqual(themeId, parsed!.ThemeId);
+        AssertEqual(activationId, parsed.ThemeActivationId);
+        AssertEqual(7L, parsed.ThemeGeneration);
     }
 
     private static void ControlProtocolRoundTrips()

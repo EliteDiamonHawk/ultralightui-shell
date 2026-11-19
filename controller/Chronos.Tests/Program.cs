@@ -108,6 +108,9 @@ internal static class Program
             var persistence = new PersistenceStore(paths);
             persistence.WriteState(new[] { Path.Combine(root, "one.json") });
             AssertEqual(1, persistence.ReadState().Files.Count);
+            Guid themeId = Guid.NewGuid();
+            persistence.WriteState(new[] { Path.Combine(root, "one.json") }, themeId);
+            AssertEqual(themeId, persistence.ReadState().ActiveThemeId);
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
         }
@@ -134,6 +137,7 @@ internal static class Program
             AssertEqual(1, read.Themes.Count);
             AssertEqual("Dark", read.Themes[0].Name);
             AssertEqual(2, read.Themes[0].Files.Count);
+            AssertTrue(read.Themes[0].Id != Guid.Empty);
             AssertTrue(paths.ThemeRegistryFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
         }
         finally

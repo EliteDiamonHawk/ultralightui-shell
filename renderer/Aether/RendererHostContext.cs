@@ -21,6 +21,9 @@ public sealed class RendererHostContext : ApplicationContext
     private bool _exiting;
     private RendererConfiguration _configuration;
     private IReadOnlyList<RendererWindowSpec> _specs;
+    private Guid? _themeId;
+    private Guid _themeActivationId;
+    private long _themeGeneration;
 
     public RendererHostContext(HostOptions options, SingleInstanceLease lease)
     {
@@ -142,6 +145,10 @@ public sealed class RendererHostContext : ApplicationContext
 
     private string HandleCommand(RendererCommand command)
     {
+        string? identityError = ValidateThemeIdentity(command);
+        if (identityError != null)
+            return identityError;
+
         _logger.Info("command.received", new Dictionary<string, string?>
         {
             ["command"] = command.Kind.ToString(),
@@ -153,7 +160,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             string response = command.Kind switch
             {
-                RendererCommandKind.ApplyConfig => ApplyConfiguration(command.ConfigPaths ?? Array.Empty<string>()),
+                RendererCommandKind.ApplyConfig => ApplyConfiguration(command.ConfigPaths ?? Array.Empty<string>(), command.ThemeId, command.ThemeActivationId, command.ThemeGeneration),
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.ShowMenu => SetMenuVisibility(true),
                 RendererCommandKind.HideMenu => SetMenuVisibility(false),
@@ -189,92 +196,104 @@ public sealed class RendererHostContext : ApplicationContext
         }
     }
 
-    private string ApplyConfiguration(IReadOnlyList<string> paths)
+    private string? ValidateThemeIdentity(RendererCommand command)
+    {
+        if (_themeGeneration == 0 || command.ThemeGeneration == null)
+            return null;
+
+        if (command.Kind == RendererCommandKind.ApplyConfig)
+        {
+            if (command.ThemeGeneration <= _themeGeneration)
+                return "ERR Theme session is stale.";
+            return null;
+        }
+
+        if (command.ThemeGeneration != _themeGeneration ||
+            (command.ThemeActivationId is { } activationId && activationId != _themeActivationId) ||
+            (command.ThemeId is { } themeId && themeId != _themeId))
+            return "ERR Theme session is stale.";
+        return null;
+    }
+
+    private string ApplyConfiguration(IReadOnlyList<string> paths, Guid? themeId = null, Guid? activationId = null, long? generation = null)
     {
         if (paths.Count == 0)
             return "ERR At least one --config path is required.";
 
         RendererConfiguration candidate = RendererConfiguration.Load(paths);
         IReadOnlyList<RendererWindowSpec> candidateSpecs = candidate.ResolveWindowSpecs();
-        RuntimeGroupHost[] oldGroups;
         IReadOnlyList<RendererWindowSpec> oldSpecs;
+        RendererConfiguration oldConfiguration;
+        IReadOnlyList<string> oldPaths;
+        Guid? oldThemeId;
+        Guid oldActivationId;
+        long oldGeneration;
         lock (_sync)
         {
-            oldGroups = _groups.Values.ToArray();
             oldSpecs = _specs.ToArray();
+            oldConfiguration = _configuration;
+            oldPaths = _configPaths;
+            oldThemeId = _themeId;
+            oldActivationId = _themeActivationId;
+            oldGeneration = _themeGeneration;
         }
 
-        bool sameTopology = oldGroups.Select(group => group.Name).ToHashSet(StringComparer.Ordinal)
-            .SetEquals(candidateSpecs.Select(spec => spec.ThreadGroup));
-        if (sameTopology)
+        StopGroups();
+        long candidateGeneration = generation ?? checked(_themeGeneration + 1);
+        _backendManager?.RotateThemeScope(themeId, candidateGeneration);
+        Dictionary<string, RuntimeGroupHost> candidateGroups;
+        try
         {
-            var reloaded = new List<RuntimeGroupHost>();
-            try
-            {
-                foreach (RuntimeGroupHost group in oldGroups)
-                {
-                    group.InvokeReload(candidateSpecs);
-                    reloaded.Add(group);
-                }
-            }
-            catch
-            {
-                foreach (RuntimeGroupHost group in reloaded)
-                {
-                    try { group.InvokeReload(oldSpecs); }
-                    catch (Exception rollbackError) { Console.Error.WriteLine($"[Reload] rollback failed for {group.Name}: {rollbackError.Message}"); }
-                }
-                throw;
-            }
-
-            lock (_sync)
-            {
-                _configuration = candidate;
-                _specs = candidateSpecs;
-                _configPaths = paths.ToArray();
-            }
+            candidateGroups = CreateGroups(candidateSpecs);
         }
-        else
+        catch
         {
-            StopGroups();
-            Dictionary<string, RuntimeGroupHost> candidateGroups;
             try
             {
-                candidateGroups = CreateGroups(candidateSpecs);
+                _backendManager?.RotateThemeScope(oldThemeId, oldGeneration == 0 ? null : oldGeneration);
+                Dictionary<string, RuntimeGroupHost> restoredGroups = CreateGroups(oldSpecs);
+                lock (_sync)
+                {
+                    foreach (KeyValuePair<string, RuntimeGroupHost> pair in restoredGroups)
+                        _groups.Add(pair.Key, pair.Value);
+                    _configuration = oldConfiguration;
+                    _specs = oldSpecs;
+                    _configPaths = oldPaths;
+                    _themeId = oldThemeId;
+                    _themeActivationId = oldActivationId;
+                    _themeGeneration = oldGeneration;
+                }
             }
-            catch
+            catch (Exception restoreError)
             {
-                try
-                {
-                    Dictionary<string, RuntimeGroupHost> restoredGroups = CreateGroups(oldSpecs);
-                    lock (_sync)
-                    {
-                        foreach (KeyValuePair<string, RuntimeGroupHost> pair in restoredGroups)
-                            _groups.Add(pair.Key, pair.Value);
-                    }
-                }
-                catch (Exception restoreError)
-                {
-                    Console.Error.WriteLine($"[Reload] old configuration restore failed: {restoreError.Message}");
-                }
-                throw;
+                Console.Error.WriteLine($"[Reload] old configuration restore failed: {restoreError.Message}");
             }
+            throw;
+        }
 
-            lock (_sync)
-            {
-                foreach (KeyValuePair<string, RuntimeGroupHost> pair in candidateGroups)
-                    _groups.Add(pair.Key, pair.Value);
-                _configuration = candidate;
-                _specs = candidateSpecs;
-                _configPaths = paths.ToArray();
-            }
+        lock (_sync)
+        {
+            foreach (KeyValuePair<string, RuntimeGroupHost> pair in candidateGroups)
+                _groups.Add(pair.Key, pair.Value);
+            _configuration = candidate;
+            _specs = candidateSpecs;
+            _configPaths = paths.ToArray();
+            _themeId = themeId;
+            _themeActivationId = activationId ?? Guid.NewGuid();
+            _themeGeneration = candidateGeneration;
         }
 
         _logger.Info("config.reload.succeeded", new Dictionary<string, string?>
         {
             ["windowCount"] = candidateSpecs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
         });
-        _controlChannel?.TrySendEvent("config.changed", new { files = _configPaths });
+        _controlChannel?.TrySendEvent("config.changed", new
+        {
+            files = _configPaths,
+            themeId = _themeId,
+            themeActivationId = ActiveThemeActivationId,
+            themeGeneration = ActiveThemeGeneration
+        });
         return "OK configuration applied";
     }
 
@@ -283,7 +302,7 @@ public sealed class RendererHostContext : ApplicationContext
         if (_configPaths.Count == 0)
             return "ERR No active configuration.";
         if (command.All)
-            return ApplyConfiguration(_configPaths);
+            return ApplyConfiguration(_configPaths, _themeId, _themeActivationId, _themeGeneration);
 
         IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
         foreach (RuntimeGroupHost group in targets)
@@ -342,7 +361,14 @@ public sealed class RendererHostContext : ApplicationContext
         if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
             return $"ERR Window group '{spec.ThreadGroup}' is not running.";
         if (visible) host.InvokeRevealWindow(id); else host.InvokeHideWindow(id);
-        _controlChannel?.TrySendEvent("window.changed", new { id, visible });
+        _controlChannel?.TrySendEvent("window.changed", new
+        {
+            id,
+            visible,
+            themeId = _themeId,
+            themeActivationId = ActiveThemeActivationId,
+            themeGeneration = ActiveThemeGeneration
+        });
         return $"OK {(visible ? "revealed" : "hid")} {id}";
     }
 
@@ -353,7 +379,14 @@ public sealed class RendererHostContext : ApplicationContext
             "config" => ControlPipeCodec.SerializeJson(BuildConfigPayload()),
             "windows" => ControlPipeCodec.SerializeJson(new { windows = GetWindowSnapshots() }),
             "paths" => ControlPipeCodec.SerializeJson(RendererPaths.Resolve(_options.UltralightRoot)),
-            "pipes" => ControlPipeCodec.SerializeJson(new { control = _controlChannel?.State ?? "standalone", backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>() }),
+            "pipes" => ControlPipeCodec.SerializeJson(new
+            {
+                control = _controlChannel?.State ?? "standalone",
+                backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>(),
+                themeId = _themeId,
+                themeActivationId = ActiveThemeActivationId,
+                themeGeneration = ActiveThemeGeneration
+            }),
             _ => "ERR Show topic must be pipes, config, windows, or paths."
         };
     }
@@ -378,7 +411,10 @@ public sealed class RendererHostContext : ApplicationContext
             return new ControlResponse(request.Id, 200, new
             {
                 control = _controlChannel?.State ?? "standalone",
-                backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>()
+                backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>(),
+                themeId = _themeId,
+                themeActivationId = ActiveThemeActivationId,
+                themeGeneration = ActiveThemeGeneration
             });
         if (request.Method == "PUT" && request.Path == "/v1/logging/batch-limits")
         {
@@ -394,8 +430,14 @@ public sealed class RendererHostContext : ApplicationContext
     {
         files = _configPaths,
         sections = new { wallpaper = _configuration.Wallpapers, widgets = _configuration.Widgets, menu = _configuration.Menu },
-        resolvedWindows = _specs
+        resolvedWindows = _specs,
+        themeId = _themeId,
+        themeActivationId = ActiveThemeActivationId,
+        themeGeneration = ActiveThemeGeneration
     };
+
+    private Guid? ActiveThemeActivationId => _themeGeneration == 0 ? null : _themeActivationId;
+    private long? ActiveThemeGeneration => _themeGeneration == 0 ? null : _themeGeneration;
 
     private string ApplyPause(RendererCommand command, bool paused)
     {

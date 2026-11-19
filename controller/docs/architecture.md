@@ -13,6 +13,10 @@ After Aether accepts its existing `Aether.Commands` pipe, Chronos queries
 configuration, windows, and pipe state. Chronos persists paths only after
 Aether reports the matching active configuration.
 
+Theme changes do not restart Aether or either Chronos-to-Aether transport.
+Aether swaps its disposable theme runtime while keeping its process, inherited
+control channel, and command server alive.
+
 ## Ownership
 
 | Component | Owns |
@@ -21,10 +25,10 @@ Aether reports the matching active configuration.
 | Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
-Control EOF marks the session unavailable, revokes backend grants, and shuts
-down Chronos when Aether was launched by it. Chronos also shuts down when its
-managed Aether process exits. Chronos does not reuse handles or attach a later
-renderer to an old session.
+Control EOF marks session unavailable, revokes backend grants, and shuts down
+Chronos when Aether was launched by it. Chronos also shuts down when its
+managed Aether process exits. Theme activation generations fence stale
+configuration events and requests without replacing transport handles.
 
 ## Command service
 

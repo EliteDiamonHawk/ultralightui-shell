@@ -12,7 +12,7 @@ internal sealed class AetherCommandClient
     internal const string PipeName = "Aether.Commands";
     private readonly string _machine = ".";
 
-    public async Task<AetherCommandResult> SendAsync(AetherCommand command, TimeSpan timeout, CancellationToken cancellationToken = default)
+    public async Task<AetherCommandResult> SendAsync(RendererCommand command, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(timeout);
@@ -46,7 +46,10 @@ internal sealed record RendererCapabilities(
     IReadOnlyList<RendererWindowCapability> Windows,
     IReadOnlyList<string> Groups,
     bool HasMenu,
-    string PipeState)
+    string PipeState,
+    Guid? ThemeId = null,
+    Guid? ThemeActivationId = null,
+    long? ThemeGeneration = null)
 {
     public static RendererCapabilities Empty { get; } = new(
         Array.Empty<string>(),
@@ -101,8 +104,25 @@ internal sealed class RendererCommandService
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible, CancellationToken cancellationToken = default) =>
         SendAsync(new(visible ? AetherCommandKind.RevealWindow : AetherCommandKind.HideWindow, TargetId: id), cancellationToken);
 
-    public Task<AetherCommandResult> ApplyConfigAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default) =>
-        SendAsync(new(AetherCommandKind.ApplyConfig, ConfigPaths: paths), cancellationToken);
+    public async Task<AetherCommandResult> ApplyConfigAsync(IReadOnlyList<string> paths, Guid? themeId = null, long? generation = null, CancellationToken cancellationToken = default)
+    {
+        Guid activationId = Guid.NewGuid();
+        AetherCommandResult result = await SendAsync(
+            new(AetherCommandKind.ApplyConfig, ConfigPaths: paths, ThemeId: themeId,
+                ThemeActivationId: activationId, ThemeGeneration: generation),
+            cancellationToken).ConfigureAwait(false);
+        if (result.Success)
+        {
+            lock (_sync)
+                _capabilities = _capabilities with
+                {
+                    ThemeId = themeId ?? _capabilities.ThemeId,
+                    ThemeActivationId = activationId,
+                    ThemeGeneration = generation ?? (_capabilities.ThemeGeneration ?? 0) + 1
+                };
+        }
+        return result;
+    }
 
     public Task<AetherCommandResult> PauseAsync(string? group, bool all, CancellationToken cancellationToken = default) =>
         SendAsync(new(AetherCommandKind.Pause, Group: group, All: all), cancellationToken);
@@ -150,7 +170,19 @@ internal sealed class RendererCommandService
 
     private async Task<AetherCommandResult> SendAsync(AetherCommand command, CancellationToken cancellationToken)
     {
-        AetherCommandResult result = await _client.SendAsync(command, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+        RendererCommand request;
+        lock (_sync)
+        {
+            RendererCapabilities current = _capabilities;
+            request = command with
+            {
+                ThemeId = command.ThemeId ?? current.ThemeId,
+                ThemeActivationId = command.ThemeActivationId ?? current.ThemeActivationId,
+                ThemeGeneration = command.ThemeGeneration ?? current.ThemeGeneration
+            };
+        }
+
+        AetherCommandResult result = await _client.SendAsync(request, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
         if (!result.Success && result.TransportFailure)
             MarkDisconnected();
         return result;
@@ -195,6 +227,14 @@ internal sealed class RendererCommandService
         var groups = windowValues.Select(item => item.Group).Where(item => item != null).Distinct(StringComparer.Ordinal).Cast<string>().ToArray();
         bool hasMenu = windowValues.Any(item => string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase));
         string pipeState = ControlCodec.GetString(pipesRoot, "control") ?? "unknown";
-        return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState);
+        Guid? themeId = TryGetGuid(configRoot, "themeId");
+        Guid? activationId = TryGetGuid(configRoot, "themeActivationId");
+        long? generation = configRoot.TryGetProperty("themeGeneration", out JsonElement generationValue) &&
+            generationValue.TryGetInt64(out long parsedGeneration) ? parsedGeneration : null;
+        return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState, themeId, activationId, generation);
     }
+
+    private static Guid? TryGetGuid(JsonElement root, string name) =>
+        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String &&
+        Guid.TryParse(value.GetString(), out Guid parsed) ? parsed : null;
 }

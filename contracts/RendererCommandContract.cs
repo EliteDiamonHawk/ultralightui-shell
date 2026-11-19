@@ -36,7 +36,10 @@ public sealed record RendererCommand(
     string? Topic = null,
     IReadOnlyList<string>? ConfigPaths = null,
     SystemTrayAction TrayAction = SystemTrayAction.Toggle,
-    int Version = RendererCommandCodec.Version);
+    int Version = RendererCommandCodec.Version,
+    Guid? ThemeId = null,
+    Guid? ThemeActivationId = null,
+    long? ThemeGeneration = null);
 
 public static class RendererCommandCodec
 {

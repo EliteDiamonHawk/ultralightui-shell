@@ -18,6 +18,10 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly bool _statusPollingEnabled;
     private ThemeRegistryState _themes;
     private string _themeOrigin;
+    private Guid? _activeThemeId;
+    private long _activeThemeGeneration;
+    private Guid? _pendingThemeId;
+    private long? _pendingThemeGeneration;
     private ShellForm? _shellForm;
     private bool _exiting;
 
@@ -37,12 +41,18 @@ internal sealed class ChronosHostContext : ApplicationContext
 
         PersistentState state = _persistence.ReadState();
         bool restoreState = options.RestoreState ?? true;
+        ThemeDefinition? restoredTheme = restoreState && state.ActiveThemeId is { } activeThemeId
+            ? _themes.Themes.FirstOrDefault(theme => theme.Id == activeThemeId)
+            : restoreState
+                ? _themes.Themes.FirstOrDefault(theme => PathsEqual(theme.Files, state.Files))
+                : null;
         IReadOnlyList<string> configPaths = options.ConfigPaths.Count > 0
             ? options.ConfigPaths
-            : restoreState ? state.Files : Array.Empty<string>();
+            : restoredTheme?.Files ?? Array.Empty<string>();
+        _activeThemeId = options.ConfigPaths.Count > 0 ? null : restoredTheme?.Id;
         _themeOrigin = options.ConfigPaths.Count > 0
             ? "Explicit CLI"
-            : restoreState && state.Files.Count > 0 ? "Restored state" : "None";
+            : restoredTheme != null ? "Restored state" : "None";
         bool trayEnabled = options.Tray ?? true;
         bool winToggleEnabled = options.WindowsKeyOverride ?? false;
         string rendererPath = RendererLocator.Resolve(options.RendererPath);
@@ -111,13 +121,14 @@ internal sealed class ChronosHostContext : ApplicationContext
 
         var next = _themes.Themes.ToList();
         int duplicate = next.FindIndex(theme => PathsEqual(theme.Files, normalized));
-        var replacement = new ThemeDefinition(name.Trim(), normalized);
+        Guid id = duplicate >= 0 ? next[duplicate].Id : Guid.NewGuid();
+        var replacement = new ThemeDefinition(name.Trim(), normalized, id);
         if (duplicate >= 0)
             next[duplicate] = replacement;
         else
             next.Add(replacement);
         _persistence.WriteThemes(next);
-        _themes = new ThemeRegistryState(1, next);
+        _themes = new ThemeRegistryState(2, next);
         NotifyUiStateChanged();
     }
 
@@ -125,32 +136,45 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new InvalidOperationException("Theme name must not be empty.");
-        ReplaceTheme(theme, new ThemeDefinition(name.Trim(), theme.Files));
+        ReplaceTheme(theme, new ThemeDefinition(name.Trim(), theme.Files, theme.Id));
     }
 
     public void RemoveTheme(ThemeDefinition theme)
     {
         List<ThemeDefinition> next = _themes.Themes.Where(item => !Equals(item, theme)).ToList();
         _persistence.WriteThemes(next);
-        _themes = new ThemeRegistryState(1, next);
+        _themes = new ThemeRegistryState(2, next);
         NotifyUiStateChanged();
     }
 
     public async Task<AetherCommandResult> ApplyThemeAsync(ThemeDefinition theme)
     {
         string[] files = NormalizeThemeFiles(theme.Files);
-        AetherCommandResult result = await _commands.ApplyConfigAsync(files).ConfigureAwait(true);
-        if (result.Success)
+        long generation = checked(_activeThemeGeneration + 1);
+        _pendingThemeId = theme.Id;
+        _pendingThemeGeneration = generation;
+        try
         {
-            RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
-            if (PathsEqual(files, capabilities.ConfigFiles))
+            AetherCommandResult result = await _commands.ApplyConfigAsync(files, theme.Id, generation).ConfigureAwait(true);
+            if (result.Success)
             {
-                PersistAcceptedConfig(capabilities.ConfigFiles);
-                _themeOrigin = "UI-applied";
+                RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
+                if (PathsEqual(files, capabilities.ConfigFiles))
+                {
+                    _activeThemeId = theme.Id;
+                    _activeThemeGeneration = capabilities.ThemeGeneration ?? generation;
+                    PersistAcceptedConfig(capabilities.ConfigFiles, _activeThemeId);
+                    _themeOrigin = "UI-applied";
+                }
+                NotifyUiStateChanged();
             }
-            NotifyUiStateChanged();
+            return result;
         }
-        return result;
+        finally
+        {
+            _pendingThemeId = null;
+            _pendingThemeGeneration = null;
+        }
     }
 
     public void SetCurrentWinToggle(bool enabled) => _winToggle.SetEnabled(enabled);
@@ -183,11 +207,13 @@ internal sealed class ChronosHostContext : ApplicationContext
 
         if (expectedConfig.Count > 0 && !PathsEqual(expectedConfig, capabilities.ConfigFiles))
             throw new InvalidOperationException("Aether accepted a configuration different from requested startup paths.");
+
+        _activeThemeGeneration = capabilities.ThemeGeneration ?? 0;
     }
 
-    private void PersistAcceptedConfig(IReadOnlyList<string> configPaths)
+    private void PersistAcceptedConfig(IReadOnlyList<string> configPaths, Guid? themeId = null)
     {
-        try { _persistence.WriteState(configPaths); }
+        try { _persistence.WriteState(configPaths, themeId ?? _activeThemeId); }
         catch (Exception ex) { Diagnostic($"Could not persist accepted configuration: {ex.Message}"); }
     }
 
@@ -195,7 +221,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         List<ThemeDefinition> next = _themes.Themes.Select(item => Equals(item, oldTheme) ? replacement : item).ToList();
         _persistence.WriteThemes(next);
-        _themes = new ThemeRegistryState(1, next);
+        _themes = new ThemeRegistryState(2, next);
         NotifyUiStateChanged();
     }
 
@@ -282,6 +308,19 @@ internal sealed class ChronosHostContext : ApplicationContext
         if (pid != _renderer.Process.Id)
             return ControlResponse.Failure(request.Id, 403, "backend_renderer_unauthorized", "Renderer process identity is invalid.");
 
+        Guid? themeId = Guid.TryParse(ControlCodec.GetString(renderer, "themeId"), out Guid parsedThemeId)
+            ? parsedThemeId
+            : null;
+        long? generation = renderer.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
+            generationValue.TryGetInt64(out long parsedGeneration)
+            ? parsedGeneration
+            : null;
+        bool matchesActive = themeId == _activeThemeId && generation == _activeThemeGeneration;
+        bool matchesPending = themeId == _pendingThemeId && generation == _pendingThemeGeneration;
+        if ((themeId != null || generation != null) &&
+            (_activeThemeId != null || _pendingThemeId != null) && !matchesActive && !matchesPending)
+            return ControlResponse.Failure(request.Id, 409, "theme_session_stale", "Backend request belongs to an inactive theme session.");
+
         BackendGrant grant = _backends.Connect(backendId, sid, pid, sessionId);
         return ControlResponse.Success(request.Id, 200, new
         {
@@ -315,6 +354,10 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         if (eventName is not ("config.changed" or "window.changed"))
             return;
+        if (body is { } eventBody &&
+            eventBody.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
+            generationValue.TryGetInt64(out long eventGeneration) && eventGeneration < _activeThemeGeneration)
+            return;
         try
         {
             _dispatcher.BeginInvoke((Action)(() =>
@@ -324,7 +367,12 @@ internal sealed class ChronosHostContext : ApplicationContext
                     RendererCapabilities capabilities = _commands.RefreshAsync().GetAwaiter().GetResult();
                     if (eventName == "config.changed" && capabilities.ConfigFiles.Count > 0)
                     {
-                        PersistAcceptedConfig(capabilities.ConfigFiles);
+                        if (capabilities.ThemeGeneration is { } generation && generation >= _activeThemeGeneration)
+                        {
+                            _activeThemeGeneration = generation;
+                            _activeThemeId = capabilities.ThemeId ?? _activeThemeId;
+                        }
+                        PersistAcceptedConfig(capabilities.ConfigFiles, _activeThemeId);
                         _themeOrigin = "Aether event";
                     }
                     NotifyUiStateChanged();

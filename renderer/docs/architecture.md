@@ -37,7 +37,7 @@ The host watches monitor topology and foreground-window changes. Fullscreen wind
 
 ## Reload behavior
 
-Reload parses and resolves a candidate configuration before it changes active windows. If validation fails, Aether keeps the current configuration. A group reload replaces that group's windows. Group membership changes require `--reload-all`; that command creates new groups, disposes removed groups, and reloads the remaining groups.
+Reload parses and resolves a candidate configuration before it changes active windows. If validation fails, Aether keeps the current configuration. Applying a theme creates a fresh logical runtime inside the same Aether process, disposes prior windows and bridge instances, rotates backend scope, and leaves the inherited control channel and command pipe alive. Configuration changes emit the new theme activation generation so Chronos can reject stale events.
 
 ## Native boundary
 
