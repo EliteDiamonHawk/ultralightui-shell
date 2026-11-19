@@ -42,6 +42,7 @@ public sealed class RendererHostContext : ApplicationContext
             if (options.ControlReadHandle is { } readHandle && options.ControlWriteHandle is { } writeHandle)
             {
                 _controlChannel = new ControlPipeChannel(readHandle, writeHandle, HandleControlRequest);
+                _controlChannel.Disconnected += OnControlDisconnected;
                 _logger.AttachControlChannel(_controlChannel);
                 _controlChannel.Start();
             }
@@ -361,6 +362,14 @@ public sealed class RendererHostContext : ApplicationContext
     {
         _dispatcher.BeginInvoke((Action)ExitHost);
         return "OK exit requested";
+    }
+
+    private void OnControlDisconnected()
+    {
+        if (_exiting)
+            return;
+        try { _dispatcher.BeginInvoke((Action)ExitHost); }
+        catch (InvalidOperationException) { }
     }
 
     private ControlResponse HandleControlRequest(ControlRequest request)

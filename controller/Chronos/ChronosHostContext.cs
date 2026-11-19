@@ -187,6 +187,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _backends.RevokeAll();
         _commands.MarkDisconnected();
         Diagnostic("Renderer control channel disconnected.");
+        RequestExitOnDispatcher();
     }
 
     private void OnRendererEvent(string eventName, System.Text.Json.JsonElement? body)
@@ -217,8 +218,15 @@ internal sealed class ChronosHostContext : ApplicationContext
             {
                 _commands.MarkDisconnected();
                 Diagnostic("Aether process exited.");
+                RequestExit();
             }));
         }
+        catch (InvalidOperationException) { }
+    }
+
+    private void RequestExitOnDispatcher()
+    {
+        try { _dispatcher.BeginInvoke((Action)RequestExit); }
         catch (InvalidOperationException) { }
     }
 

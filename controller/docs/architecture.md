@@ -19,8 +19,10 @@ Aether reports the matching active configuration.
 | Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
-Control EOF marks the session unavailable and revokes backend grants. Chronos
-does not reuse handles or attach a later renderer to an old session.
+Control EOF marks the session unavailable, revokes backend grants, and shuts
+down Chronos when Aether was launched by it. Chronos also shuts down when its
+managed Aether process exits. Chronos does not reuse handles or attach a later
+renderer to an old session.
 
 ## Command service
 
