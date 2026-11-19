@@ -205,8 +205,8 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
         if (readHandle == IntPtr.Zero || writeHandle == IntPtr.Zero)
             throw new ArgumentException("Control handles must be non-zero.");
 
-        _readStream = new FileStream(new SafeFileHandle(readHandle, ownsHandle: true), FileAccess.Read, 4096, isAsync: true);
-        _writeStream = new FileStream(new SafeFileHandle(writeHandle, ownsHandle: true), FileAccess.Write, 4096, isAsync: true);
+        _readStream = new FileStream(new SafeFileHandle(readHandle, ownsHandle: true), FileAccess.Read, 4096, isAsync: false);
+        _writeStream = new FileStream(new SafeFileHandle(writeHandle, ownsHandle: true), FileAccess.Write, 4096, isAsync: false);
         _reader = new StreamReader(_readStream, new UTF8Encoding(false, true), false, 4096, leaveOpen: true);
         _writer = new StreamWriter(_writeStream, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
         _handler = handler;
