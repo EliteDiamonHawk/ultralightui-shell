@@ -21,6 +21,7 @@ internal static class Program
             (nameof(OptionsParseWindowAndInspectionCommands), OptionsParseWindowAndInspectionCommands),
             (nameof(OptionsParseMenuCommands), OptionsParseMenuCommands),
             (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
+            (nameof(RendererDataUsesRoamingAppData), RendererDataUsesRoamingAppData),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
@@ -66,6 +67,17 @@ internal static class Program
         AssertEqual(2, options.ConfigPaths.Count);
         AssertTrue(options.Verbose);
         AssertEqual(RendererCommandKind.None, options.Command.Kind);
+    }
+
+    private static void RendererDataUsesRoamingAppData()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (string.IsNullOrWhiteSpace(appData))
+            return;
+
+        string expected = Path.Combine(appData, "KhaosShell", "Aether", "ultralight.data");
+        AssertEqual(expected, RendererPaths.Resolve(null).UltralightFileSystemPath);
+        AssertEqual(expected, RendererPaths.Resolve("C:\\vendor\\ultralight").UltralightFileSystemPath);
     }
 
     private static void OptionsParseNamedCommands()

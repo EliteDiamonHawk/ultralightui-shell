@@ -1,5 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Text;
 
 namespace Aether;
 
@@ -8,6 +9,9 @@ internal static class UltralightNative
     private const string AppCore = "AppCore.dll";
     private const string Core = "Ultralight.dll";
     private static string? _libraryDirectory;
+    private static readonly object NativeLogSync = new();
+    private static readonly UltralightLogMessageCallback LogMessageCallback = OnLogMessage;
+    private static StreamWriter? _nativeLogWriter;
 
     static UltralightNative()
     {
@@ -16,6 +20,47 @@ internal static class UltralightNative
 
     internal static void ConfigureLibraryDirectory(string libraryDirectory) =>
         _libraryDirectory = Path.GetFullPath(libraryDirectory);
+
+    internal static void ConfigureLogger(string logPath)
+    {
+        lock (NativeLogSync)
+        {
+            if (_nativeLogWriter == null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                _nativeLogWriter = new StreamWriter(
+                    new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
+                    new UTF8Encoding(false))
+                {
+                    AutoFlush = true
+                };
+            }
+
+            ulPlatformSetLogger(new UltralightLogger(LogMessageCallback));
+        }
+    }
+
+    private static void OnLogMessage(int level, IntPtr message)
+    {
+        try
+        {
+            IntPtr data = message == IntPtr.Zero ? IntPtr.Zero : ulStringGetData(message);
+            UIntPtr length = message == IntPtr.Zero ? UIntPtr.Zero : ulStringGetLength(message);
+            ulong byteCount = length.ToUInt64();
+            if (data == IntPtr.Zero || byteCount > int.MaxValue)
+                return;
+
+            byte[] bytes = new byte[(int)byteCount];
+            Marshal.Copy(data, bytes, 0, bytes.Length);
+            string line = $"[{DateTimeOffset.UtcNow:O}] [{level}] {Encoding.UTF8.GetString(bytes)}";
+            lock (NativeLogSync)
+                _nativeLogWriter?.WriteLine(line);
+        }
+        catch
+        {
+            // Native logging must never take down the renderer.
+        }
+    }
 
     private static IntPtr ResolveLibrary(
         string libraryName,
@@ -137,6 +182,24 @@ internal static class UltralightNative
     internal static extern IntPtr ulCreateString([MarshalAs(UnmanagedType.LPUTF8Str)] string value);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulStringGetData(IntPtr str);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern UIntPtr ulStringGetLength(IntPtr str);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulPlatformSetLogger(UltralightLogger logger);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateConfig();
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyConfig(IntPtr config);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulConfigSetCachePath(IntPtr config, IntPtr cachePath);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ulDestroyString(IntPtr value);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
@@ -254,5 +317,16 @@ internal static class UltralightNative
     internal static extern IntPtr ulCreateJSValueStringFromCString(
         IntPtr context,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void UltralightLogMessageCallback(int level, IntPtr message);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal readonly struct UltralightLogger
+    {
+        internal UltralightLogger(UltralightLogMessageCallback logMessage) => LogMessage = logMessage;
+
+        internal readonly UltralightLogMessageCallback LogMessage;
+    }
 }
 

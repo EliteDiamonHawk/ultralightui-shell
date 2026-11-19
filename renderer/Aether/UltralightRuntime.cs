@@ -29,27 +29,39 @@ public sealed class UltralightRuntime : IDisposable
         layout.Paths.EnsureWritableLayout();
         layout.Validate();
         UltralightNative.ConfigureLibraryDirectory(layout.Paths.LibraryDirectory);
+        UltralightNative.ConfigureLogger(Path.Combine(layout.Paths.UltralightFileSystemPath, "ultralight.log"));
 
         stage = "AppCore creation";
         IntPtr settings = UltralightNative.ulCreateSettings();
         if (settings == IntPtr.Zero)
             throw new InvalidOperationException("Ultralight settings could not be created.");
 
+        IntPtr config = UltralightNative.ulCreateConfig();
+        if (config == IntPtr.Zero)
+        {
+            UltralightNative.ulDestroySettings(settings);
+            throw new InvalidOperationException("Ultralight config could not be created.");
+        }
+
         IntPtr developerName = CreateString("Aether");
         IntPtr appName = CreateString("aether");
         IntPtr filesystemPath = CreateString(layout.Paths.UltralightFileSystemPath);
+        IntPtr cachePath = CreateString(layout.Paths.UltralightFileSystemPath);
         try
         {
             UltralightNative.ulSettingsSetDeveloperName(settings, developerName);
             UltralightNative.ulSettingsSetAppName(settings, appName);
             UltralightNative.ulSettingsSetFileSystemPath(settings, filesystemPath);
-            _app = UltralightNative.ulCreateApp(settings, IntPtr.Zero);
+            UltralightNative.ulConfigSetCachePath(config, cachePath);
+            _app = UltralightNative.ulCreateApp(settings, config);
         }
         finally
         {
+            DestroyString(cachePath);
             DestroyString(appName);
             DestroyString(developerName);
             DestroyString(filesystemPath);
+            UltralightNative.ulDestroyConfig(config);
             UltralightNative.ulDestroySettings(settings);
         }
 

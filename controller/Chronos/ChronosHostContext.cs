@@ -134,14 +134,19 @@ internal sealed class ChronosHostContext : ApplicationContext
     public async Task<AetherCommandResult> ApplyThemeAsync(ThemeDefinition theme)
     {
         string[] files = NormalizeThemeFiles(theme.Files);
-        bool startedForTheme = false;
         if (!_commands.IsTransportAvailable)
         {
             if (_renderer != null)
                 StopRenderer(requestExit: false);
-            if (!StartRenderer(Array.Empty<string>(), _options.RendererPath, _settings.RendererPath))
+            if (!StartRenderer(files, _options.RendererPath, _settings.RendererPath))
                 return AetherCommandResult.Failure("Renderer is unavailable; theme was not applied.");
-            startedForTheme = true;
+
+            _activeThemeId = theme.Id;
+            _activeThemeGeneration = 0;
+            _themeOrigin = "UI-applied";
+            PersistAcceptedConfig(files, _activeThemeId);
+            NotifyUiStateChanged();
+            return new AetherCommandResult(true, "OK configuration applied");
         }
 
         long generation = checked(_activeThemeGeneration + 1);
@@ -160,23 +165,9 @@ internal sealed class ChronosHostContext : ApplicationContext
                     PersistAcceptedConfig(capabilities.ConfigFiles, _activeThemeId);
                     _themeOrigin = "UI-applied";
                 }
-                else if (startedForTheme)
-                {
-                    StopRenderer(requestExit: false);
-                }
                 NotifyUiStateChanged();
             }
-            else if (startedForTheme)
-            {
-                StopRenderer(requestExit: false);
-            }
             return result;
-        }
-        catch
-        {
-            if (startedForTheme)
-                StopRenderer(requestExit: false);
-            throw;
         }
         finally
         {
