@@ -84,7 +84,7 @@ internal sealed class ShellForm : Form
         Controls.Add(root);
 
         var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 2 };
-        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
         status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
         status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
@@ -109,7 +109,7 @@ internal sealed class ShellForm : Form
 
     private Control BuildThemesPage()
     {
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 250, Panel1MinSize = 170, Panel2MinSize = 260 };
+        var split = CreateVerticalSplitContainer(250, 170, 260);
         _themes.Dock = DockStyle.Fill;
         _themes.SelectedIndexChanged += (_, _) => RenderSelectedTheme();
         split.Panel1.Controls.Add(_themes);
@@ -141,7 +141,6 @@ internal sealed class ShellForm : Form
         menuButtons.Controls.Add(Button("Hide menu", async (_, _) => await RunAsync(_host.HideMenuAsync)));
         menuButtons.Controls.Add(Button("Toggle menu", async (_, _) => await RunAsync(_host.ToggleMenuAsync)));
         menuButtons.Controls.Add(Button("Refresh", async (_, _) => await RefreshAsync(true)));
-        menuButtons.Controls.Add(Button("Exit KhaosShell", (_, _) => _host.RequestExitFromUi()));
         layout.Controls.Add(menuButtons, 0, 0);
 
         layout.Controls.Add(BuildGroupPanel(), 0, 1);
@@ -152,7 +151,7 @@ internal sealed class ShellForm : Form
     private Control BuildGroupPanel()
     {
         var box = new GroupBox { Text = "Groups", Dock = DockStyle.Fill };
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 260, Panel1MinSize = 150, Panel2MinSize = 180 };
+        var split = CreateVerticalSplitContainer(260, 150, 180);
         _groups.Dock = DockStyle.Fill;
         split.Panel1.Controls.Add(_groups);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
@@ -172,7 +171,7 @@ internal sealed class ShellForm : Form
     private Control BuildWindowPanel()
     {
         var box = new GroupBox { Text = "Windows", Dock = DockStyle.Fill };
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 420, Panel1MinSize = 180, Panel2MinSize = 120 };
+        var split = CreateVerticalSplitContainer(420, 180, 120);
         _windows.Dock = DockStyle.Fill;
         split.Panel1.Controls.Add(_windows);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
@@ -181,6 +180,27 @@ internal sealed class ShellForm : Form
         split.Panel2.Controls.Add(buttons);
         box.Controls.Add(split);
         return box;
+    }
+
+    private static SplitContainer CreateVerticalSplitContainer(int splitterDistance, int panel1MinSize, int panel2MinSize)
+    {
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical };
+
+        void ApplyLayout(object? sender, EventArgs e)
+        {
+            var maxSplitterDistance = split.Width - panel2MinSize;
+            if (maxSplitterDistance < panel1MinSize)
+                return;
+
+            split.Panel1MinSize = panel1MinSize;
+            split.Panel2MinSize = panel2MinSize;
+            split.SplitterDistance = Math.Clamp(splitterDistance, panel1MinSize, maxSplitterDistance);
+            split.SizeChanged -= ApplyLayout;
+        }
+
+        split.SizeChanged += ApplyLayout;
+        ApplyLayout(split, EventArgs.Empty);
+        return split;
     }
 
     private Control BuildStatusPage()
@@ -241,6 +261,7 @@ internal sealed class ShellForm : Form
         options.Controls.Add(_statusPollingEnabled);
         options.Controls.Add(_restoreState);
         options.Controls.Add(rendererButtons);
+        options.Controls.Add(Button("Exit KhaosShell", (_, _) => _host.RequestExitFromUi()));
         options.Controls.Add(new Label
         {
             Text = "Restore theme state applies at launch. Current theme origin appears in status.",
