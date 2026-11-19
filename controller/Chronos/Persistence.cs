@@ -30,7 +30,8 @@ internal sealed record PersistentSettings(
     bool RestoreState = true,
     bool WindowsKeyOverride = false,
     bool StatusPollingEnabled = true,
-    string? RendererPath = null);
+    string? RendererPath = null,
+    string? UltralightRoot = null);
 
 internal sealed class PersistenceStore
 {

@@ -125,12 +125,14 @@ internal static class Program
             Guid themeId = Guid.NewGuid();
             persistence.WriteState(new[] { Path.Combine(root, "one.json") }, themeId);
             AssertEqual(themeId, persistence.ReadState().ActiveThemeId);
-            persistence.WriteSettings(new PersistentSettings(RendererPath: Path.Combine(root, "Aether.exe"), TrayEnabled: false, RestoreState: false, WindowsKeyOverride: true, StatusPollingEnabled: false));
+            string ultralightRoot = Path.Combine(root, "ultralight");
+            persistence.WriteSettings(new PersistentSettings(RendererPath: Path.Combine(root, "Aether.exe"), TrayEnabled: false, RestoreState: false, WindowsKeyOverride: true, StatusPollingEnabled: false, UltralightRoot: ultralightRoot));
             PersistentSettings settings = persistence.ReadSettings();
             AssertFalse(settings.TrayEnabled);
             AssertFalse(settings.RestoreState);
             AssertTrue(settings.WindowsKeyOverride);
             AssertFalse(settings.StatusPollingEnabled);
+            AssertEqual(ultralightRoot, settings.UltralightRoot);
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
         }
@@ -156,6 +158,7 @@ internal static class Program
             AssertEqual(0, persistence.ReadState().Files.Count);
             AssertEqual(0, persistence.ReadThemes().Themes.Count);
             AssertEqual(true, persistence.ReadSettings().TrayEnabled);
+            AssertEqual<string?>(null, persistence.ReadSettings().UltralightRoot);
 
             BackendRegistry registry = BackendRegistry.Load(paths.BackendRegistryFile, diagnostics.Add);
             AssertTrue(File.Exists(paths.BackendRegistryFile));

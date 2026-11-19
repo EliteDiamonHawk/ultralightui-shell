@@ -73,6 +73,7 @@ internal sealed class RendererSession : IDisposable
     public static RendererSession Start(
         string rendererPath,
         IReadOnlyList<string> configPaths,
+        string? ultralightRoot,
         Func<ControlRequest, Task<ControlResponse>> controlHandler,
         Action<string>? output,
         Action<string>? error)
@@ -90,6 +91,11 @@ internal sealed class RendererSession : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
+        if (!string.IsNullOrWhiteSpace(ultralightRoot))
+        {
+            startInfo.ArgumentList.Add("--ultralight-root");
+            startInfo.ArgumentList.Add(Path.GetFullPath(ultralightRoot));
+        }
         foreach (string configPath in configPaths)
         {
             startInfo.ArgumentList.Add("--config");

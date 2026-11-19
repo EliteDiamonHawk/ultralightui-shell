@@ -227,6 +227,12 @@ internal sealed class ChronosHostContext : ApplicationContext
         UpdateSettings(_settings with { RendererPath = normalized });
     }
 
+    public void SetUltralightRoot(string? path)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path.Trim());
+        UpdateSettings(_settings with { UltralightRoot = normalized });
+    }
+
     private void UpdateSettings(PersistentSettings settings)
     {
         _persistence.WriteSettings(settings);
@@ -277,6 +283,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             startedRenderer = RendererSession.Start(
                 rendererPath,
                 configPaths,
+                _settings.UltralightRoot,
                 HandleControlRequestAsync,
                 line => Diagnostic($"[Aether] {line}"),
                 line => Diagnostic($"[Aether] {line}"));

@@ -22,8 +22,10 @@ active theme. Missing or removed active theme IDs are not restored. Legacy
 root-level state and theme files are not read.
 
 Settings contain tray visibility, restore-state behavior, Windows Key Override,
-status polling, and optional renderer path. UI changes write settings
-immediately. Explicit CLI values override them for current launch only.
+status polling, optional renderer path, and optional Ultralight install root.
+When the Ultralight root is empty, Chronos omits `--ultralight-root` and Aether
+uses its own default resolution. UI changes write settings immediately. Explicit
+CLI values override them for current launch only.
 
 If no explicit or restored theme exists, Chronos starts without Aether and
 waits for a theme selection. Renderer startup failure does not discard the

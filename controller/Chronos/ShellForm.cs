@@ -14,6 +14,17 @@ internal sealed record ShellUiSnapshot(
     bool Exiting,
     PersistentSettings Settings);
 
+[Flags]
+internal enum ShellRenderTarget
+{
+    None = 0,
+    Status = 1,
+    Renderer = 2,
+    Themes = 4,
+    Options = 8,
+    All = Status | Renderer | Themes | Options
+}
+
 internal sealed class ShellForm : Form
 {
     private readonly ChronosHostContext _host;
@@ -33,6 +44,7 @@ internal sealed class ShellForm : Form
     private readonly CheckBox _statusPollingEnabled = new();
     private readonly CheckBox _restoreState = new();
     private readonly TextBox _rendererPath = new();
+    private readonly TextBox _ultralightRoot = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
     private readonly List<RendererWindowCapability> _windowItems = new();
@@ -56,7 +68,7 @@ internal sealed class ShellForm : Form
         _refreshTimer.Tick += async (_, _) => await RefreshAsync(false);
         if (_host.StatusPollingEnabled)
             _refreshTimer.Start();
-        Render(_host.GetUiSnapshot());
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.All);
     }
 
     public void CloseForShutdown()
@@ -257,11 +269,25 @@ internal sealed class ShellForm : Form
         rendererButtons.Controls.Add(_rendererPath);
         rendererButtons.Controls.Add(Button("Browse", (_, _) => BrowseRendererPath()));
         rendererButtons.Controls.Add(Button("Save", (_, _) => SaveRendererPath()));
+        _ultralightRoot.Width = 520;
+        _ultralightRoot.PlaceholderText = "Aether default resolution";
+        var ultralightButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
+        ultralightButtons.Controls.Add(new Label { Text = "Ultralight root", AutoSize = true, Padding = new Padding(0, 7, 8, 0) });
+        ultralightButtons.Controls.Add(_ultralightRoot);
+        ultralightButtons.Controls.Add(Button("Browse", (_, _) => BrowseUltralightRoot()));
+        ultralightButtons.Controls.Add(Button("Save", (_, _) => SaveUltralightRoot()));
         options.Controls.Add(_trayEnabled);
         options.Controls.Add(_windowsKeyOverride);
         options.Controls.Add(_statusPollingEnabled);
         options.Controls.Add(_restoreState);
         options.Controls.Add(rendererButtons);
+        options.Controls.Add(ultralightButtons);
+        options.Controls.Add(new Label
+        {
+            Text = "Optional Aether Ultralight install root. Empty passes no root and uses Aether default resolution.",
+            AutoSize = true,
+            Margin = new Padding(3, 0, 3, 3)
+        });
         options.Controls.Add(Button("Exit KhaosShell", (_, _) => _host.RequestExitFromUi()));
         options.Controls.Add(new Label
         {
@@ -314,7 +340,7 @@ internal sealed class ShellForm : Form
         try
         {
             _host.ImportTheme(name, dialog.FileNames);
-            Render(_host.GetUiSnapshot());
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Themes);
             SetOutput("Theme registered. Select it and press Load.");
         }
         catch (Exception ex) { SetOutput(ex.Message); }
@@ -346,7 +372,7 @@ internal sealed class ShellForm : Form
         if (name == null)
             return;
         RunSync(() => _host.RenameTheme(theme, name));
-        Render(_host.GetUiSnapshot());
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Themes);
     }
 
     private void RemoveTheme()
@@ -360,7 +386,7 @@ internal sealed class ShellForm : Form
         if (MessageBox.Show(this, $"Remove '{theme.Name}' from register?", "KhaosShell", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
         RunSync(() => _host.RemoveTheme(theme));
-        Render(_host.GetUiSnapshot());
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Themes);
     }
 
     private async Task RunGroupAsync(Func<string?, bool, Task<AetherCommandResult>> action)
@@ -396,10 +422,18 @@ internal sealed class ShellForm : Form
         catch (Exception ex) { SetOutput(ex.Message); }
     }
 
-    private void RunSync(Action action)
+    private bool RunSync(Action action)
     {
-        try { action(); }
-        catch (Exception ex) { SetOutput(ex.Message); }
+        try
+        {
+            action();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SetOutput(ex.Message);
+            return false;
+        }
     }
 
     private async Task RefreshAsync(bool showResult)
@@ -410,7 +444,7 @@ internal sealed class ShellForm : Form
         try
         {
             await _host.RefreshUiAsync();
-            Render(_host.GetUiSnapshot());
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer);
             if (showResult)
                 SetOutput("Status refreshed.");
         }
@@ -418,59 +452,92 @@ internal sealed class ShellForm : Form
         finally { _refreshInFlight = false; }
     }
 
-    private void Render(ShellUiSnapshot snapshot)
+    private void Render(ShellUiSnapshot snapshot, ShellRenderTarget target)
     {
         if (IsDisposed)
             return;
         _updating = true;
         try
         {
-            _connection.Text = snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
-            _trayStatus.Text = snapshot.TrayEnabled ? (snapshot.TrayVisible ? "Enabled / visible" : "Enabled / hidden") : "Disabled";
-            _windowsKeyOverrideStatus.Text = snapshot.WindowsKeyOverrideEnabled ? "Enabled" : "Disabled";
-            _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--status-poll false; events active)";
-            _themeOrigin.Text = $"Theme origin: {snapshot.ThemeOrigin}";
-            _activeThemeFiles.Text = snapshot.Capabilities.ConfigFiles.Count == 0
-                ? "(none)"
-                : string.Join(Environment.NewLine, snapshot.Capabilities.ConfigFiles);
-            _trayEnabled.Enabled = snapshot.TrayEnabled;
-            _trayEnabled.Checked = snapshot.TrayVisible;
-            _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
-            _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
-            _restoreState.Checked = snapshot.Settings.RestoreState;
-            _rendererPath.Text = snapshot.Settings.RendererPath ?? string.Empty;
-            if (snapshot.StatusPollingEnabled && !_refreshTimer.Enabled)
-                _refreshTimer.Start();
-            else if (!snapshot.StatusPollingEnabled && _refreshTimer.Enabled)
-                _refreshTimer.Stop();
-
-            Guid? selectedThemeId = SelectedTheme()?.Id;
-            _themeItems.Clear();
-            _themeItems.AddRange(_host.Themes);
-            _themes.Items.Clear();
-            foreach (ThemeDefinition theme in _themeItems)
-                _themes.Items.Add(FormatTheme(theme));
-            if (selectedThemeId is { } themeId)
+            if (target.HasFlag(ShellRenderTarget.Status))
             {
-                int selectedIndex = _themeItems.FindIndex(theme => theme.Id == themeId);
-                if (selectedIndex >= 0)
-                    _themes.SelectedIndex = selectedIndex;
+                _connection.Text = snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
+                _trayStatus.Text = snapshot.TrayEnabled ? (snapshot.TrayVisible ? "Enabled / visible" : "Enabled / hidden") : "Disabled";
+                _windowsKeyOverrideStatus.Text = snapshot.WindowsKeyOverrideEnabled ? "Enabled" : "Disabled";
+                _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--status-poll false; events active)";
+                _themeOrigin.Text = $"Theme origin: {snapshot.ThemeOrigin}";
+                if (snapshot.StatusPollingEnabled && !_refreshTimer.Enabled)
+                    _refreshTimer.Start();
+                else if (!snapshot.StatusPollingEnabled && _refreshTimer.Enabled)
+                    _refreshTimer.Stop();
             }
 
-            _groupItems.Clear();
-            _groupItems.AddRange(snapshot.Capabilities.Groups);
-            _groups.Items.Clear();
-            foreach (string group in _groupItems)
-                _groups.Items.Add(group);
+            if (target.HasFlag(ShellRenderTarget.Renderer))
+            {
+                _activeThemeFiles.Text = snapshot.Capabilities.ConfigFiles.Count == 0
+                    ? "(none)"
+                    : string.Join(Environment.NewLine, snapshot.Capabilities.ConfigFiles);
+                UpdateList(_groups, _groupItems, snapshot.Capabilities.Groups);
+                UpdateList(_windows, _windowItems, snapshot.Capabilities.Windows,
+                    window => $"{window.Id} [{window.Kind ?? "window"}] {(window.Visible == true ? "visible" : "hidden/unknown")}");
+            }
 
-            _windowItems.Clear();
-            _windowItems.AddRange(snapshot.Capabilities.Windows);
-            _windows.Items.Clear();
-            foreach (RendererWindowCapability window in _windowItems)
-                _windows.Items.Add($"{window.Id} [{window.Kind ?? "window"}] {(window.Visible == true ? "visible" : "hidden/unknown")}");
-            RenderSelectedTheme();
+            if (target.HasFlag(ShellRenderTarget.Themes))
+            {
+                Guid? selectedThemeId = SelectedTheme()?.Id;
+                _themeItems.Clear();
+                _themeItems.AddRange(_host.Themes);
+                _themes.Items.Clear();
+                foreach (ThemeDefinition theme in _themeItems)
+                    _themes.Items.Add(FormatTheme(theme));
+                if (selectedThemeId is { } themeId)
+                {
+                    int selectedIndex = _themeItems.FindIndex(theme => theme.Id == themeId);
+                    if (selectedIndex >= 0)
+                        _themes.SelectedIndex = selectedIndex;
+                }
+                RenderSelectedTheme();
+            }
+
+            if (target.HasFlag(ShellRenderTarget.Options))
+            {
+                _trayEnabled.Enabled = snapshot.TrayEnabled;
+                _trayEnabled.Checked = snapshot.TrayVisible;
+                _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+                _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
+                _restoreState.Checked = snapshot.Settings.RestoreState;
+                if (!_rendererPath.Focused && !_rendererPath.Modified)
+                {
+                    _rendererPath.Text = snapshot.Settings.RendererPath ?? string.Empty;
+                    _rendererPath.Modified = false;
+                }
+                if (!_ultralightRoot.Focused && !_ultralightRoot.Modified)
+                {
+                    _ultralightRoot.Text = snapshot.Settings.UltralightRoot ?? string.Empty;
+                    _ultralightRoot.Modified = false;
+                }
+            }
         }
         finally { _updating = false; }
+    }
+
+    private static void UpdateList<T>(ListBox list, List<T> items, IReadOnlyList<T> next, Func<T, string>? format = null)
+    {
+        if (items.SequenceEqual(next))
+            return;
+
+        int selectedIndex = list.SelectedIndex;
+        items.Clear();
+        items.AddRange(next);
+        list.Items.Clear();
+        foreach (T item in items)
+        {
+            object display = format == null ? item! : format(item);
+            list.Items.Add(display);
+        }
+
+        if (selectedIndex >= 0 && selectedIndex < list.Items.Count)
+            list.SelectedIndex = selectedIndex;
     }
 
     private void RenderSelectedTheme()
@@ -491,10 +558,10 @@ internal sealed class ShellForm : Form
             return;
         if (InvokeRequired)
         {
-            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot()))); } catch (InvalidOperationException) { }
+            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer))); } catch (InvalidOperationException) { }
             return;
         }
-        Render(_host.GetUiSnapshot());
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer);
     }
 
     private void SetOutput(string text) => _statusOutput.Text = text;
@@ -512,7 +579,36 @@ internal sealed class ShellForm : Form
             _rendererPath.Text = dialog.FileName;
     }
 
-    private void SaveRendererPath() => RunSync(() => _host.SetRendererPath(_rendererPath.Text));
+    private void SaveRendererPath()
+    {
+        if (RunSync(() => _host.SetRendererPath(_rendererPath.Text)))
+        {
+            _rendererPath.Modified = false;
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Options);
+        }
+    }
+
+    private void BrowseUltralightRoot()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Select Ultralight install root",
+            ShowNewFolderButton = false
+        };
+        if (Directory.Exists(_ultralightRoot.Text.Trim()))
+            dialog.SelectedPath = _ultralightRoot.Text.Trim();
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            _ultralightRoot.Text = dialog.SelectedPath;
+    }
+
+    private void SaveUltralightRoot()
+    {
+        if (RunSync(() => _host.SetUltralightRoot(_ultralightRoot.Text)))
+        {
+            _ultralightRoot.Modified = false;
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Options);
+        }
+    }
 
     private static string? PromptForName(string title, string initial)
     {
