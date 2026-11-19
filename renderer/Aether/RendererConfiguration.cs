@@ -30,11 +30,7 @@ public sealed class RendererConfiguration
         if (paths.Count == 0)
             throw new RendererConfigurationException("At least one --config path is required.");
 
-        JsonElement? wallpaper = null;
-        JsonElement? widgets = null;
-        JsonElement? menu = null;
-        var seenSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+        var documents = new List<(JsonElement Root, string Source)>();
         foreach (string path in paths)
         {
             if (!File.Exists(path))
@@ -48,36 +44,7 @@ public sealed class RendererConfiguration
                     AllowTrailingCommas = true,
                     CommentHandling = JsonCommentHandling.Skip
                 });
-
-                if (document.RootElement.ValueKind != JsonValueKind.Object)
-                    throw new RendererConfigurationException($"Configuration root must be an object: {path}");
-
-                var keysInFile = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (JsonProperty property in document.RootElement.EnumerateObject())
-                {
-                    if (!keysInFile.Add(property.Name))
-                        throw new RendererConfigurationException(
-                            $"Configuration file '{path}' contains duplicate section '{property.Name}'.");
-
-                    string section = property.Name.ToLowerInvariant();
-                    if (section is not ("wallpaper" or "widgets" or "menu"))
-                        throw new RendererConfigurationException(
-                            $"Unknown top-level section '{property.Name}' in '{path}'.");
-                    if (!seenSections.Add(section))
-                        throw new RendererConfigurationException(
-                            $"Top-level section '{property.Name}' may only appear in one configuration file.");
-
-                    switch (section)
-                    {
-                        case "wallpaper": wallpaper = property.Value.Clone(); break;
-                        case "widgets": widgets = property.Value.Clone(); break;
-                        case "menu": menu = property.Value.Clone(); break;
-                    }
-                }
-            }
-            catch (RendererConfigurationException)
-            {
-                throw;
+                documents.Add((document.RootElement.Clone(), path));
             }
             catch (JsonException ex)
             {
@@ -90,6 +57,48 @@ public sealed class RendererConfiguration
             catch (UnauthorizedAccessException ex)
             {
                 throw new RendererConfigurationException($"Could not read '{path}': {ex.Message}", ex);
+            }
+        }
+
+        return Build(documents);
+    }
+
+    public static RendererConfiguration LoadJson(JsonElement root, string source = "inline") =>
+        Build(new[] { (root.Clone(), source) });
+
+    private static RendererConfiguration Build(IReadOnlyList<(JsonElement Root, string Source)> documents)
+    {
+        JsonElement? wallpaper = null;
+        JsonElement? widgets = null;
+        JsonElement? menu = null;
+        var seenSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((JsonElement root, string source) in documents)
+        {
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new RendererConfigurationException($"Configuration root must be an object: {source}");
+
+            var keysInFile = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                if (!keysInFile.Add(property.Name))
+                    throw new RendererConfigurationException(
+                        $"Configuration file '{source}' contains duplicate section '{property.Name}'.");
+
+                string section = property.Name.ToLowerInvariant();
+                if (section is not ("wallpaper" or "widgets" or "menu"))
+                    throw new RendererConfigurationException(
+                        $"Unknown top-level section '{property.Name}' in '{source}'.");
+                if (!seenSections.Add(section))
+                    throw new RendererConfigurationException(
+                        $"Top-level section '{property.Name}' may only appear in one configuration file.");
+
+                switch (section)
+                {
+                    case "wallpaper": wallpaper = property.Value.Clone(); break;
+                    case "widgets": widgets = property.Value.Clone(); break;
+                    case "menu": menu = property.Value.Clone(); break;
+                }
             }
         }
 

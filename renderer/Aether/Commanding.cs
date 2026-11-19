@@ -13,6 +13,7 @@ public sealed class HostOptions
     public string? UltralightRoot { get; private init; }
     public IntPtr? ControlReadHandle { get; private init; }
     public IntPtr? ControlWriteHandle { get; private init; }
+    internal bool HasInheritedControlChannel => ControlReadHandle.HasValue && ControlWriteHandle.HasValue;
     public int ReconcileIntervalMs { get; private init; } = 250;
     public TimeSpan StartupTimeout { get; private init; } = TimeSpan.FromSeconds(30);
     public bool Verbose { get; private init; }
@@ -134,6 +135,11 @@ public sealed class HostOptions
         if (controlReadHandle.HasValue != controlWriteHandle.HasValue)
             throw new OptionException("Control read and write handles must be supplied together.");
 
+        bool managed = controlReadHandle.HasValue && controlWriteHandle.HasValue;
+        if (managed && (configPaths.Count > 0 || ultralightRoot != null || reconcileMs != 250 ||
+                        startupTimeoutMs != 30_000 || verbose || noTray || systemTrayAction != null))
+            throw new OptionException("Managed Aether startup accepts only inherited control handles; send startup options through the control channel.");
+
         return new HostOptions
         {
             ConfigPaths = configPaths,
@@ -147,6 +153,19 @@ public sealed class HostOptions
             InitialSystemTrayAction = systemTrayAction
         };
     }
+
+    internal HostOptions WithManagedRuntime(string? ultralightRoot, bool noTray) => new()
+    {
+        ConfigPaths = Array.Empty<string>(),
+        UltralightRoot = ultralightRoot,
+        ControlReadHandle = ControlReadHandle,
+        ControlWriteHandle = ControlWriteHandle,
+        ReconcileIntervalMs = ReconcileIntervalMs,
+        StartupTimeout = StartupTimeout,
+        Verbose = Verbose,
+        NoTray = noTray,
+        InitialSystemTrayAction = null
+    };
 
     public const string HelpText = """
         Aether - unified Ultralight wallpaper, widget, and menu host

@@ -132,6 +132,7 @@ internal static class Program
             AssertFalse(settings.RestoreState);
             AssertTrue(settings.WindowsKeyOverride);
             AssertFalse(settings.StatusPollingEnabled);
+            AssertEqual(Path.Combine(root, "Aether.exe"), settings.RendererPath);
             AssertEqual(ultralightRoot, settings.UltralightRoot);
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
@@ -158,6 +159,7 @@ internal static class Program
             AssertEqual(0, persistence.ReadState().Files.Count);
             AssertEqual(0, persistence.ReadThemes().Themes.Count);
             AssertEqual(true, persistence.ReadSettings().TrayEnabled);
+            AssertEqual<string?>(null, persistence.ReadSettings().RendererPath);
             AssertEqual<string?>(null, persistence.ReadSettings().UltralightRoot);
 
             BackendRegistry registry = BackendRegistry.Load(paths.BackendRegistryFile, diagnostics.Add);

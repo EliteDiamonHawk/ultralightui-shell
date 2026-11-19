@@ -4,23 +4,24 @@
 
 `Program` parses controller options, acquires the user-scoped Chronos mutex,
 loads persistence and the optional backend registry, then creates Chronos's
-tray/UI state. Chronos launches Aether only when explicit or restored theme
-configuration exists. With no theme loaded, Chronos remains alive and waits
-for the user to apply one.
+tray/UI state. Chronos always launches an idle-capable Aether session, even
+when no theme is selected.
 
-When a theme is applied without a renderer, Chronos resolves Aether, creates
-two anonymous pipes, and launches Aether with inherited handle arguments.
+Chronos creates two anonymous pipes and launches Aether with inherited handle
+arguments only. Aether establishes that channel before resolving Ultralight or
+loading configuration, then emits `renderer.transport.ready`. Chronos sends
+root, tray policy, theme identity, and either config paths or extracted inline
+JSON through `POST /v1/renderer/configure`. Aether reports `renderer.ready`
+only after runtime initialization succeeds.
 
-Chronos always passes Aether's `--no-tray`, so the controller owns the product
-tray. Chronos tray creation is controlled by its own `--tray <true|false>`
-option.
-After Aether accepts its existing `Aether.Commands` pipe, Chronos queries
-configuration, windows, and pipe state. Chronos persists paths only after
-Aether reports the matching active configuration.
+Chronos owns the product tray. Chronos tray creation is controlled by its own
+`--tray <true|false>` option. Chronos persists paths only after Aether reports
+the matching active configuration.
 
 Theme changes do not restart Aether or either Chronos-to-Aether transport.
 Aether swaps its disposable theme runtime while keeping its process, inherited
-control channel, and command server alive.
+control channel, and command server alive. Unloading returns Aether to its
+idle state.
 
 ## Ownership
 

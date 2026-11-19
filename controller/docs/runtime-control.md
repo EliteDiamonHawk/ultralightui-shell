@@ -1,7 +1,8 @@
 # Runtime control
 
-Chronos accepts startup options. It does not expose a second runtime command
-pipe.
+Chronos accepts startup options. It does not expose a public runtime command
+pipe. Its private inherited channel starts Aether first, then carries the
+Ultralight root and initial theme/configuration after readiness.
 
 ```powershell
 Chronos.exe --config C:\configs\wallpaper.json

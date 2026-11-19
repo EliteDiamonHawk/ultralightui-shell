@@ -72,8 +72,6 @@ internal sealed class RendererSession : IDisposable
 
     public static RendererSession Start(
         string rendererPath,
-        IReadOnlyList<string> configPaths,
-        string? ultralightRoot,
         Func<ControlRequest, Task<ControlResponse>> controlHandler,
         Action<string>? output,
         Action<string>? error)
@@ -91,17 +89,6 @@ internal sealed class RendererSession : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        if (!string.IsNullOrWhiteSpace(ultralightRoot))
-        {
-            startInfo.ArgumentList.Add("--ultralight-root");
-            startInfo.ArgumentList.Add(Path.GetFullPath(ultralightRoot));
-        }
-        foreach (string configPath in configPaths)
-        {
-            startInfo.ArgumentList.Add("--config");
-            startInfo.ArgumentList.Add(configPath);
-        }
-        startInfo.ArgumentList.Add("--no-tray");
         startInfo.ArgumentList.Add("--control-read-handle");
         startInfo.ArgumentList.Add(childReadHandle);
         startInfo.ArgumentList.Add("--control-write-handle");
@@ -130,7 +117,6 @@ internal sealed class RendererSession : IDisposable
             var control = new ControlChannel(fromRenderer, toRenderer, controlHandler);
             var session = new RendererSession(toRenderer, fromRenderer, process, control);
             process.Exited += (_, _) => session.ProcessExited?.Invoke();
-            control.Start();
             return session;
         }
         catch
@@ -141,6 +127,8 @@ internal sealed class RendererSession : IDisposable
             throw;
         }
     }
+
+    public void StartControl() => _control.Start();
 
     public void Dispose()
     {

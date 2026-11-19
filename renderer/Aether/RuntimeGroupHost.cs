@@ -40,7 +40,9 @@ public sealed class RuntimeGroupHost : IDisposable
         _thread.Start();
         _ready.Wait();
         if (_startupException != null)
-            throw new InvalidOperationException($"Runtime group '{Name}' failed to start.", _startupException);
+            throw new InvalidOperationException(
+                $"Runtime group '{Name}' failed to start: {_startupException.Message}",
+                _startupException);
     }
 
     public IReadOnlyList<WallpaperWindow> GetDesktopWindows()
@@ -95,12 +97,20 @@ public sealed class RuntimeGroupHost : IDisposable
     private void ThreadMain()
     {
         RuntimeGroupContext? context = null;
+        EventHandler? idleHandler = null;
+        int startupSignaled = 0;
         try
         {
             context = new RuntimeGroupContext(Name, _options, _specFactory, _logger, _backends, _control);
             lock (_sync) _context = context;
-            _ready.Set();
-            _logger.Info("runtime.group.started", new Dictionary<string, string?> { ["group"] = Name });
+            idleHandler = (_, _) =>
+            {
+                if (Interlocked.Exchange(ref startupSignaled, 1) != 0)
+                    return;
+                _logger.Info("runtime.group.started", new Dictionary<string, string?> { ["group"] = Name });
+                _ready.Set();
+            };
+            Application.Idle += idleHandler;
             Application.Run(context);
         }
         catch (Exception ex)
@@ -109,12 +119,19 @@ public sealed class RuntimeGroupHost : IDisposable
             _logger.Error("runtime.group.start_failed", new Dictionary<string, string?>
             {
                 ["group"] = Name,
-                ["exceptionType"] = ex.GetType().Name
+                ["exceptionType"] = ex.GetType().Name,
+                ["message"] = ex.Message
             });
-            _ready.Set();
+            Console.Error.WriteLine($"[Group:{Name}] {ex}");
+            if (Interlocked.Exchange(ref startupSignaled, 1) == 0)
+                _ready.Set();
         }
         finally
         {
+            if (idleHandler != null)
+                Application.Idle -= idleHandler;
+            if (Interlocked.Exchange(ref startupSignaled, 1) == 0)
+                _ready.Set();
             context?.Dispose();
             lock (_sync) _context = null;
             _logger.Info("runtime.group.stopped", new Dictionary<string, string?> { ["group"] = Name });

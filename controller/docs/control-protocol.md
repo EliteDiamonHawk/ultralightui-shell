@@ -13,12 +13,41 @@ Each frame contains one object and may not exceed 1 MiB. A request uses a UUID
 `/v1/` path. A response repeats the ID and contains either `body` or a
 structured `error`. Requests may complete out of order.
 
+Managed startup is transport-first. Aether parses only the two handle options,
+acquires its single-instance lease, starts this channel, and emits
+`renderer.transport.ready`. Chronos then sends `POST /v1/renderer/configure`.
+That request carries `ultralightRoot`, `noTray`, optional theme identity, and
+one config source:
+
+```json
+{
+  "protocolVersion": 1,
+  "ultralightRoot": "C:\\vendor\\ultralight",
+  "noTray": true,
+  "config": {
+    "mode": "paths",
+    "paths": ["C:\\themes\\wallpaper.json"],
+    "sourcePaths": ["C:\\themes\\wallpaper.json"]
+  }
+}
+```
+
+`mode` may be `paths`, `json`, or omitted for an idle renderer. JSON mode
+contains an object `document` instead of `paths`; `sourcePaths` identifies the
+Chronos theme source and does not cause Aether to read that file. A successful
+configuration returns `2xx` and emits `renderer.ready`. Invalid or failed
+startup configuration returns a structured error.
+
 Chronos handles:
 
 - `GET /v1/pipes`: control state and secret-free backend snapshots.
 - `POST /v1/backends/{backend-id}/connect`: lazy backend startup and grant.
 - `DELETE /v1/backends/{backend-id}/connect`: grant release.
 - `POST /v1/logs`: durable, redacted renderer event batches.
+
+Aether handles `POST /v1/renderer/configure` for managed startup, reload, and
+return-to-idle operations. Aether also emits `renderer.transport.ready` and
+`renderer.ready` events.
 
 Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs act as
 idempotency keys for five minutes or 256 entries. Duplicate content replays;

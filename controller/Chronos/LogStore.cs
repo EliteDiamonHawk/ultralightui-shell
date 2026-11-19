@@ -28,6 +28,7 @@ internal sealed class LogStore
         if (!ControlCodec.TryGetObject(body, out JsonElement root))
             throw new LogStoreException(400, "logging_batch_invalid", "Logging batch must be a JSON object.");
         if (!root.TryGetProperty("protocolVersion", out JsonElement protocol) ||
+            protocol.ValueKind != JsonValueKind.Number ||
             !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1)
             throw new LogStoreException(400, "logging_protocol_unsupported", "Logging protocol version must be 1.");
 
@@ -35,6 +36,7 @@ internal sealed class LogStore
         if (!Guid.TryParse(batchId, out _))
             throw new LogStoreException(400, "logging_batch_invalid", "batchId must be a UUID.");
         if (!root.TryGetProperty("processId", out JsonElement processId) ||
+            processId.ValueKind != JsonValueKind.Number ||
             !processId.TryGetInt32(out int pid) || pid <= 0)
             throw new LogStoreException(400, "logging_batch_invalid", "processId must be positive.");
         if (!Guid.TryParse(ControlCodec.GetString(root, "sessionId"), out _))

@@ -1,10 +1,11 @@
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Aether;
 
 public sealed class RendererHostContext : ApplicationContext
 {
-    private readonly HostOptions _options;
+    private HostOptions _options;
     private readonly SingleInstanceLease _lease;
     private readonly Control _dispatcher = new();
     private readonly NotifyIcon? _tray;
@@ -19,6 +20,8 @@ public sealed class RendererHostContext : ApplicationContext
     private ControlPipeChannel? _controlChannel;
     private IReadOnlyList<string> _configPaths;
     private bool _exiting;
+    private readonly bool _managedStartup;
+    private bool _startupConfigured;
     private RendererConfiguration _configuration;
     private IReadOnlyList<RendererWindowSpec> _specs;
     private Guid? _themeId;
@@ -29,39 +32,49 @@ public sealed class RendererHostContext : ApplicationContext
     {
         _options = options;
         _lease = lease;
+        _managedStartup = options.HasInheritedControlChannel;
         _logger = new RendererLogger();
-        _configPaths = options.ConfigPaths.ToArray();
-        RendererPaths.Resolve(options.UltralightRoot).EnsureWritableRoot();
+        _configPaths = Array.Empty<string>();
+        _configuration = RendererConfiguration.Empty;
+        _specs = Array.Empty<RendererWindowSpec>();
         _dispatcher.CreateControl();
-        _configuration = _configPaths.Count == 0
-            ? RendererConfiguration.Empty
-            : RendererConfiguration.Load(_configPaths);
-        _specs = _configPaths.Count == 0
-            ? Array.Empty<RendererWindowSpec>()
-            : _configuration.ResolveWindowSpecs();
 
         try
         {
-            if (options.ControlReadHandle is { } readHandle && options.ControlWriteHandle is { } writeHandle)
+            if (_managedStartup && options.ControlReadHandle is { } readHandle && options.ControlWriteHandle is { } writeHandle)
             {
                 _controlChannel = new ControlPipeChannel(readHandle, writeHandle, HandleControlRequest);
                 _controlChannel.Disconnected += OnControlDisconnected;
                 _logger.AttachControlChannel(_controlChannel);
                 _controlChannel.Start();
+                _controlChannel.TrySendEvent("renderer.transport.ready", new { protocolVersion = 1 });
             }
             _logger.Info("renderer.starting");
 
             _backendManager = new BackendConnectionManager(_controlChannel);
 
-            foreach (KeyValuePair<string, RuntimeGroupHost> pair in CreateGroups(_specs))
-                _groups.Add(pair.Key, pair.Value);
+            if (!_managedStartup)
+            {
+                RendererPaths.Resolve(options.UltralightRoot).EnsureWritableRoot();
+                _configPaths = options.ConfigPaths.ToArray();
+                _configuration = _configPaths.Count == 0
+                    ? RendererConfiguration.Empty
+                    : RendererConfiguration.Load(_configPaths);
+                _specs = _configPaths.Count == 0
+                    ? Array.Empty<RendererWindowSpec>()
+                    : _configuration.ResolveWindowSpecs();
+            }
 
             _input = new InputRouter(GetDesktopWindows);
             _fullscreenMonitor = new FullscreenMonitor(OnFullscreenChanged);
             _fullscreenMonitor.Start();
             _commandServer = new CommandPipeServer(HandleCommand);
             _commandServer.Start();
-            if (!options.NoTray)
+
+            foreach (KeyValuePair<string, RuntimeGroupHost> pair in CreateGroups(_specs))
+                _groups.Add(pair.Key, pair.Value);
+
+            if (!options.NoTray && !_managedStartup)
             {
                 _menu = BuildMenu();
                 _tray = new NotifyIcon
@@ -72,11 +85,15 @@ public sealed class RendererHostContext : ApplicationContext
                     Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
                 };
             }
-            _logger.Info("renderer.ready", new Dictionary<string, string?>
+            if (!_managedStartup)
             {
-                ["configuredWindows"] = _specs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["controllerConnected"] = (_controlChannel != null).ToString().ToLowerInvariant()
-            });
+                _startupConfigured = true;
+                _logger.Info("renderer.ready", new Dictionary<string, string?>
+                {
+                    ["configuredWindows"] = _specs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["controllerConnected"] = (_controlChannel != null).ToString().ToLowerInvariant()
+                });
+            }
         }
         catch
         {
@@ -160,7 +177,13 @@ public sealed class RendererHostContext : ApplicationContext
         {
             string response = command.Kind switch
             {
-                RendererCommandKind.ApplyConfig => ApplyConfiguration(command.ConfigPaths ?? Array.Empty<string>(), command.ThemeId, command.ThemeActivationId, command.ThemeGeneration),
+                RendererCommandKind.ApplyConfig => ApplyConfiguration(
+                    command.ConfigPaths ?? Array.Empty<string>(),
+                    command.ThemeId,
+                    command.ThemeActivationId,
+                    command.ThemeGeneration,
+                    command.ConfigJson,
+                    command.ConfigSourcePaths),
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.ShowMenu => SetMenuVisibility(true),
                 RendererCommandKind.HideMenu => SetMenuVisibility(false),
@@ -215,12 +238,33 @@ public sealed class RendererHostContext : ApplicationContext
         return null;
     }
 
-    private string ApplyConfiguration(IReadOnlyList<string> paths, Guid? themeId = null, Guid? activationId = null, long? generation = null)
+    private string ApplyConfiguration(
+        IReadOnlyList<string> paths,
+        Guid? themeId = null,
+        Guid? activationId = null,
+        long? generation = null,
+        string? configJson = null,
+        IReadOnlyList<string>? sourcePaths = null)
     {
-        if (paths.Count == 0)
+        if (paths.Count > 0 && !string.IsNullOrWhiteSpace(configJson))
+            return "ERR Configuration paths and inline JSON cannot be combined.";
+        if (paths.Count == 0 && string.IsNullOrWhiteSpace(configJson))
             return "ERR At least one --config path is required.";
 
-        RendererConfiguration candidate = RendererConfiguration.Load(paths);
+        RendererConfiguration candidate;
+        if (!string.IsNullOrWhiteSpace(configJson))
+        {
+            if (configJson.Length > ControlPipeCodec.MaxFrameBytes)
+                return "ERR Inline configuration exceeds 1 MiB.";
+            using JsonDocument document = JsonDocument.Parse(configJson);
+            candidate = RendererConfiguration.LoadJson(document.RootElement, "inline");
+            paths = sourcePaths?.ToArray() ?? Array.Empty<string>();
+        }
+        else
+        {
+            candidate = RendererConfiguration.Load(paths);
+            paths = sourcePaths?.ToArray() ?? paths;
+        }
         IReadOnlyList<RendererWindowSpec> candidateSpecs = candidate.ResolveWindowSpecs();
         IReadOnlyList<RendererWindowSpec> oldSpecs;
         RendererConfiguration oldConfiguration;
@@ -407,6 +451,8 @@ public sealed class RendererHostContext : ApplicationContext
 
     private ControlResponse HandleControlRequest(ControlRequest request)
     {
+        if (request.Method == "POST" && request.Path == "/v1/renderer/configure")
+            return ConfigureManagedRenderer(request);
         if (request.Method == "GET" && request.Path == "/v1/pipes")
             return new ControlResponse(request.Id, 200, new
             {
@@ -438,6 +484,195 @@ public sealed class RendererHostContext : ApplicationContext
 
     private Guid? ActiveThemeActivationId => _themeGeneration == 0 ? null : _themeActivationId;
     private long? ActiveThemeGeneration => _themeGeneration == 0 ? null : _themeGeneration;
+
+    private ControlResponse ConfigureManagedRenderer(ControlRequest request)
+    {
+        if (!_managedStartup)
+            return new ControlResponse(request.Id, 403,
+                Error: new ControlError("managed_startup_required", "Renderer configuration route requires inherited control handles."));
+        if (request.Body is not { } body || body.ValueKind != JsonValueKind.Object)
+            return new ControlResponse(request.Id, 400,
+                Error: new ControlError("startup_body_invalid", "Renderer startup body must be an object."));
+        if (!body.TryGetProperty("protocolVersion", out JsonElement protocolVersion) ||
+            protocolVersion.ValueKind != JsonValueKind.Number ||
+            !protocolVersion.TryGetInt32(out int version) || version != 1)
+            return new ControlResponse(request.Id, 400,
+                Error: new ControlError("startup_protocol_invalid", "Renderer startup protocol version must be 1."));
+
+        string? ultralightRoot = GetOptionalString(body, "ultralightRoot");
+        bool noTray = !body.TryGetProperty("noTray", out JsonElement noTrayElement) ||
+                      noTrayElement.ValueKind != JsonValueKind.False;
+        Guid? themeId = TryGetGuid(body, "themeId");
+        long? themeGeneration = TryGetLong(body, "themeGeneration");
+        JsonElement? configDocument = null;
+        string[] configPaths = Array.Empty<string>();
+        string[] sourcePaths = Array.Empty<string>();
+
+        if (body.TryGetProperty("config", out JsonElement config) && config.ValueKind != JsonValueKind.Null)
+        {
+            if (config.ValueKind != JsonValueKind.Object)
+                return new ControlResponse(request.Id, 400,
+                    Error: new ControlError("startup_config_invalid", "Startup config must be an object."));
+
+            string mode = GetOptionalString(config, "mode")?.ToLowerInvariant() ?? "";
+            sourcePaths = GetStringArray(config, "sourcePaths");
+            if (mode == "paths")
+            {
+                configPaths = GetStringArray(config, "paths");
+                if (configPaths.Length == 0)
+                    return new ControlResponse(request.Id, 400,
+                        Error: new ControlError("startup_config_invalid", "Path config requires at least one path."));
+            }
+            else if (mode == "json")
+            {
+                if (!config.TryGetProperty("document", out JsonElement document) || document.ValueKind != JsonValueKind.Object)
+                    return new ControlResponse(request.Id, 400,
+                        Error: new ControlError("startup_config_invalid", "JSON config requires object document."));
+                configDocument = document.Clone();
+            }
+            else
+            {
+                return new ControlResponse(request.Id, 400,
+                    Error: new ControlError("startup_config_invalid", "Startup config mode must be paths or json."));
+            }
+        }
+
+        try
+        {
+            ControlResponse response = InvokeOnDispatcher(() => ApplyManagedConfiguration(
+                ultralightRoot,
+                noTray,
+                configPaths,
+                configDocument,
+                sourcePaths,
+                themeId,
+                themeGeneration,
+                request.Id));
+            if (response.Status is >= 200 and < 300)
+                _controlChannel?.TrySendEvent("renderer.ready", new
+                {
+                    configuredWindows = _specs.Count,
+                    files = _configPaths,
+                    themeId = _themeId,
+                    themeGeneration = ActiveThemeGeneration
+                });
+            return response;
+        }
+        catch (RendererConfigurationException ex)
+        {
+            return new ControlResponse(request.Id, 422,
+                Error: new ControlError("configuration_invalid", ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("renderer.startup.failed", new Dictionary<string, string?>
+            {
+                ["exceptionType"] = ex.GetType().Name,
+                ["message"] = ex.Message
+            });
+            return new ControlResponse(request.Id, 500,
+                Error: new ControlError("renderer_startup_failed", ex.Message));
+        }
+    }
+
+    private ControlResponse ApplyManagedConfiguration(
+        string? ultralightRoot,
+        bool noTray,
+        IReadOnlyList<string> configPaths,
+        JsonElement? configDocument,
+        IReadOnlyList<string> sourcePaths,
+        Guid? themeId,
+        long? themeGeneration,
+        string requestId)
+    {
+        _options = _options.WithManagedRuntime(ultralightRoot, noTray);
+        RendererPaths.Resolve(ultralightRoot).EnsureWritableRoot();
+
+        if (configPaths.Count == 0 && configDocument == null)
+        {
+            StopGroups();
+            _backendManager?.RotateThemeScope();
+            lock (_sync)
+            {
+                _configuration = RendererConfiguration.Empty;
+                _specs = Array.Empty<RendererWindowSpec>();
+                _configPaths = Array.Empty<string>();
+                _themeId = themeId;
+                _themeGeneration = themeGeneration ?? 0;
+            }
+            _startupConfigured = true;
+            return new ControlResponse(requestId, 200, new { state = "idle", files = Array.Empty<string>() });
+        }
+
+        RendererConfiguration candidate = configDocument is { } document
+            ? RendererConfiguration.LoadJson(document, "inline")
+            : RendererConfiguration.Load(configPaths);
+        IReadOnlyList<RendererWindowSpec> candidateSpecs = candidate.ResolveWindowSpecs();
+        if (_startupConfigured)
+        {
+            string result = ApplyConfiguration(
+                configPaths,
+                themeId,
+                null,
+                themeGeneration,
+                configDocument is { } inline ? inline.GetRawText() : null,
+                sourcePaths.Count == 0 ? configPaths : sourcePaths);
+            if (result.StartsWith("ERR ", StringComparison.Ordinal))
+                return new ControlResponse(requestId, 422,
+                    Error: new ControlError("configuration_invalid", result[4..]));
+            return new ControlResponse(requestId, 200, new { state = "ready", files = _configPaths, windows = _specs.Count });
+        }
+
+        Dictionary<string, RuntimeGroupHost> groups = CreateGroups(candidateSpecs);
+        lock (_sync)
+        {
+            foreach (KeyValuePair<string, RuntimeGroupHost> pair in groups)
+                _groups.Add(pair.Key, pair.Value);
+            _configuration = candidate;
+            _specs = candidateSpecs;
+            _configPaths = (sourcePaths.Count == 0 ? configPaths : sourcePaths).ToArray();
+            _themeId = themeId;
+            _themeGeneration = themeGeneration ?? 0;
+        }
+        _startupConfigured = true;
+        _logger.Info("renderer.ready", new Dictionary<string, string?>
+        {
+            ["configuredWindows"] = _specs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["controllerConnected"] = "true"
+        });
+        return new ControlResponse(requestId, 200, new { state = "ready", files = _configPaths, windows = _specs.Count });
+    }
+
+    private T InvokeOnDispatcher<T>(Func<T> action)
+    {
+        if (_dispatcher.InvokeRequired)
+            return (T)_dispatcher.Invoke(action);
+        return action();
+    }
+
+    private static string? GetOptionalString(JsonElement objectValue, string name) =>
+        objectValue.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static string[] GetStringArray(JsonElement objectValue, string name)
+    {
+        if (!objectValue.TryGetProperty(name, out JsonElement values) || values.ValueKind != JsonValueKind.Array)
+            return Array.Empty<string>();
+        return values.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
+    }
+
+    private static Guid? TryGetGuid(JsonElement objectValue, string name) =>
+        GetOptionalString(objectValue, name) is { } value && Guid.TryParse(value, out Guid parsed) ? parsed : null;
+
+    private static long? TryGetLong(JsonElement objectValue, string name) =>
+        objectValue.TryGetProperty(name, out JsonElement value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt64(out long parsed) ? parsed : null;
 
     private string ApplyPause(RendererCommand command, bool paused)
     {

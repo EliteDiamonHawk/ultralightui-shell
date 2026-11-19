@@ -55,7 +55,7 @@ internal sealed class BackendConnectionManager : IDisposable
         if (response.Error != null || response.Status >= 300)
             throw new InvalidOperationException(response.Error?.Message ?? $"Backend connection failed with status {response.Status}.");
         if (response.Body is not JsonElement body ||
-            !body.TryGetProperty("protocol", out JsonElement protocol) || !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
+            !body.TryGetProperty("protocol", out JsonElement protocol) || protocol.ValueKind != JsonValueKind.Number || !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
             !body.TryGetProperty("backendId", out JsonElement returnedId) || returnedId.GetString() != backendId ||
             !body.TryGetProperty("expiresAt", out JsonElement expiry) || !DateTimeOffset.TryParse(expiry.GetString(), out DateTimeOffset expiresAt) || expiresAt <= DateTimeOffset.UtcNow ||
             !body.TryGetProperty("pipeName", out JsonElement pipeNameElement))

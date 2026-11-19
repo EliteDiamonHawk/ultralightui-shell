@@ -29,6 +29,11 @@ Startup options:
 
 The parser makes `--config` paths absolute. Do not combine startup options with runtime commands. Aether can start without configuration, but it then has no windows to manage.
 
+When both inherited controller handles are present, they are the only accepted
+startup options. Aether establishes anonymous IPC first and waits for Chronos
+to send `POST /v1/renderer/configure`; root, tray policy, and theme/config are
+not read from managed-process command-line flags.
+
 ## Commands
 
 Commands connect to the already-running user-scoped instance. They do not load config files.
@@ -62,7 +67,11 @@ Aether.exe --exit
 
 Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection and returns `OK ...` or `ERR ...`.
 
-The inherited controller channel supports `GET /v1/pipes` and `PUT /v1/logging/batch-limits`. Other `/v1/*` routes return `404` from Aether. Chronos handles backend routes and log intake on its side of the channel.
+The inherited controller channel supports `POST /v1/renderer/configure`,
+`GET /v1/pipes`, and `PUT /v1/logging/batch-limits`. Managed Aether emits
+`renderer.transport.ready` before configuration and `renderer.ready` after
+successful configuration. Other `/v1/*` routes return `404` from Aether.
+Chronos handles backend routes and log intake on its side of the channel.
 
 The tray menu exposes the same common actions.
 

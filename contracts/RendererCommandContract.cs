@@ -35,6 +35,8 @@ public sealed record RendererCommand(
     string? TargetId = null,
     string? Topic = null,
     IReadOnlyList<string>? ConfigPaths = null,
+    string? ConfigJson = null,
+    IReadOnlyList<string>? ConfigSourcePaths = null,
     SystemTrayAction TrayAction = SystemTrayAction.Toggle,
     int Version = RendererCommandCodec.Version,
     Guid? ThemeId = null,
@@ -61,6 +63,7 @@ public static class RendererCommandCodec
         {
             using JsonDocument document = JsonDocument.Parse(text);
             if (!document.RootElement.TryGetProperty("version", out JsonElement version) ||
+                version.ValueKind != JsonValueKind.Number ||
                 !version.TryGetInt32(out int wireVersion) || wireVersion != Version)
             {
                 command = null;

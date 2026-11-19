@@ -10,6 +10,7 @@ internal sealed record ShellUiSnapshot(
     bool TrayVisible,
     bool WindowsKeyOverrideEnabled,
     string ThemeOrigin,
+    string? RendererFailure,
     bool StatusPollingEnabled,
     bool Exiting,
     PersistentSettings Settings);
@@ -461,11 +462,15 @@ internal sealed class ShellForm : Form
         {
             if (target.HasFlag(ShellRenderTarget.Status))
             {
-                _connection.Text = snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
+                _connection.Text = snapshot.RendererFailure is { Length: > 0 }
+                    ? $"Failed: {snapshot.RendererFailure}"
+                    : snapshot.Connected ? $"Connected ({snapshot.Capabilities.PipeState})" : "Disconnected";
                 _trayStatus.Text = snapshot.TrayEnabled ? (snapshot.TrayVisible ? "Enabled / visible" : "Enabled / hidden") : "Disabled";
                 _windowsKeyOverrideStatus.Text = snapshot.WindowsKeyOverrideEnabled ? "Enabled" : "Disabled";
                 _polling.Text = snapshot.StatusPollingEnabled ? "Enabled" : "Disabled (--status-poll false; events active)";
                 _themeOrigin.Text = $"Theme origin: {snapshot.ThemeOrigin}";
+                if (snapshot.RendererFailure is { Length: > 0 })
+                    _statusOutput.Text = snapshot.RendererFailure;
                 if (snapshot.StatusPollingEnabled && !_refreshTimer.Enabled)
                     _refreshTimer.Start();
                 else if (!snapshot.StatusPollingEnabled && _refreshTimer.Enabled)

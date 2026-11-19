@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -24,6 +25,8 @@ internal sealed class ChronosHostContext : ApplicationContext
     private Guid? _pendingThemeId;
     private long? _pendingThemeGeneration;
     private ShellForm? _shellForm;
+    private string? _rendererFailure;
+    private bool _rendererStarting;
     private bool _exiting;
 
     public event Action? UiStateChanged;
@@ -62,10 +65,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _winToggle.StateChanged += OnWinToggleChanged;
         _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
-        if (configPaths.Count > 0)
-            StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
-        else
-            NotifyUiStateChanged();
+        StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
     }
 
     public RendererCapabilities Capabilities => _commands.Capabilities;
@@ -82,6 +82,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _tray?.Visible == true,
         _winToggle.Enabled,
         _themeOrigin,
+        _rendererFailure,
         _statusPollingEnabled,
         _exiting,
         _settings);
@@ -176,17 +177,42 @@ internal sealed class ChronosHostContext : ApplicationContext
         }
     }
 
-    public Task<AetherCommandResult> UnloadThemeAsync()
+    public async Task<AetherCommandResult> UnloadThemeAsync()
     {
-        StopRenderer(requestExit: false);
+        if (_renderer != null && _commands.IsTransportAvailable)
+        {
+            try
+            {
+                ControlResponse response = await _renderer.Control.SendAsync(
+                    "POST",
+                    "/v1/renderer/configure",
+                    new
+                    {
+                        protocolVersion = 1,
+                        ultralightRoot = _settings.UltralightRoot,
+                        noTray = true,
+                        config = (object?)null,
+                        themeId = (Guid?)null,
+                        themeGeneration = (long?)null
+                    },
+                    TimeSpan.FromSeconds(30)).ConfigureAwait(true);
+                if (response.Status is < 200 or >= 300)
+                    return AetherCommandResult.Failure(response.Error?.Message ?? $"Aether unload failed with status {response.Status}.");
+            }
+            catch (Exception ex)
+            {
+                return AetherCommandResult.Failure(ex.Message);
+            }
+        }
         _activeThemeId = null;
         _activeThemeGeneration = 0;
         _pendingThemeId = null;
         _pendingThemeGeneration = null;
         _themeOrigin = "None";
+        _rendererFailure = null;
         PersistAcceptedConfig(Array.Empty<string>(), null);
         NotifyUiStateChanged();
-        return Task.FromResult(new AetherCommandResult(true, "OK theme unloaded"));
+        return new AetherCommandResult(true, "OK theme unloaded");
     }
 
     public void SetCurrentWinToggle(bool enabled)
@@ -267,42 +293,124 @@ internal sealed class ChronosHostContext : ApplicationContext
             return _commands.IsTransportAvailable;
 
         RendererSession? startedRenderer = null;
+        var stderr = new List<string>();
+        var transportReady = new ManualResetEventSlim(false);
+        Action<string, System.Text.Json.JsonElement?>? startupEvent = null;
+        _rendererStarting = true;
         try
         {
             string rendererPath = ResolveRendererPath(explicitRendererPath, persistedRendererPath);
             _commands.BeginConnection();
             startedRenderer = RendererSession.Start(
                 rendererPath,
-                configPaths,
-                _settings.UltralightRoot,
                 HandleControlRequestAsync,
                 line => Diagnostic($"[Aether] {line}"),
-                line => Diagnostic($"[Aether] {line}"));
+                line =>
+                {
+                    lock (stderr) stderr.Add(line);
+                    Diagnostic($"[Aether] {line}");
+                });
             _renderer = startedRenderer;
             startedRenderer.Control.Disconnected += OnControlDisconnected;
             startedRenderer.Control.EventReceived += OnRendererEvent;
             startedRenderer.ProcessExited += OnRendererExited;
+            startupEvent = (name, _) =>
+            {
+                if (name == "renderer.transport.ready")
+                    transportReady.Set();
+            };
+            startedRenderer.Control.EventReceived += startupEvent;
+            startedRenderer.StartControl();
+
+            DateTime transportDeadline = DateTime.UtcNow.AddSeconds(15);
+            while (!transportReady.IsSet && DateTime.UtcNow < transportDeadline && !startedRenderer.Process.HasExited)
+                transportReady.Wait(TimeSpan.FromMilliseconds(100));
+            if (!transportReady.IsSet)
+                throw new InvalidOperationException(DescribeRendererProcessFailure(startedRenderer.Process, stderr, "Aether control channel did not become ready."));
+
+            object? config = configPaths.Count == 0
+                ? null
+                : new
+                {
+                    mode = "paths",
+                    paths = configPaths,
+                    sourcePaths = configPaths
+                };
+            ControlResponse startup = startedRenderer.Control.SendAsync(
+                    "POST",
+                    "/v1/renderer/configure",
+                    new
+                    {
+                        protocolVersion = 1,
+                        ultralightRoot = _settings.UltralightRoot,
+                        noTray = true,
+                        config,
+                        themeId = _activeThemeId,
+                        themeGeneration = _activeThemeGeneration == 0 ? (long?)null : _activeThemeGeneration
+                    },
+                    TimeSpan.FromSeconds(30))
+                .GetAwaiter()
+                .GetResult();
+            if (startup.Status is < 200 or >= 300)
+                throw new InvalidOperationException(startup.Error?.Message ?? $"Aether startup request failed with status {startup.Status}.");
+
             WaitForRenderer(configPaths);
 
             if (configPaths.Count > 0)
                 PersistAcceptedConfig(configPaths);
 
             ConfigureRendererLogging();
+            _rendererFailure = null;
             NotifyUiStateChanged();
             return true;
         }
         catch (Exception ex)
         {
-            Diagnostic($"Aether startup failed; Chronos remains available: {ex.Message}");
+            string message = ex.Message;
+            if (startedRenderer != null)
+                message = DescribeRendererProcessFailure(startedRenderer.Process, stderr, message);
+            _rendererFailure = message;
+            Diagnostic($"Aether startup failed; Chronos remains available: {message}");
             if (startedRenderer != null)
             {
+                startedRenderer.Control.Disconnected -= OnControlDisconnected;
+                startedRenderer.Control.EventReceived -= OnRendererEvent;
+                startedRenderer.ProcessExited -= OnRendererExited;
                 try { startedRenderer.Dispose(); } catch { }
             }
             _renderer = null;
             _commands.MarkDisconnected();
             NotifyUiStateChanged();
+            ShowRendererFailure(message);
             return false;
         }
+        finally
+        {
+            _rendererStarting = false;
+            if (startedRenderer != null && startupEvent != null)
+                startedRenderer.Control.EventReceived -= startupEvent;
+            transportReady.Dispose();
+        }
+    }
+
+    private static string DescribeRendererProcessFailure(Process process, IReadOnlyList<string> stderr, string fallback)
+    {
+        if (process.HasExited && process.ExitCode == 3)
+            return "Aether is already running outside Chronos; close it before starting Chronos.";
+        if (stderr.Count > 0)
+            return process.HasExited
+                ? $"{fallback} {stderr[^1]} (exit code {process.ExitCode})."
+                : $"{fallback} {stderr[^1]}";
+        return process.HasExited ? $"{fallback} (exit code {process.ExitCode})." : fallback;
+    }
+
+    private void ShowRendererFailure(string message)
+    {
+        try
+        {
+            MessageBox.Show(_shellForm, message, "Aether startup failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        catch (InvalidOperationException) { }
     }
 
     private void StopRenderer(bool requestExit)
@@ -440,11 +548,14 @@ internal sealed class ChronosHostContext : ApplicationContext
 
         if (!ControlCodec.TryGetObject(request.Body, out System.Text.Json.JsonElement body) ||
             !body.TryGetProperty("protocol", out System.Text.Json.JsonElement protocol) ||
+            protocol.ValueKind != System.Text.Json.JsonValueKind.Number ||
             !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
             !body.TryGetProperty("renderer", out System.Text.Json.JsonElement rendererBody) || rendererBody.ValueKind != System.Text.Json.JsonValueKind.Object)
             return ControlResponse.Failure(request.Id, 400, "backend_request_invalid", "Backend connect body is invalid.");
 
-        int pid = rendererBody.TryGetProperty("pid", out System.Text.Json.JsonElement pidValue) && pidValue.TryGetInt32(out int parsedPid)
+        int pid = rendererBody.TryGetProperty("pid", out System.Text.Json.JsonElement pidValue) &&
+            pidValue.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            pidValue.TryGetInt32(out int parsedPid)
             ? parsedPid
             : 0;
         string sid = ControlCodec.GetString(rendererBody, "sid") ?? "";
@@ -456,6 +567,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             ? parsedThemeId
             : null;
         long? generation = rendererBody.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
+            generationValue.ValueKind == System.Text.Json.JsonValueKind.Number &&
             generationValue.TryGetInt64(out long parsedGeneration)
             ? parsedGeneration
             : null;
@@ -487,6 +599,8 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnControlDisconnected()
     {
+        if (_rendererStarting)
+            return;
         RequestRendererUnavailable("Renderer control channel disconnected.");
     }
 
@@ -496,6 +610,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             return;
         if (body is { } eventBody &&
             eventBody.TryGetProperty("themeGeneration", out System.Text.Json.JsonElement generationValue) &&
+            generationValue.ValueKind == System.Text.Json.JsonValueKind.Number &&
             generationValue.TryGetInt64(out long eventGeneration) && eventGeneration < _activeThemeGeneration)
             return;
         try
@@ -525,6 +640,8 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnRendererExited()
     {
+        if (_rendererStarting)
+            return;
         RequestRendererUnavailable("Aether process exited.");
     }
 
@@ -535,8 +652,10 @@ internal sealed class ChronosHostContext : ApplicationContext
             _dispatcher.BeginInvoke((Action)(() =>
             {
                 StopRenderer(requestExit: false);
+                _rendererFailure = message;
                 NotifyUiStateChanged();
                 Diagnostic(message);
+                ShowRendererFailure(message);
             }));
         }
         catch (InvalidOperationException) { }

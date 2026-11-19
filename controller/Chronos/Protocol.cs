@@ -64,6 +64,7 @@ internal static class ControlCodec
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
                 !root.TryGetProperty("status", out JsonElement statusElement) ||
+                statusElement.ValueKind != JsonValueKind.Number ||
                 !statusElement.TryGetInt32(out int status))
                 return false;
 

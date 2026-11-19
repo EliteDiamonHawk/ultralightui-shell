@@ -36,6 +36,7 @@ internal sealed class BackendRegistry
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
                 !root.TryGetProperty("schemaVersion", out JsonElement version) ||
+                version.ValueKind != JsonValueKind.Number ||
                 !version.TryGetInt32(out int schemaVersion) || schemaVersion != 1 ||
                 !root.TryGetProperty("backends", out JsonElement backends) || backends.ValueKind != JsonValueKind.Object)
             {
@@ -293,7 +294,7 @@ internal sealed class BackendManager : IDisposable
         JsonElement root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("ready", out JsonElement ready) || ready.ValueKind != JsonValueKind.True ||
-            !root.TryGetProperty("protocol", out JsonElement protocol) || !protocol.TryGetInt32(out int version) || version != 1 ||
+            !root.TryGetProperty("protocol", out JsonElement protocol) || protocol.ValueKind != JsonValueKind.Number || !protocol.TryGetInt32(out int version) || version != 1 ||
             !root.TryGetProperty("backendId", out JsonElement id) || id.GetString() != backendId ||
             !root.TryGetProperty("sid", out JsonElement sid) || sid.ValueKind != JsonValueKind.String ||
             !root.TryGetProperty("pipeName", out JsonElement pipe) || pipe.ValueKind != JsonValueKind.String)

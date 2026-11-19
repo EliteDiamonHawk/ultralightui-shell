@@ -17,7 +17,7 @@ internal static class Program
             if (options.Command.Kind != RendererCommandKind.None)
                 return CommandPipeClient.Send(options.Command);
 
-            if (options.ConfigPaths.Count > 0 && CommandPipeClient.TrySend(
+            if (ShouldForwardStartupConfig(options) && CommandPipeClient.TrySend(
                     new RendererCommand(RendererCommandKind.ApplyConfig, ConfigPaths: options.ConfigPaths),
                     out int configCommandExitCode))
             {
@@ -57,4 +57,7 @@ internal static class Program
             return 1;
         }
     }
+
+    internal static bool ShouldForwardStartupConfig(HostOptions options) =>
+        options.ConfigPaths.Count > 0 && !options.HasInheritedControlChannel;
 }

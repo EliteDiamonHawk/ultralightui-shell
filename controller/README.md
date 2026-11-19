@@ -23,6 +23,8 @@ Startup options:
 | `--override-windows-key <true\|false>` | Enable Windows Key Override; default `false`. |
 | `--renderer-path <path>` | Override Aether executable discovery. |
 
+Chronos launches Aether with inherited handles only. Root and theme/config
+are sent through the private channel after Aether reports transport readiness.
 Chronos resolves Aether from `--renderer-path`, beside Chronos, or
 `%LOCALAPPDATA%\KhaosShell\Aether\installation\Aether.exe`, in that order.
 

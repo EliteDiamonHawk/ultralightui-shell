@@ -2,7 +2,7 @@
 
 ## Process lifecycle
 
-`Program.Main` parses `HostOptions`, handles `--help` or a runtime command, then starts a WinForms `ApplicationContext`. Startup acquires a single-instance lease, loads configuration, resolves windows, starts runtime groups, installs fullscreen and foreground monitors, and creates the tray icon and command pipe. When Chronos supplies inherited control handles, Aether exits if that control channel closes.
+`Program.Main` parses `HostOptions`, handles `--help` or a runtime command, then starts a WinForms `ApplicationContext`. Startup acquires a single-instance lease before managed transport setup. With inherited handles, Aether starts the anonymous control channel and waits for Chronos configuration before resolving Ultralight, loading configuration, or creating runtime groups. Standalone startup retains direct CLI configuration. A managed control disconnect exits Aether.
 
 Shutdown reverses those resources: command server, monitors, tray UI, runtime groups, native windows, and the Ultralight app.
 

@@ -118,12 +118,19 @@ internal sealed class RendererCommandService
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible, CancellationToken cancellationToken = default) =>
         SendAsync(new(visible ? AetherCommandKind.RevealWindow : AetherCommandKind.HideWindow, TargetId: id), cancellationToken);
 
-    public async Task<AetherCommandResult> ApplyConfigAsync(IReadOnlyList<string> paths, Guid? themeId = null, long? generation = null, CancellationToken cancellationToken = default)
+    public async Task<AetherCommandResult> ApplyConfigAsync(
+        IReadOnlyList<string> paths,
+        Guid? themeId = null,
+        long? generation = null,
+        string? configJson = null,
+        IReadOnlyList<string>? sourcePaths = null,
+        CancellationToken cancellationToken = default)
     {
         Guid activationId = Guid.NewGuid();
         AetherCommandResult result = await SendAsync(
             new(AetherCommandKind.ApplyConfig, ConfigPaths: paths, ThemeId: themeId,
-                ThemeActivationId: activationId, ThemeGeneration: generation),
+                ThemeActivationId: activationId, ThemeGeneration: generation,
+                ConfigJson: configJson, ConfigSourcePaths: sourcePaths),
             cancellationToken).ConfigureAwait(false);
         if (result.Success)
         {
@@ -233,7 +240,7 @@ internal sealed class RendererCommandService
                 string? kind = item.TryGetProperty("kind", out JsonElement kindElement)
                     ? kindElement.ValueKind == JsonValueKind.String
                         ? kindElement.GetString()
-                        : kindElement.TryGetInt32(out int kindNumber)
+                        : kindElement.ValueKind == JsonValueKind.Number && kindElement.TryGetInt32(out int kindNumber)
                             ? kindNumber switch { 0 => "wallpaper", 1 => "widget", 2 => "menu", _ => null }
                             : null
                     : null;
@@ -251,6 +258,7 @@ internal sealed class RendererCommandService
         Guid? themeId = TryGetGuid(configRoot, "themeId");
         Guid? activationId = TryGetGuid(configRoot, "themeActivationId");
         long? generation = configRoot.TryGetProperty("themeGeneration", out JsonElement generationValue) &&
+            generationValue.ValueKind == JsonValueKind.Number &&
             generationValue.TryGetInt64(out long parsedGeneration) ? parsedGeneration : null;
         return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState, themeId, activationId, generation);
     }

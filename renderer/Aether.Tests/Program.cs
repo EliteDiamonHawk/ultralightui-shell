@@ -13,6 +13,7 @@ internal static class Program
         var tests = new (string Name, Action Test)[]
         {
             (nameof(OptionsParseStartupConfigs), OptionsParseStartupConfigs),
+            (nameof(ManagedStartupDoesNotForwardConfig), ManagedStartupDoesNotForwardConfig),
             (nameof(OptionsParseNamedCommands), OptionsParseNamedCommands),
             (nameof(OptionsParseAllCommands), OptionsParseAllCommands),
             (nameof(OptionsAllowOmittedGroup), OptionsAllowOmittedGroup),
@@ -23,6 +24,7 @@ internal static class Program
             (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
             (nameof(RendererDataUsesRoamingAppData), RendererDataUsesRoamingAppData),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
+            (nameof(ConfigurationLoadsInlineJson), ConfigurationLoadsInlineJson),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
@@ -67,7 +69,16 @@ internal static class Program
         AssertEqual(2, options.ConfigPaths.Count);
         AssertTrue(options.Verbose);
         AssertEqual(RendererCommandKind.None, options.Command.Kind);
+        AssertTrue(Aether.Program.ShouldForwardStartupConfig(options));
     }
+
+    private static void ManagedStartupDoesNotForwardConfig() =>
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[]
+        {
+            "--config", "theme.json",
+            "--control-read-handle", "101",
+            "--control-write-handle", "202"
+        }));
 
     private static void RendererDataUsesRoamingAppData()
     {
@@ -78,6 +89,15 @@ internal static class Program
         string expected = Path.Combine(appData, "KhaosShell", "Aether", "ultralight.data");
         AssertEqual(expected, RendererPaths.Resolve(null).UltralightFileSystemPath);
         AssertEqual(expected, RendererPaths.Resolve("C:\\vendor\\ultralight").UltralightFileSystemPath);
+    }
+
+    private static void ConfigurationLoadsInlineJson()
+    {
+        using JsonDocument document = JsonDocument.Parse("{\"wallpaper\":[]}");
+        RendererConfiguration configuration = RendererConfiguration.LoadJson(document.RootElement, "theme-source.json");
+        AssertEqual(0, configuration.Wallpapers.Count);
+        AssertEqual(0, configuration.Widgets.Count);
+        AssertEqual<StartMenuDefinition?>(null, configuration.Menu);
     }
 
     private static void OptionsParseNamedCommands()
@@ -298,11 +318,15 @@ internal static class Program
         json = RendererCommandProtocol.Serialize(new RendererCommand(
             RendererCommandKind.ApplyConfig,
             ConfigPaths: new[] { "theme.json" },
+            ConfigJson: "{\"wallpaper\":[]}",
+            ConfigSourcePaths: new[] { "source.theme.json" },
             ThemeId: themeId,
             ThemeActivationId: activationId,
             ThemeGeneration: 7));
         AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
         AssertEqual(themeId, parsed!.ThemeId);
+        AssertEqual("{\"wallpaper\":[]}", parsed.ConfigJson);
+        AssertEqual("source.theme.json", parsed.ConfigSourcePaths![0]);
         AssertEqual(activationId, parsed.ThemeActivationId);
         AssertEqual(7L, parsed.ThemeGeneration);
     }

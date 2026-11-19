@@ -27,13 +27,20 @@ internal static class UltralightNative
         {
             if (_nativeLogWriter == null)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
-                _nativeLogWriter = new StreamWriter(
-                    new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
-                    new UTF8Encoding(false))
+                try
                 {
-                    AutoFlush = true
-                };
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                    _nativeLogWriter = new StreamWriter(
+                        new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete),
+                        new UTF8Encoding(false))
+                    {
+                        AutoFlush = true
+                    };
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Console.Error.WriteLine($"[Ultralight] Native log file unavailable: {ex.Message}");
+                }
             }
 
             ulPlatformSetLogger(new UltralightLogger(LogMessageCallback));
