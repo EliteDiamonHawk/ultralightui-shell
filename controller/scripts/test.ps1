@@ -7,13 +7,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$SolutionPath = Join-Path $RepositoryRoot 'Chronos.sln'
 $ProjectPath = Join-Path $RepositoryRoot 'Chronos.Tests\Chronos.Tests.csproj'
-$DotnetArguments = @('run', '--project', $ProjectPath, '--configuration', $Configuration) + $Arguments
+$BuildArguments = @('build', $SolutionPath, '--configuration', $Configuration, '-m:1')
+$RunArguments = @('run', '--project', $ProjectPath, '--configuration', $Configuration, '--no-build', '--no-restore') + $Arguments
 
 Push-Location $RepositoryRoot
 try {
-    & dotnet @DotnetArguments
+    & dotnet @BuildArguments
     $ExitCode = $LASTEXITCODE
+    if ($ExitCode -eq 0) {
+        & dotnet @RunArguments
+        $ExitCode = $LASTEXITCODE
+    }
 }
 finally { Pop-Location }
 exit $ExitCode

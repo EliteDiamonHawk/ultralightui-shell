@@ -16,6 +16,8 @@ The repository also contains Chronos, the KhaosShell controller. Chronos starts 
 - .NET 9 SDK
 - Ultralight SDK `2.0.0-beta.2`
 
+Repository includes `global.json`, which selects .NET 9 SDK for builds and test scripts. Check with `dotnet --version`.
+
 Install the pinned SDK under `renderer\third_party\ultralight`, set `ULTRALIGHT_SDK_ROOT`, or pass `-p:UltralightSdkRoot=C:\vendor\ultralight`.
 
 ## Build and test
@@ -33,6 +35,14 @@ For parser and policy tests without native SDK files:
 
 ```powershell
 dotnet run --project .\renderer\Aether.Tests\Aether.Tests.csproj -p:IncludeUltralight=false
+```
+
+Run controller tests from `controller/`:
+
+```powershell
+Push-Location .\controller
+.\scripts\test.ps1
+Pop-Location
 ```
 
 ## Configuration

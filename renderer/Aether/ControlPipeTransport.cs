@@ -120,11 +120,21 @@ internal static class ControlPipeCodec
         {
             using JsonDocument document = JsonDocument.Parse(line);
             JsonElement root = document.RootElement;
-            if (!root.TryGetProperty("status", out JsonElement status) || status.ValueKind != JsonValueKind.Number ||
-                !root.TryGetProperty("id", out JsonElement idElement) || idElement.ValueKind != JsonValueKind.String)
+            if (!root.TryGetProperty("status", out JsonElement status) || status.ValueKind != JsonValueKind.Number)
                 return false;
-            string id = idElement.GetString() ?? "";
-            if (!Guid.TryParse(id, out _) || !status.TryGetInt32(out int statusCode))
+            string? id = null;
+            if (root.TryGetProperty("id", out JsonElement idElement))
+            {
+                if (idElement.ValueKind == JsonValueKind.String)
+                {
+                    id = idElement.GetString();
+                    if (!Guid.TryParse(id, out _))
+                        return false;
+                }
+                else if (idElement.ValueKind != JsonValueKind.Null)
+                    return false;
+            }
+            if (!status.TryGetInt32(out int statusCode))
                 return false;
             JsonElement? body = root.TryGetProperty("body", out JsonElement bodyElement) && bodyElement.ValueKind != JsonValueKind.Null
                 ? bodyElement.Clone()
@@ -136,6 +146,8 @@ internal static class ControlPipeCodec
                 string message = errorElement.TryGetProperty("message", out JsonElement messageElement) ? messageElement.GetString() ?? "" : "";
                 error = new ControlError(code, message);
             }
+            if (id == null && (statusCode < 400 || error == null))
+                return false;
             response = new ControlResponse(id, statusCode, body, error);
             return true;
         }
@@ -188,7 +200,7 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
 {
     private readonly Stream _readStream;
     private readonly Stream _writeStream;
-    private readonly StreamReader _reader;
+    private readonly BoundedLineReader _reader;
     private readonly StreamWriter _writer;
     private readonly Func<ControlRequest, ControlResponse> _handler;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -208,7 +220,7 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
 
         _readStream = new FileStream(new SafeFileHandle(readHandle, ownsHandle: true), FileAccess.Read, 4096, isAsync: false);
         _writeStream = new FileStream(new SafeFileHandle(writeHandle, ownsHandle: true), FileAccess.Write, 4096, isAsync: false);
-        _reader = new StreamReader(_readStream, new UTF8Encoding(false, true), false, 4096, leaveOpen: true);
+        _reader = new BoundedLineReader(_readStream);
         _writer = new StreamWriter(_writeStream, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
         _handler = handler;
     }
@@ -252,7 +264,6 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
         try { _writeStream.Dispose(); } catch { }
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
         DisposeQuietly(_writer);
-        DisposeQuietly(_reader);
         DisposeQuietly(_writeLock);
         DisposeQuietly(_shutdown);
     }
@@ -269,9 +280,19 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                string? line = await _reader.ReadLineAsync(_shutdown.Token).ConfigureAwait(false);
-                if (line == null)
+                BoundedLine frame = await _reader.ReadAsync(ControlPipeCodec.MaxFrameBytes, _shutdown.Token).ConfigureAwait(false);
+                if (frame.EndOfStream)
                     break;
+                if (frame.TooLarge)
+                {
+                    await WriteAsync(ControlPipeCodec.Serialize(new ControlResponse(
+                        null,
+                        400,
+                        Error: new ControlError("frame_too_large", "Control frame exceeds 1 MiB."))), _shutdown.Token).ConfigureAwait(false);
+                    continue;
+                }
+
+                string line = frame.Text!;
 
                 if (ControlPipeCodec.TryParseResponse(line, out ControlResponse? incomingResponse))
                 {

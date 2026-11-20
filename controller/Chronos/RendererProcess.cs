@@ -57,7 +57,7 @@ internal sealed class RendererSession : IDisposable
 
     public Process Process => _process;
     public ControlChannel Control => _control;
-    public event Action? ProcessExited;
+    public event Action<RendererSession>? ProcessExited;
 
     public bool WaitForExit(TimeSpan timeout)
     {
@@ -116,7 +116,7 @@ internal sealed class RendererSession : IDisposable
             fromRenderer.DisposeLocalCopyOfClientHandle();
             var control = new ControlChannel(fromRenderer, toRenderer, controlHandler);
             var session = new RendererSession(toRenderer, fromRenderer, process, control);
-            process.Exited += (_, _) => session.ProcessExited?.Invoke();
+            process.Exited += (_, _) => session.ProcessExited?.Invoke(session);
             return session;
         }
         catch

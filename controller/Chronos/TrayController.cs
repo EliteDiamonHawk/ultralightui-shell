@@ -107,7 +107,7 @@ internal sealed class TrayController : IDisposable
     private void AddAction(string text, Func<Task<AetherCommandResult>> action, bool disabled)
     {
         var item = new ToolStripMenuItem(text) { Enabled = !disabled };
-        item.Click += async (_, _) => Run(action);
+        item.Click += (_, _) => Run(action);
         _menu.Items.Add(item);
     }
 

@@ -84,4 +84,4 @@ Successful pipe responses start with `OK`. Failures start with `ERR` and are wri
 - `2`: invalid options or invalid renderer configuration.
 - `3`: another instance already owns the renderer, or no running instance accepted a command.
 
-The command transport is a local named pipe. It targets the same user and accepts one serialized command per connection.
+The command transport is a local named pipe. It targets the same user and accepts one serialized command per connection. The server limits each UTF-8 frame to 1 MiB. The client bounds its response wait, and a closed pipe returns an error.

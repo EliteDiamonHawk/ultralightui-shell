@@ -143,11 +143,12 @@ internal sealed class ChronosHostContext : ApplicationContext
         {
             if (_renderer != null)
                 StopRenderer(requestExit: false);
-            if (!StartRenderer(files, _options.RendererPath, _settings.RendererPath))
+            long restartGeneration = checked(_activeThemeGeneration + 1);
+            if (!StartRenderer(files, _options.RendererPath, _settings.RendererPath, theme.Id, restartGeneration))
                 return AetherCommandResult.Failure("Renderer is unavailable; theme was not applied.");
 
             _activeThemeId = theme.Id;
-            _activeThemeGeneration = 0;
+            _activeThemeGeneration = restartGeneration;
             _themeOrigin = "UI-applied";
             PersistAcceptedConfig(files, _activeThemeId);
             NotifyUiStateChanged();
@@ -297,7 +298,9 @@ internal sealed class ChronosHostContext : ApplicationContext
     private bool StartRenderer(
         IReadOnlyList<string> configPaths,
         string? explicitRendererPath,
-        string? persistedRendererPath)
+        string? persistedRendererPath,
+        Guid? startupThemeId = null,
+        long? startupThemeGeneration = null)
     {
         if (_renderer != null)
             return _commands.IsTransportAvailable;
@@ -355,8 +358,8 @@ internal sealed class ChronosHostContext : ApplicationContext
                         ultralightRoot = _settings.UltralightRoot,
                         noTray = true,
                         config,
-                        themeId = _activeThemeId,
-                        themeGeneration = _activeThemeGeneration == 0 ? (long?)null : _activeThemeGeneration
+                        themeId = startupThemeId ?? _activeThemeId,
+                        themeGeneration = startupThemeGeneration ?? (_activeThemeGeneration == 0 ? (long?)null : _activeThemeGeneration)
                     },
                     TimeSpan.FromSeconds(30))
                 .GetAwaiter()
@@ -648,9 +651,11 @@ internal sealed class ChronosHostContext : ApplicationContext
         catch (InvalidOperationException) { }
     }
 
-    private void OnRendererExited()
+    private void OnRendererExited(RendererSession exitedRenderer)
     {
         if (_rendererStarting)
+            return;
+        if (!ReferenceEquals(_renderer, exitedRenderer))
             return;
         RequestRendererUnavailable("Aether process exited.");
     }

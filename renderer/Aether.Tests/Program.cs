@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text;
 using System.Text.Json;
 using Aether;
 using KhaosShell.Contracts;
@@ -35,7 +36,12 @@ internal static class Program
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
             (nameof(CommandProtocolRoundTrips), CommandProtocolRoundTrips)
+            ,(nameof(CommandProtocolRejectsOversizedFrame), CommandProtocolRejectsOversizedFrame)
             ,(nameof(ControlProtocolRoundTrips), ControlProtocolRoundTrips)
+            ,(nameof(ControlProtocolAcceptsUnmatchedError), ControlProtocolAcceptsUnmatchedError)
+            ,(nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames)
+            ,(nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame)
+            ,(nameof(BackendQueueReportsOverflowPerBurst), BackendQueueReportsOverflowPerBurst)
             ,(nameof(LoggingPolicyParsesAndBounds), LoggingPolicyParsesAndBounds)
             ,(nameof(LoggingPolicyRejectsInvalid), LoggingPolicyRejectsInvalid)
             ,(nameof(LoggerUsesConsoleWithoutController), LoggerUsesConsoleWithoutController)
@@ -350,6 +356,56 @@ internal static class Program
         string eventJson = ControlPipeCodec.SerializeEvent("window.changed", new { id = "widget-1" });
         AssertTrue(ControlPipeCodec.TryParseEvent(eventJson, out ControlEvent? controlEvent));
         AssertEqual("window.changed", controlEvent!.Name);
+    }
+
+    private static void CommandProtocolRejectsOversizedFrame()
+    {
+        AssertFalse(RendererCommandCodec.TryParse(
+            new string('x', RendererCommandCodec.MaxFrameBytes + 1),
+            out _));
+    }
+
+    private static void ControlProtocolAcceptsUnmatchedError()
+    {
+        string error = "{\"id\":null,\"status\":400,\"error\":{\"code\":\"bad\",\"message\":\"invalid request\"}}";
+        AssertTrue(ControlPipeCodec.TryParseResponse(error, out ControlResponse? response));
+        AssertEqual<string?>(null, response!.Id);
+        AssertFalse(ControlPipeCodec.TryParseResponse("{\"id\":null,\"status\":200}", out _));
+    }
+
+    private static void BoundedReaderPreservesFrames()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("first\r\nsecond\n"));
+        var reader = new BoundedLineReader(stream);
+        BoundedLine first = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine second = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine end = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        AssertEqual("first", first.Text);
+        AssertEqual("second", second.Text);
+        AssertTrue(end.EndOfStream);
+    }
+
+    private static void BoundedReaderRejectsOversizedFrame()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("123456\nok\n"));
+        var reader = new BoundedLineReader(stream);
+        BoundedLine oversized = reader.ReadAsync(5, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine next = reader.ReadAsync(5, CancellationToken.None).GetAwaiter().GetResult();
+        AssertTrue(oversized.TooLarge);
+        AssertEqual("ok", next.Text);
+    }
+
+    private static void BackendQueueReportsOverflowPerBurst()
+    {
+        var queue = new BackendEventQueue();
+        int overflows = 0;
+        for (int index = 0; index < 257; index++)
+            queue.Enqueue(new BackendEvent("stream.data", "stream", "json", null), _ => overflows++);
+        AssertEqual(1, overflows);
+        queue.Drain();
+        for (int index = 0; index < 257; index++)
+            queue.Enqueue(new BackendEvent("stream.data", "stream", "json", null), _ => overflows++);
+        AssertEqual(2, overflows);
     }
 
     private static void LoggingPolicyParsesAndBounds()

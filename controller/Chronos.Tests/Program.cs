@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using Chronos;
 
 namespace Chronos.Tests;
@@ -16,6 +17,9 @@ internal static class Program
             (nameof(OptionsRejectsConflictingStartupOverrides), OptionsRejectsConflictingStartupOverrides),
             (nameof(ControlCodecRoundTrips), ControlCodecRoundTrips),
             (nameof(ControlCodecRejectsOversizedFrame), ControlCodecRejectsOversizedFrame),
+            (nameof(ControlCodecAcceptsUnmatchedError), ControlCodecAcceptsUnmatchedError),
+            (nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames),
+            (nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame),
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
@@ -104,6 +108,40 @@ internal static class Program
         string line = new string('x', ControlCodec.MaxFrameBytes + 1);
         AssertFalse(ControlCodec.TryParseRequest(line, out _, out ControlError? error, out _));
         AssertEqual("frame_too_large", error!.Code);
+    }
+
+    private static void ControlCodecAcceptsUnmatchedError()
+    {
+        string error = "{\"id\":null,\"status\":400,\"error\":{\"code\":\"bad\",\"message\":\"invalid request\"}}";
+        AssertTrue(ControlCodec.TryParseResponse(error, out ControlResponse? response));
+        AssertEqual<string?>(null, response!.Id);
+        AssertFalse(ControlCodec.TryParseResponse("{\"id\":null,\"status\":200}", out _));
+
+        string invalidId = "{\"id\":\"not-a-uuid\",\"method\":\"GET\",\"path\":\"/v1/pipes\"}";
+        AssertFalse(ControlCodec.TryParseRequest(invalidId, out _, out _, out string? requestId));
+        AssertEqual<string?>(null, requestId);
+    }
+
+    private static void BoundedReaderPreservesFrames()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("first\r\nsecond\n"));
+        var reader = new BoundedLineReader(stream);
+        BoundedLine first = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine second = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine end = reader.ReadAsync(64, CancellationToken.None).GetAwaiter().GetResult();
+        AssertEqual("first", first.Text);
+        AssertEqual("second", second.Text);
+        AssertTrue(end.EndOfStream);
+    }
+
+    private static void BoundedReaderRejectsOversizedFrame()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("123456\nok\n"));
+        var reader = new BoundedLineReader(stream);
+        BoundedLine oversized = reader.ReadAsync(5, CancellationToken.None).GetAwaiter().GetResult();
+        BoundedLine next = reader.ReadAsync(5, CancellationToken.None).GetAwaiter().GetResult();
+        AssertTrue(oversized.TooLarge);
+        AssertEqual("ok", next.Text);
     }
 
     private static void RendererCommandsStayUnavailableWithoutRenderer()

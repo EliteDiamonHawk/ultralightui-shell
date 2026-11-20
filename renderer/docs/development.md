@@ -7,6 +7,7 @@
 - Ultralight SDK `2.0.0-beta.2`.
 
 The project targets `net9.0-windows`, x64, and WinForms. Run the scripts from `renderer/`.
+The repository `global.json` selects the installed .NET 9 SDK feature band.
 
 ## SDK layout
 
@@ -51,6 +52,7 @@ Run from `renderer/`:
 ```
 
 The scripts use `Release` for build/publish and `Debug` for run/test. Extra arguments go to `dotnet` or Aether as the script requires.
+The test script disables native Ultralight inputs by default. Pass `-IncludeUltralight` when the SDK is installed and native test startup needs coverage.
 
 ## Test style
 
@@ -62,3 +64,5 @@ Before submitting changes:
 2. Run a release build with the SDK available.
 3. If native behavior changed, test one and multiple monitors, including mixed DPI where available.
 4. Exercise menu show/hide, ID-based hide/show, pause/resume, status, reload, and exit commands.
+
+Pipe changes also require oversized-frame, peer-EOF, pending-request, and reconnect checks in the executable test harness.

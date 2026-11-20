@@ -23,6 +23,8 @@ Aether swaps its disposable theme runtime while keeping its process, inherited
 control channel, and command server alive. Unloading returns Aether to its
 idle state.
 
+If Aether exits, Chronos ignores late exit events from older sessions. A theme applied after renderer loss starts Aether with its new theme ID and generation.
+
 ## Ownership
 
 | Component | Owns |

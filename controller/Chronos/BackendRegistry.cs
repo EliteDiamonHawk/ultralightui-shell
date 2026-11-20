@@ -140,8 +140,15 @@ internal sealed class BackendManager : IDisposable
             if (!_registry.Definitions.TryGetValue(backendId, out BackendDefinition? definition))
                 throw new BackendException(404, "backend_not_configured", "Backend is not configured.");
 
-            if (!_runtimes.TryGetValue(backendId, out BackendRuntime? runtime) || runtime.Process.HasExited)
+            if (!_runtimes.TryGetValue(backendId, out BackendRuntime? runtime))
             {
+                runtime = StartRuntime(backendId, definition);
+                _runtimes[backendId] = runtime;
+            }
+            else if (runtime.Process.HasExited)
+            {
+                StopRuntime(runtime);
+                _runtimes.Remove(backendId);
                 runtime = StartRuntime(backendId, definition);
                 _runtimes[backendId] = runtime;
             }
@@ -250,7 +257,7 @@ internal sealed class BackendManager : IDisposable
             process.Dispose();
             throw;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)
+        catch (Exception ex) when (ex is ArgumentException or DirectoryNotFoundException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)
         {
             process.Dispose();
             throw new BackendException(500, "backend_start_failed", $"Backend process could not start: {ex.Message}");

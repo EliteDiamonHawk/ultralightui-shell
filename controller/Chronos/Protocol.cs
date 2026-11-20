@@ -69,16 +69,25 @@ internal static class ControlCodec
                 return false;
 
             string? id = null;
-            if (root.TryGetProperty("id", out JsonElement idElement) && idElement.ValueKind == JsonValueKind.String)
-                id = idElement.GetString();
-            if (id == null || !Guid.TryParse(id, out _))
-                return false;
+            if (root.TryGetProperty("id", out JsonElement idElement))
+            {
+                if (idElement.ValueKind == JsonValueKind.String)
+                {
+                    id = idElement.GetString();
+                    if (!Guid.TryParse(id, out _))
+                        return false;
+                }
+                else if (idElement.ValueKind != JsonValueKind.Null)
+                    return false;
+            }
 
             JsonElement? body = root.TryGetProperty("body", out JsonElement bodyElement) &&
                                 bodyElement.ValueKind != JsonValueKind.Null
                 ? bodyElement.Clone()
                 : null;
             ControlError? error = ParseError(root);
+            if (id == null && (status < 400 || error == null))
+                return false;
             response = new ControlResponse(id, status, body, error);
             return true;
         }
@@ -152,7 +161,11 @@ internal static class ControlCodec
             }
 
             if (root.TryGetProperty("id", out JsonElement idElement) && idElement.ValueKind == JsonValueKind.String)
-                requestId = idElement.GetString();
+            {
+                string? candidateId = idElement.GetString();
+                if (Guid.TryParse(candidateId, out _))
+                    requestId = candidateId;
+            }
             string id = RequiredString(root, "id");
             if (!Guid.TryParse(id, out _))
                 throw new ProtocolException("request_id_invalid", "Request id must be a UUID.");

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
 
@@ -16,6 +17,8 @@ public sealed class RendererHostContext : ApplicationContext
     private readonly RendererLogger _logger;
     private BackendConnectionManager? _backendManager;
     private readonly object _sync = new();
+    // Config swaps must not overlap across control and command pipes.
+    private readonly object _configurationSync = new();
     private readonly Dictionary<string, RuntimeGroupHost> _groups = new(StringComparer.Ordinal);
     private ControlPipeChannel? _controlChannel;
     private IReadOnlyList<string> _configPaths;
@@ -246,6 +249,20 @@ public sealed class RendererHostContext : ApplicationContext
         string? configJson = null,
         IReadOnlyList<string>? sourcePaths = null)
     {
+        lock (_configurationSync)
+        {
+            return ApplyConfigurationCore(paths, themeId, activationId, generation, configJson, sourcePaths);
+        }
+    }
+
+    private string ApplyConfigurationCore(
+        IReadOnlyList<string> paths,
+        Guid? themeId = null,
+        Guid? activationId = null,
+        long? generation = null,
+        string? configJson = null,
+        IReadOnlyList<string>? sourcePaths = null)
+    {
         if (paths.Count > 0 && !string.IsNullOrWhiteSpace(configJson))
             return "ERR Configuration paths and inline JSON cannot be combined.";
         if (paths.Count == 0 && string.IsNullOrWhiteSpace(configJson))
@@ -254,7 +271,7 @@ public sealed class RendererHostContext : ApplicationContext
         RendererConfiguration candidate;
         if (!string.IsNullOrWhiteSpace(configJson))
         {
-            if (configJson.Length > ControlPipeCodec.MaxFrameBytes)
+            if (Encoding.UTF8.GetByteCount(configJson) > ControlPipeCodec.MaxFrameBytes)
                 return "ERR Inline configuration exceeds 1 MiB.";
             using JsonDocument document = JsonDocument.Parse(configJson);
             candidate = RendererConfiguration.LoadJson(document.RootElement, "inline");
@@ -343,15 +360,18 @@ public sealed class RendererHostContext : ApplicationContext
 
     private string ReloadConfiguration(RendererCommand command)
     {
-        if (_configPaths.Count == 0)
-            return "ERR No active configuration.";
-        if (command.All)
-            return ApplyConfiguration(_configPaths, _themeId, _themeActivationId, _themeGeneration);
+        lock (_configurationSync)
+        {
+            if (_configPaths.Count == 0)
+                return "ERR No active configuration.";
+            if (command.All)
+                return ApplyConfigurationCore(_configPaths, _themeId, _themeActivationId, _themeGeneration);
 
-        IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
-        foreach (RuntimeGroupHost group in targets)
-            group.InvokeReload();
-        return $"OK reloaded {targets.Count} group(s)";
+            IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
+            foreach (RuntimeGroupHost group in targets)
+                group.InvokeReload();
+            return $"OK reloaded {targets.Count} group(s)";
+        }
     }
 
     private string SetMenuVisibility(bool visible)
@@ -576,6 +596,30 @@ public sealed class RendererHostContext : ApplicationContext
     }
 
     private ControlResponse ApplyManagedConfiguration(
+        string? ultralightRoot,
+        bool noTray,
+        IReadOnlyList<string> configPaths,
+        JsonElement? configDocument,
+        IReadOnlyList<string> sourcePaths,
+        Guid? themeId,
+        long? themeGeneration,
+        string requestId)
+    {
+        lock (_configurationSync)
+        {
+            return ApplyManagedConfigurationCore(
+                ultralightRoot,
+                noTray,
+                configPaths,
+                configDocument,
+                sourcePaths,
+                themeId,
+                themeGeneration,
+                requestId);
+        }
+    }
+
+    private ControlResponse ApplyManagedConfigurationCore(
         string? ultralightRoot,
         bool noTray,
         IReadOnlyList<string> configPaths,

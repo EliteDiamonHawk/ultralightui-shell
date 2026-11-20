@@ -9,7 +9,7 @@ internal sealed class ControlChannel : IDisposable
 {
     private readonly Stream _readStream;
     private readonly Stream _writeStream;
-    private readonly StreamReader _reader;
+    private readonly BoundedLineReader _reader;
     private readonly StreamWriter _writer;
     private readonly Func<ControlRequest, Task<ControlResponse>> _handler;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -26,7 +26,7 @@ internal sealed class ControlChannel : IDisposable
     {
         _readStream = readStream;
         _writeStream = writeStream;
-        _reader = new StreamReader(readStream, new UTF8Encoding(false, true), false, 4096, leaveOpen: true);
+        _reader = new BoundedLineReader(readStream);
         _writer = new StreamWriter(writeStream, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
         _handler = handler;
     }
@@ -78,7 +78,6 @@ internal sealed class ControlChannel : IDisposable
         try { _readStream.Dispose(); } catch { }
         try { _writeStream.Dispose(); } catch { }
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-        DisposeQuietly(_reader);
         DisposeQuietly(_writer);
         DisposeQuietly(_writeLock);
         DisposeQuietly(_shutdown);
@@ -96,9 +95,17 @@ internal sealed class ControlChannel : IDisposable
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                string? line = await _reader.ReadLineAsync(_shutdown.Token).ConfigureAwait(false);
-                if (line == null)
+                BoundedLine frame = await _reader.ReadAsync(ControlCodec.MaxFrameBytes, _shutdown.Token).ConfigureAwait(false);
+                if (frame.EndOfStream)
                     break;
+                if (frame.TooLarge)
+                {
+                    await WriteAsync(ControlCodec.SerializeResponse(
+                        ControlResponse.Failure(null, 400, "frame_too_large", "Control frame exceeds 1 MiB.")), _shutdown.Token).ConfigureAwait(false);
+                    continue;
+                }
+
+                string line = frame.Text!;
 
                 if (ControlCodec.TryParseResponse(line, out ControlResponse? response))
                 {

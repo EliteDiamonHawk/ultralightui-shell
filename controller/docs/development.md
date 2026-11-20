@@ -1,6 +1,6 @@
 # Development
 
-Requirements: Windows 10/11 x64 and the .NET 9 SDK.
+Requirements: Windows 10/11 x64 and the .NET 9 SDK. The repository `global.json` selects the .NET 9 SDK feature band used by both projects.
 
 From `controller/`:
 
@@ -19,3 +19,5 @@ Unit tests avoid native Aether and hook installation. Windows integration checks
 should cover inherited control startup, `Aether.Commands`, theme restoration,
 tray suppression, backend grant failure, and Windows Key Override shutdown
 restoration.
+
+Pipe changes require tests for frame limits, invalid IDs, peer EOF, pending-request failure, and reconnect behavior.

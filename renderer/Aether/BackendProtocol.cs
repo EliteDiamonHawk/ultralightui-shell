@@ -80,6 +80,7 @@ internal sealed class BackendEventQueue
 
     public void Enqueue(BackendEvent value, Action<BackendEvent>? overflow)
     {
+        BackendEvent? overflowEvent = null;
         lock (_events)
         {
             if (_events.Count >= Capacity)
@@ -88,11 +89,13 @@ internal sealed class BackendEventQueue
                 if (!_overflowReported)
                 {
                     _overflowReported = true;
-                    overflow?.Invoke(new BackendEvent("stream.overflow", value.StreamId, value.Type, null));
+                    overflowEvent = new BackendEvent("stream.overflow", value.StreamId, value.Type, null);
                 }
             }
             _events.Enqueue(value);
         }
+        if (overflowEvent != null)
+            overflow?.Invoke(overflowEvent);
     }
 
     public BackendEvent[] Drain()
@@ -101,8 +104,7 @@ internal sealed class BackendEventQueue
         {
             BackendEvent[] result = _events.ToArray();
             _events.Clear();
-            if (_events.Count < Capacity)
-                _overflowReported = false;
+            _overflowReported = false;
             return result;
         }
     }

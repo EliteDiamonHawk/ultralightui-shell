@@ -23,13 +23,21 @@ internal sealed class AetherCommandClient
         {
             using var pipe = new NamedPipeClientStream(_machine, PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
             await pipe.ConnectAsync(timeoutSource.Token).ConfigureAwait(false);
-            using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
             await writer.WriteLineAsync(RendererCommandCodec.Serialize(command).AsMemory(), timeoutSource.Token).ConfigureAwait(false);
-            string response = await reader.ReadLineAsync(timeoutSource.Token).ConfigureAwait(false) ?? "ERR No response from Aether.";
+            BoundedLine frame = await new BoundedLineReader(pipe).ReadAsync(
+                RendererCommandCodec.MaxFrameBytes,
+                timeoutSource.Token).ConfigureAwait(false);
+            string response = frame.EndOfStream
+                ? "ERR No response from Aether."
+                : frame.TooLarge
+                    ? "ERR Aether response exceeded 1 MiB."
+                    : frame.Text ?? "ERR No response from Aether.";
             return response.StartsWith("ERR ", StringComparison.Ordinal)
                 ? new AetherCommandResult(false, response, response[4..])
-                : new AetherCommandResult(true, response, response.StartsWith("OK ", StringComparison.Ordinal) ? response[3..] : response);
+                : response.StartsWith("OK ", StringComparison.Ordinal)
+                    ? new AetherCommandResult(true, response, response[3..])
+                    : new AetherCommandResult(false, $"ERR Invalid response from Aether: {response}", response, true);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

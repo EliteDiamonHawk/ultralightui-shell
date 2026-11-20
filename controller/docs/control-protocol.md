@@ -13,6 +13,8 @@ Each frame contains one object and may not exceed 1 MiB. A request uses a UUID
 `/v1/` path. A response repeats the ID and contains either `body` or a
 structured `error`. Requests may complete out of order.
 
+Readers enforce the frame limit while consuming bytes. Oversized frames receive a `400` error with a null ID. Invalid request IDs also produce null-ID errors, so clients do not wait for an unusable correlation ID. Peer EOF fails pending requests and marks the session disconnected.
+
 Managed startup is transport-first. Aether parses only the two handle options,
 acquires its single-instance lease, starts this channel, and emits
 `renderer.transport.ready`. Chronos then sends `POST /v1/renderer/configure`.
@@ -55,3 +57,5 @@ different content returns `409 request_id_reused`.
 
 The existing Aether named pipe remains the renderer's direct runtime command
 transport. Chronos does not expose a second command pipe.
+
+Backend pipe EOF fails pending page requests and removes the stale connection. The next request reconnects through the current grant. Chronos disposes an exited backend before launching its replacement.

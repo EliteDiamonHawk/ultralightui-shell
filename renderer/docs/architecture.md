@@ -19,6 +19,8 @@ Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a bac
 
 Paused groups reduce their timer interval to 1000 ms and stop pumping Ultralight.
 
+Configuration swaps use one host lock. Control-pipe and command-pipe requests cannot rotate theme scope at the same time.
+
 ## Window types
 
 `RendererConfiguration.ResolveWindowSpecs` converts profiles into `RendererWindowSpec` values:
@@ -38,6 +40,8 @@ The host watches monitor topology and foreground-window changes. Fullscreen wind
 ## Reload behavior
 
 Reload parses and resolves a candidate configuration before it changes active windows. If validation fails, Aether keeps the current configuration. Applying a theme creates a fresh logical runtime inside the same Aether process, disposes prior windows and bridge instances, rotates backend scope, and leaves the inherited control channel and command pipe alive. Configuration changes emit the new theme activation generation so Chronos can reject stale events.
+
+Control EOF marks Aether unavailable to Chronos and fails pending requests. Backend EOF closes that backend session; the next page request creates a fresh connection.
 
 ## Native boundary
 

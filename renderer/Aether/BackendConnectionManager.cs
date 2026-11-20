@@ -11,6 +11,7 @@ internal sealed class BackendConnectionManager : IDisposable
 {
     private readonly ControlPipeChannel? _control;
     private readonly ConcurrentDictionary<string, BackendPipeConnection> _connections = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JsonSchemaDescriptor> _schemas = new(StringComparer.Ordinal);
     private readonly string _sid = WindowsIdentityHelper.GetCurrentSid();
     private string _sessionId = Guid.NewGuid().ToString("D");
@@ -34,40 +35,56 @@ internal sealed class BackendConnectionManager : IDisposable
         if (_control == null || _control.State != "connected")
             throw new InvalidOperationException("Control channel is unavailable.");
 
-        ControlResponse response = await _control.SendAsync(
-            "POST",
-            $"/v1/backends/{Uri.EscapeDataString(backendId)}/connect",
-            new
-            {
-                protocol = 1,
-                renderer = new
+        SemaphoreSlim gate = _connectionGates.GetOrAdd(backendId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_connections.TryGetValue(backendId, out existing) && existing.State == "connected")
+                return existing;
+
+            ControlResponse response = await _control.SendAsync(
+                "POST",
+                $"/v1/backends/{Uri.EscapeDataString(backendId)}/connect",
+                new
                 {
-                    pid = Environment.ProcessId,
-                    sid = _sid,
-                    sessionId = _sessionId,
-                    themeId = _themeId,
-                    themeGeneration = _themeGeneration
-                }
-            },
-            TimeSpan.FromSeconds(30),
-            cancellationToken).ConfigureAwait(false);
+                    protocol = 1,
+                    renderer = new
+                    {
+                        pid = Environment.ProcessId,
+                        sid = _sid,
+                        sessionId = _sessionId,
+                        themeId = _themeId,
+                        themeGeneration = _themeGeneration
+                    }
+                },
+                TimeSpan.FromSeconds(30),
+                cancellationToken).ConfigureAwait(false);
 
-        if (response.Error != null || response.Status >= 300)
-            throw new InvalidOperationException(response.Error?.Message ?? $"Backend connection failed with status {response.Status}.");
-        if (response.Body is not JsonElement body ||
-            !body.TryGetProperty("protocol", out JsonElement protocol) || protocol.ValueKind != JsonValueKind.Number || !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
-            !body.TryGetProperty("backendId", out JsonElement returnedId) || returnedId.GetString() != backendId ||
-            !body.TryGetProperty("expiresAt", out JsonElement expiry) || !DateTimeOffset.TryParse(expiry.GetString(), out DateTimeOffset expiresAt) || expiresAt <= DateTimeOffset.UtcNow ||
-            !body.TryGetProperty("pipeName", out JsonElement pipeNameElement))
-            throw new InvalidOperationException("Control returned no backend pipe name.");
+            if (response.Error != null || response.Status >= 300)
+                throw new InvalidOperationException(response.Error?.Message ?? $"Backend connection failed with status {response.Status}.");
+            if (response.Body is not JsonElement body ||
+                !body.TryGetProperty("protocol", out JsonElement protocol) || protocol.ValueKind != JsonValueKind.Number || !protocol.TryGetInt32(out int protocolVersion) || protocolVersion != 1 ||
+                !body.TryGetProperty("backendId", out JsonElement returnedId) || returnedId.GetString() != backendId ||
+                !body.TryGetProperty("expiresAt", out JsonElement expiry) || !DateTimeOffset.TryParse(expiry.GetString(), out DateTimeOffset expiresAt) || expiresAt <= DateTimeOffset.UtcNow ||
+                !body.TryGetProperty("pipeName", out JsonElement pipeNameElement))
+                throw new InvalidOperationException("Control returned no backend pipe name.");
 
-        string pipeName = pipeNameElement.GetString() ?? "";
-        var connection = await BackendPipeConnection.ConnectAsync(backendId, pipeName, cancellationToken).ConfigureAwait(false);
-        connection.EventReceived += OnBackendEvent;
-        if (_connections.TryGetValue(backendId, out BackendPipeConnection? previous))
-            previous.Dispose();
-        _connections[backendId] = connection;
-        return connection;
+            string pipeName = pipeNameElement.GetString() ?? "";
+            BackendPipeConnection connection = await BackendPipeConnection.ConnectAsync(backendId, pipeName, cancellationToken).ConfigureAwait(false);
+            if (connection.State != "connected")
+            {
+                connection.Dispose();
+                throw new IOException("Backend pipe disconnected during setup.");
+            }
+            connection.EventReceived += OnBackendEvent;
+            connection.Disconnected += () => OnBackendDisconnected(backendId, connection);
+            _connections[backendId] = connection;
+            return connection;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task<ControlResponse> RequestAsync(string backendId, string method, string path, object? body, CancellationToken cancellationToken = default)
@@ -77,10 +94,9 @@ internal sealed class BackendConnectionManager : IDisposable
         {
             return await connection.SendAsync("POST", "/v1/request", new { method, path, body }, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (IsConnectionFailure(ex))
         {
-            _connections.TryRemove(new KeyValuePair<string, BackendPipeConnection>(backendId, connection));
-            connection.Dispose();
+            RemoveConnection(backendId, connection);
             throw;
         }
     }
@@ -90,24 +106,40 @@ internal sealed class BackendConnectionManager : IDisposable
         if (type != "json" || string.IsNullOrWhiteSpace(dataId))
             throw new InvalidOperationException("Only non-empty json streams are supported.");
         BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
-        ControlResponse response = await connection.SendAsync("POST", "/v1/streams", new { dataId, type }, cancellationToken).ConfigureAwait(false);
-        if (response.Error != null || response.Status >= 300 || response.Body is not JsonElement body ||
-            !body.TryGetProperty("streamId", out JsonElement streamId) || streamId.ValueKind != JsonValueKind.String ||
-            !body.TryGetProperty("type", out JsonElement returnedType) || returnedType.GetString() != type ||
-            !body.TryGetProperty("schema", out JsonElement schema))
-            throw new InvalidOperationException(response.Error?.Message ?? "Backend returned an invalid stream descriptor.");
-        BackendStreamDescriptor descriptor = new(streamId.GetString()!, type, JsonSchemaDescriptor.Parse(schema));
-        _schemas[descriptor.StreamId] = descriptor.Schema;
-        return descriptor;
+        try
+        {
+            ControlResponse response = await connection.SendAsync("POST", "/v1/streams", new { dataId, type }, cancellationToken).ConfigureAwait(false);
+            if (response.Error != null || response.Status >= 300 || response.Body is not JsonElement body ||
+                !body.TryGetProperty("streamId", out JsonElement streamId) || streamId.ValueKind != JsonValueKind.String ||
+                !body.TryGetProperty("type", out JsonElement returnedType) || returnedType.GetString() != type ||
+                !body.TryGetProperty("schema", out JsonElement schema))
+                throw new InvalidOperationException(response.Error?.Message ?? "Backend returned an invalid stream descriptor.");
+            BackendStreamDescriptor descriptor = new(streamId.GetString()!, type, JsonSchemaDescriptor.Parse(schema));
+            _schemas[descriptor.StreamId] = descriptor.Schema;
+            return descriptor;
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex))
+        {
+            RemoveConnection(backendId, connection);
+            throw;
+        }
     }
 
     public async Task CloseStreamAsync(string backendId, string streamId, CancellationToken cancellationToken = default)
     {
         BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
-        ControlResponse response = await connection.SendAsync("DELETE", $"/v1/streams/{Uri.EscapeDataString(streamId)}", null, cancellationToken).ConfigureAwait(false);
-        if (response.Error != null || response.Status >= 300)
-            throw new InvalidOperationException(response.Error?.Message ?? "Backend stream close failed.");
-        _schemas.TryRemove(streamId, out _);
+        try
+        {
+            ControlResponse response = await connection.SendAsync("DELETE", $"/v1/streams/{Uri.EscapeDataString(streamId)}", null, cancellationToken).ConfigureAwait(false);
+            if (response.Error != null || response.Status >= 300)
+                throw new InvalidOperationException(response.Error?.Message ?? "Backend stream close failed.");
+            _schemas.TryRemove(streamId, out _);
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex))
+        {
+            RemoveConnection(backendId, connection);
+            throw;
+        }
     }
 
     public IReadOnlyList<BackendPipeSnapshot> Snapshot() => _connections.Values
@@ -170,7 +202,18 @@ internal sealed class BackendConnectionManager : IDisposable
             if (_connections.TryRemove(pair.Key, out BackendPipeConnection? connection))
                 connection.Dispose();
         }
+        _schemas.Clear();
     }
+
+    private void OnBackendDisconnected(string backendId, BackendPipeConnection connection) => RemoveConnection(backendId, connection);
+
+    private void RemoveConnection(string backendId, BackendPipeConnection connection)
+    {
+        if (_connections.TryRemove(new KeyValuePair<string, BackendPipeConnection>(backendId, connection)))
+            connection.Dispose();
+    }
+
+    private static bool IsConnectionFailure(Exception exception) => exception is IOException or InvalidDataException or TimeoutException or ObjectDisposedException;
 
     private void OnBackendEvent(BackendEvent value)
     {
@@ -194,27 +237,34 @@ internal sealed class BackendConnectionManager : IDisposable
 internal sealed class BackendPipeConnection : IDisposable
 {
     private readonly NamedPipeClientStream _pipe;
-    private readonly StreamReader _reader;
+    private readonly BoundedLineReader _reader;
     private readonly StreamWriter _writer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<ControlResponse>> _pending = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _readerTask;
+    private int _state;
 
     private BackendPipeConnection(string backendId, NamedPipeClientStream pipe)
     {
         BackendId = backendId;
         _pipe = pipe;
-        _reader = new StreamReader(pipe, new UTF8Encoding(false, true), false, 4096, leaveOpen: true);
+        _reader = new BoundedLineReader(pipe);
         _writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
-        State = "connected";
+        _state = 1;
         _readerTask = Task.Run(ReadAsync);
     }
 
     public string BackendId { get; }
-    public string State { get; private set; }
+    public string State => Volatile.Read(ref _state) switch
+    {
+        1 => "connected",
+        2 => "disconnected",
+        _ => "closed"
+    };
     public int QueueDepth => _pending.Count;
     public event Action<BackendEvent>? EventReceived;
+    public event Action? Disconnected;
 
     public static async Task<BackendPipeConnection> ConnectAsync(string backendId, string pipeName, CancellationToken cancellationToken)
     {
@@ -226,8 +276,16 @@ internal sealed class BackendPipeConnection : IDisposable
             throw new InvalidOperationException("Control returned an invalid backend pipe name.");
 
         var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync(5000, cancellationToken).ConfigureAwait(false);
-        return new BackendPipeConnection(backendId, pipe);
+        try
+        {
+            await pipe.ConnectAsync(5000, cancellationToken).ConfigureAwait(false);
+            return new BackendPipeConnection(backendId, pipe);
+        }
+        catch
+        {
+            pipe.Dispose();
+            throw;
+        }
     }
 
     public async Task<ControlResponse> SendAsync(string method, string path, object? body, CancellationToken cancellationToken)
@@ -251,15 +309,16 @@ internal sealed class BackendPipeConnection : IDisposable
 
     public void Dispose()
     {
-        if (State == "closed")
+        if (Interlocked.Exchange(ref _state, 3) == 3)
             return;
-        State = "closed";
         _shutdown.Cancel();
         foreach (TaskCompletionSource<ControlResponse> completion in _pending.Values)
             completion.TrySetException(new IOException("Backend pipe closed."));
         try { _pipe.Dispose(); } catch { }
-        try { _readerTask.Wait(TimeSpan.FromSeconds(1)); } catch { }
-        _reader.Dispose();
+        if (Task.CurrentId != _readerTask.Id)
+        {
+            try { _readerTask.Wait(TimeSpan.FromSeconds(1)); } catch { }
+        }
         _writer.Dispose();
         _writeLock.Dispose();
         _shutdown.Dispose();
@@ -271,9 +330,14 @@ internal sealed class BackendPipeConnection : IDisposable
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                string? line = await _reader.ReadLineAsync(_shutdown.Token).ConfigureAwait(false);
-                if (line == null)
+                BoundedLine frame = await _reader.ReadAsync(
+                    ControlPipeCodec.MaxFrameBytes,
+                    _shutdown.Token).ConfigureAwait(false);
+                if (frame.EndOfStream)
                     break;
+                if (frame.TooLarge)
+                    throw new InvalidDataException("Backend frame exceeds 1 MiB.");
+                string line = frame.Text!;
                 if (!ControlPipeCodec.TryParseResponse(line, out ControlResponse? response) || response?.Id == null)
                 {
                     if (TryParseEvent(line, out BackendEvent? backendEvent))
@@ -285,12 +349,24 @@ internal sealed class BackendPipeConnection : IDisposable
             }
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
-        catch (Exception ex)
+        catch (Exception ex) when (!_shutdown.IsCancellationRequested)
         {
-            State = "disconnected";
-            foreach (TaskCompletionSource<ControlResponse> completion in _pending.Values)
-                completion.TrySetException(ex);
+            MarkDisconnected(ex);
         }
+        finally
+        {
+            if (!_shutdown.IsCancellationRequested)
+                MarkDisconnected(new IOException("Backend pipe disconnected."));
+        }
+    }
+
+    private void MarkDisconnected(Exception exception)
+    {
+        if (Interlocked.CompareExchange(ref _state, 2, 1) != 1)
+            return;
+        foreach (TaskCompletionSource<ControlResponse> completion in _pending.Values)
+            completion.TrySetException(exception);
+        Disconnected?.Invoke();
     }
 
     private static bool TryParseEvent(string line, out BackendEvent? backendEvent)

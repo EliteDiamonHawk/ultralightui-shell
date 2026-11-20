@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -46,6 +47,7 @@ public sealed record RendererCommand(
 public static class RendererCommandCodec
 {
     public const int Version = 1;
+    public const int MaxFrameBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -59,6 +61,12 @@ public static class RendererCommandCodec
 
     public static bool TryParse(string text, out RendererCommand? command)
     {
+        if (Encoding.UTF8.GetByteCount(text) > MaxFrameBytes)
+        {
+            command = null;
+            return false;
+        }
+
         try
         {
             using JsonDocument document = JsonDocument.Parse(text);

@@ -32,14 +32,17 @@ public sealed class CommandPipeServer : IDisposable
                     PipeDirection.InOut,
                     1,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await server.WaitForConnectionAsync(_shutdown.Token).ConfigureAwait(false);
-                using var reader = new StreamReader(server, Encoding.UTF8, false, 4096, leaveOpen: true);
                 using var writer = new StreamWriter(server, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
-                string? line = await reader.ReadLineAsync(_shutdown.Token).ConfigureAwait(false);
-                if (!RendererCommandProtocol.TryParse(line ?? "", out RendererCommand? command) || command == null)
+                BoundedLine frame = await new BoundedLineReader(server).ReadAsync(
+                    RendererCommandCodec.MaxFrameBytes,
+                    _shutdown.Token).ConfigureAwait(false);
+                if (frame.EndOfStream || frame.TooLarge ||
+                    !RendererCommandProtocol.TryParse(frame.Text ?? "", out RendererCommand? command) || command == null)
                 {
-                    await writer.WriteLineAsync("ERR Invalid runtime command.").ConfigureAwait(false);
+                    string message = frame.TooLarge ? "ERR Command frame exceeds 1 MiB." : "ERR Invalid runtime command.";
+                    await writer.WriteLineAsync(message).ConfigureAwait(false);
                     continue;
                 }
 
@@ -54,12 +57,12 @@ public sealed class CommandPipeServer : IDisposable
             }
             catch (IOException) when (!_shutdown.IsCancellationRequested)
             {
-                Thread.Sleep(50);
+                await Task.Delay(50, _shutdown.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (!_shutdown.IsCancellationRequested)
             {
                 Console.Error.WriteLine($"[IPC] Command server failed: {ex.Message}");
-                Thread.Sleep(100);
+                await Task.Delay(100, _shutdown.Token).ConfigureAwait(false);
             }
         }
     }
@@ -81,23 +84,37 @@ public static class CommandPipeClient
         exitCode = 3;
         try
         {
-            using var pipe = new NamedPipeClientStream(".", RendererIpcNames.PipeName, PipeDirection.InOut);
+            using var pipe = new NamedPipeClientStream(".", RendererIpcNames.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
             pipe.Connect(250);
-            using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
             writer.WriteLine(RendererCommandProtocol.Serialize(command));
-            string response = reader.ReadLine() ?? "ERR No response from Aether.";
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            BoundedLine frame = new BoundedLineReader(pipe).ReadAsync(
+                RendererCommandCodec.MaxFrameBytes,
+                timeout.Token).GetAwaiter().GetResult();
+            string response = frame.EndOfStream
+                ? "ERR No response from Aether."
+                : frame.TooLarge
+                    ? "ERR Aether response exceeded 1 MiB."
+                    : frame.Text ?? "ERR No response from Aether.";
             if (response.StartsWith("ERR ", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"[Command] {response[4..]}");
                 exitCode = 3;
                 return true;
             }
+            if (!response.StartsWith("OK ", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine($"[Command] Invalid response from Aether: {response}");
+                exitCode = 3;
+                return true;
+            }
+
             Console.WriteLine(response);
             exitCode = 0;
             return true;
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or OperationCanceledException)
         {
             return false;
         }

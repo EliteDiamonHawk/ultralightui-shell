@@ -43,3 +43,5 @@ A failure stops the backend and returns a structured startup error. Chronos
 returns a five-minute grant to Aether, keeps the pipe name out of page
 JavaScript, and does not proxy backend payloads. Chronos revokes grants on
 DELETE, expiry, renderer disconnect, or shutdown.
+
+If a backend exits after startup, Chronos disposes its old process record before launching the next instance. Aether removes a disconnected backend pipe and reconnects on the next request.
