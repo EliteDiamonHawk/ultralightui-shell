@@ -12,8 +12,8 @@ Version-1 shape:
 {
   "schemaVersion": 1,
   "backends": {
-    "nyx": {
-      "executable": "C:\\Khaos\\Nyx.exe",
+    "example": {
+      "executable": "C:\\Khaos\\ExampleBackend.exe",
       "arguments": [],
       "workingDirectory": "C:\\Khaos",
       "environment": {}
@@ -31,11 +31,14 @@ name and launches the backend with:
 ```
 
 The backend must create the private named-pipe server with an ACL restricted to
-the current user SID and implement backend protocol 1. Before Chronos grants
-access, the backend must write one readiness JSON line to stdout:
+the current user SID when the host pipe stack supports it, and must implement
+backend protocol 1. If the host's .NET local client path is anonymous, use the
+fresh random pipe name as the capability and still verify the launch SID.
+Before Chronos grants access, the backend must write one readiness JSON line to
+stdout:
 
 ```json
-{"ready":true,"protocol":1,"backendId":"nyx","sid":"S-1-5-21-...","pipeName":"KhaosShell-Backend-..."}
+{"ready":true,"protocol":1,"backendId":"example","sid":"S-1-5-21-...","pipeName":"KhaosShell-Backend-..."}
 ```
 
 Chronos validates readiness, identity, SID, and pipe name within five seconds.

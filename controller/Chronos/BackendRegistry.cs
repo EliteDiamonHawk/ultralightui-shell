@@ -143,6 +143,12 @@ internal sealed class BackendManager : IDisposable
             if (!_runtimes.TryGetValue(backendId, out BackendRuntime? runtime))
             {
                 runtime = StartRuntime(backendId, definition);
+                if (runtime.Process.HasExited)
+                {
+                    int exitCode = runtime.Process.ExitCode;
+                    StopRuntime(runtime);
+                    throw new BackendException(500, "backend_start_failed", $"Backend exited after readiness with code {exitCode}.");
+                }
                 _runtimes[backendId] = runtime;
             }
             else if (runtime.Process.HasExited)
@@ -150,6 +156,12 @@ internal sealed class BackendManager : IDisposable
                 StopRuntime(runtime);
                 _runtimes.Remove(backendId);
                 runtime = StartRuntime(backendId, definition);
+                if (runtime.Process.HasExited)
+                {
+                    int exitCode = runtime.Process.ExitCode;
+                    StopRuntime(runtime);
+                    throw new BackendException(500, "backend_start_failed", $"Backend exited after readiness with code {exitCode}.");
+                }
                 _runtimes[backendId] = runtime;
             }
 
@@ -289,7 +301,11 @@ internal sealed class BackendManager : IDisposable
             StopRuntime(new BackendRuntime(backendId, pipeName, process));
             throw new BackendException(500, "backend_acl_invalid", "Backend readiness SID does not match current user.");
         }
-        return new BackendRuntime(backendId, pipeName, process);
+        var runtime = new BackendRuntime(backendId, pipeName, process);
+        process.Exited += (_, _) => OnRuntimeExited(runtime);
+        if (process.HasExited)
+            OnRuntimeExited(runtime);
+        return runtime;
     }
 
     private static BackendReadySignal ParseReadySignal(string? line, string backendId, string expectedPipeName)
@@ -331,6 +347,18 @@ internal sealed class BackendManager : IDisposable
             }
         }
         catch { }
+    }
+
+    private void OnRuntimeExited(BackendRuntime runtime)
+    {
+        lock (_sync)
+        {
+            if (_runtimes.TryGetValue(runtime.BackendId, out BackendRuntime? current) && ReferenceEquals(current, runtime))
+            {
+                _runtimes.Remove(runtime.BackendId);
+                try { runtime.Process.Dispose(); } catch { }
+            }
+        }
     }
 
     private void PruneExpiredLocked()

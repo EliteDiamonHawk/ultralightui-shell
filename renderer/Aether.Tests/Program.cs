@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Aether;
@@ -11,7 +12,7 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        var tests = new (string Name, Action Test)[]
+        var tests = new List<(string Name, Action Test)>
         {
             (nameof(OptionsParseStartupConfigs), OptionsParseStartupConfigs),
             (nameof(ManagedStartupDoesNotForwardConfig), ManagedStartupDoesNotForwardConfig),
@@ -50,6 +51,9 @@ internal static class Program
             ,(nameof(LoggerDisableFlushesBeforeDisabling), LoggerDisableFlushesBeforeDisabling)
         };
 
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Ultralight.dll")))
+            tests.Add((nameof(UltralightDataBindingAbi), UltralightDataBindingAbi));
+
         int failures = 0;
         foreach ((string name, Action test) in tests)
         {
@@ -65,7 +69,7 @@ internal static class Program
             }
         }
 
-        Console.WriteLine($"{tests.Length - failures}/{tests.Length} unit tests passed.");
+        Console.WriteLine($"{tests.Count - failures}/{tests.Count} unit tests passed.");
         return failures == 0 ? 0 : 1;
     }
 
@@ -475,6 +479,69 @@ internal static class Program
         AssertFalse(policy.Enabled);
         AssertTrue(transport.Requests.Any(request => request.Path == "/v1/logs"));
     }
+
+    private static void UltralightDataBindingAbi()
+    {
+        UltralightNative.ConfigureLibraryDirectory(AppContext.BaseDirectory);
+        IntPtr context = UltralightNative.ulCreateDOMDataContext();
+        if (context == IntPtr.Zero)
+            throw new InvalidOperationException("Ultralight data context could not be created.");
+
+        IntPtr builder = IntPtr.Zero;
+        IntPtr binding = IntPtr.Zero;
+        try
+        {
+            builder = UltralightNative.ulCreateDOMDataTypeBuilder("AetherTests");
+            if (builder == IntPtr.Zero ||
+                !UltralightNative.ulDOMDataTypeBuilderAddField(builder, "value", 2, 0))
+            {
+                throw new InvalidOperationException("Ultralight data type builder rejected the test field.");
+            }
+
+            IntPtr type = UltralightNative.ulDOMDataTypeBuilderBuild(builder);
+            if (type == IntPtr.Zero)
+                throw new InvalidOperationException("Ultralight data type could not be built.");
+
+            binding = UltralightNative.ulDOMDataContextBind(
+                context,
+                "aetherTest",
+                type,
+                AbiWalkCallback,
+                new IntPtr(1),
+                AbiAcquireCallback,
+                IntPtr.Zero,
+                null);
+            if (binding == IntPtr.Zero)
+                throw new InvalidOperationException("Ultralight data binding could not be created.");
+
+            _abiWalkValue = double.NaN;
+            UltralightNative.ulDOMDataContextSync(context);
+            AssertEqual(42.5, _abiWalkValue);
+        }
+        finally
+        {
+            if (binding != IntPtr.Zero)
+                UltralightNative.ulDestroyDOMDataBinding(binding);
+            if (builder != IntPtr.Zero)
+                UltralightNative.ulDestroyDOMDataTypeBuilder(builder);
+            UltralightNative.ulDestroyDOMDataContext(context);
+        }
+    }
+
+    private static double _abiWalkValue;
+    private static readonly UltralightNative.DomDataSyncWalkCallback AbiWalkCallback = AbiWalk;
+    private static readonly UltralightNative.DomDataAcquireCallback AbiAcquireCallback = AbiAcquire;
+
+    private static void AbiWalk(IntPtr record, IntPtr instance)
+    {
+        if (record != IntPtr.Zero && instance == new IntPtr(1))
+        {
+            UltralightNative.ulDOMDataRecordSetDouble(record, 0, 42.5);
+            _abiWalkValue = UltralightNative.ulDOMDataRecordGetDouble(record, 0);
+        }
+    }
+
+    private static IntPtr AbiAcquire(IntPtr holderState) => holderState;
 
     private sealed class FakeLogTransport : IRendererLogTransport
     {

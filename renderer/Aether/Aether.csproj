@@ -19,6 +19,9 @@
 
   <Target Name="ValidateUltralightSdk" BeforeTargets="PrepareForBuild" Condition="'$(IncludeUltralight)' == 'true'">
     <Error Condition="!Exists('$(UltralightSdkRoot)\include\AppCore\CAPI.h')" Text="Ultralight SDK missing. Run scripts\setup-ultralight.ps1 or set ULTRALIGHT_SDK_ROOT." />
+    <Error Condition="!Exists('$(UltralightSdkRoot)\include\Ultralight\CAPI\CAPI_JSAPI.h')" Text="Ultralight JS API headers missing. The renderer bridge requires the pinned Ultralight C JS API." />
+    <Error Condition="!Exists('$(UltralightSdkRoot)\include\Ultralight\CAPI\CAPI_JSValue.h')" Text="Ultralight JS value headers missing. The renderer bridge requires JSON value marshalling." />
+    <Error Condition="!Exists('$(UltralightSdkRoot)\include\Ultralight\CAPI\CAPI_DOMData.h')" Text="Ultralight DOM data-binding headers missing. The renderer bridge requires the pinned C data-binding API." />
     <Error Condition="!Exists('$(UltralightSdkRoot)\bin\AppCore.dll')" Text="Ultralight AppCore.dll missing under $(UltralightSdkRoot)." />
     <Error Condition="!Exists('$(UltralightSdkRoot)\bin\Ultralight.dll')" Text="Ultralight.dll missing under $(UltralightSdkRoot)." />
     <Error Condition="!Exists('$(UltralightSdkRoot)\bin\UltralightCore.dll')" Text="UltralightCore.dll missing under $(UltralightSdkRoot)." />

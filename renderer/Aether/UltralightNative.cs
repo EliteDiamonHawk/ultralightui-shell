@@ -108,6 +108,21 @@ internal static class UltralightNative
         UIntPtr argumentCount,
         IntPtr resolver);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate IntPtr JsCompleteCallback(
+        IntPtr userData,
+        IntPtr context,
+        out IntPtr exception);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void UserDataDestroyCallback(IntPtr userData);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void DomDataSyncWalkCallback(IntPtr record, IntPtr instance);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate IntPtr DomDataAcquireCallback(IntPtr holderState);
+
     internal const int KeyEventTypeKeyUp = 1;
     internal const int KeyEventTypeRawKeyDown = 2;
     internal const int KeyEventTypeChar = 3;
@@ -324,6 +339,177 @@ internal static class UltralightNative
     internal static extern IntPtr ulCreateJSValueStringFromCString(
         IntPtr context,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSValueFromJSON(
+        IntPtr context,
+        IntPtr json,
+        out IntPtr exception);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulJSValueToJSON(
+        IntPtr value,
+        uint indent,
+        out IntPtr exception);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyJSValue(IntPtr value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSValueIsAlive(IntPtr value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSValueIsFunction(IntPtr value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSValueRef(IntPtr value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulJSValueGetContext(IntPtr value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyJSContext(IntPtr context);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulJSFunctionCall(
+        IntPtr function,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSError(
+        IntPtr context,
+        int type,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateDOMDataContext();
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyDOMDataContext(IntPtr context);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulViewAttachDOMDataContext(
+        IntPtr view,
+        IntPtr context,
+        uint flags,
+        IntPtr originRules,
+        UIntPtr originRuleCount);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulViewDetachDOMDataContext(IntPtr view, IntPtr context);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateDOMDataTypeBuilder(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? typeName);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyDOMDataTypeBuilder(IntPtr builder);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulDOMDataTypeBuilderAddField(
+        IntPtr builder,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        uint kind,
+        uint flags);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulDOMDataTypeBuilderAddObject(
+        IntPtr builder,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        IntPtr child,
+        [MarshalAs(UnmanagedType.I1)] bool nullable);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulDOMDataTypeBuilderAddList(
+        IntPtr builder,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        IntPtr rowType,
+        uint keyKind);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulDOMDataTypeBuilderBuild(IntPtr builder);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulDOMDataContextBind(
+        IntPtr context,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        IntPtr typeDescriptor,
+        DomDataSyncWalkCallback walk,
+        IntPtr holderState,
+        DomDataAcquireCallback acquire,
+        IntPtr release,
+        UserDataDestroyCallback? destroyHolder);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataContextSync(IntPtr context);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyDOMDataBinding(IntPtr binding);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordSetBool(
+        IntPtr record,
+        uint slot,
+        [MarshalAs(UnmanagedType.I1)] bool value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordSetDouble(IntPtr record, uint slot, double value);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern double ulDOMDataRecordGetDouble(IntPtr record, uint slot);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordSetString(
+        IntPtr record,
+        uint slot,
+        IntPtr value,
+        UIntPtr length);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordSetPresent(
+        IntPtr record,
+        uint slot,
+        [MarshalAs(UnmanagedType.I1)] bool present);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulDOMDataRecordGetChild(IntPtr record, uint slot);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordListBegin(IntPtr record, uint slot, UIntPtr count);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulDOMDataRecordListRow(IntPtr record, uint slot, UIntPtr ordinal);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDOMDataRecordListEnd(IntPtr record, uint slot);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSPromise(
+        IntPtr context,
+        out IntPtr resolver);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulJSPromiseResolverComplete(
+        IntPtr resolver,
+        JsCompleteCallback callback,
+        IntPtr userData,
+        UserDataDestroyCallback destroyUserData);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ulDestroyJSPromiseResolver(IntPtr resolver);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool ulJSPromiseResolverIsDetached(IntPtr resolver);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void UltralightLogMessageCallback(int level, IntPtr message);

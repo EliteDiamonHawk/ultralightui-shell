@@ -4,7 +4,7 @@ namespace Aether;
 
 internal sealed record BackendStreamDescriptor(string StreamId, string Type, JsonSchemaDescriptor Schema);
 
-internal sealed record BackendEvent(string Name, string StreamId, string Type, JsonElement? Data);
+internal sealed record BackendEvent(string Name, string StreamId, string Type, JsonElement? Data, string? BackendId = null);
 
 internal sealed record JsonSchemaDescriptor(
     string Kind,
@@ -89,7 +89,7 @@ internal sealed class BackendEventQueue
                 if (!_overflowReported)
                 {
                     _overflowReported = true;
-                    overflowEvent = new BackendEvent("stream.overflow", value.StreamId, value.Type, null);
+                    overflowEvent = new BackendEvent("stream.overflow", value.StreamId, value.Type, null, value.BackendId);
                 }
             }
             _events.Enqueue(value);

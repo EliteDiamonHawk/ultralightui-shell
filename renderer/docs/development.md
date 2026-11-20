@@ -9,6 +9,13 @@
 The project targets `net9.0-windows`, x64, and WinForms. Run the scripts from `renderer/`.
 The repository `global.json` selects the installed .NET 9 SDK feature band.
 
+The pinned beta.2 package includes `include/Ultralight/CAPI/CAPI_DOMData.h` and
+the matching exports used by Aether's `createBinding`/`destroyBinding` bridge.
+Bindings support boolean, number, string, object, and array schemas. Null schema
+nodes and field names that cannot be represented by Ultralight are rejected.
+The current bridge publishes backend values read-only; page edits and DOM data
+actions are not forwarded to backends.
+
 ## SDK layout
 
 Default local SDK location:
@@ -52,7 +59,7 @@ Run from `renderer/`:
 ```
 
 The scripts use `Release` for build/publish and `Debug` for run/test. Extra arguments go to `dotnet` or Aether as the script requires.
-The test script disables native Ultralight inputs by default. Pass `-IncludeUltralight` when the SDK is installed and native test startup needs coverage.
+The test script disables native Ultralight inputs by default. Pass `-IncludeUltralight` when the SDK is installed. The harness then adds an ABI smoke test that builds a DOM data type, binds it, and synchronizes one value through the pinned C API.
 
 ## Test style
 

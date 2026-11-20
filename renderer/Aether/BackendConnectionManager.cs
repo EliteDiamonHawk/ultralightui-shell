@@ -12,7 +12,15 @@ internal sealed class BackendConnectionManager : IDisposable
     private readonly ControlPipeChannel? _control;
     private readonly ConcurrentDictionary<string, BackendPipeConnection> _connections = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionGates = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, JsonSchemaDescriptor> _schemas = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<BackendStreamKey, JsonSchemaDescriptor> _schemas = new();
+    private readonly ConcurrentDictionary<BackendStreamKey, JsonElement> _latestStreamData = new();
+    private readonly ConcurrentDictionary<string, SharedBackendStream> _streams = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _streamGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<BackendPipeConnection, Action<BackendEvent>> _eventHandlers = new();
+    private readonly BackendEventQueue _eventQueue = new();
+    private readonly SemaphoreSlim _eventSignal = new(0);
+    private readonly Task _eventDispatcher;
+    private readonly System.Threading.Timer _expiryTimer;
     private readonly string _sid = WindowsIdentityHelper.GetCurrentSid();
     private string _sessionId = Guid.NewGuid().ToString("D");
     private Guid? _themeId;
@@ -24,14 +32,17 @@ internal sealed class BackendConnectionManager : IDisposable
         _control = control;
         if (_control != null)
             _control.Disconnected += OnControlDisconnected;
+        _eventDispatcher = Task.Run(DispatchEventsAsync);
+        _expiryTimer = new System.Threading.Timer(_ => ExpireConnections(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
     public event Action<BackendEvent>? StreamEventReceived;
 
     public async Task<BackendPipeConnection> GetOrConnectAsync(string backendId, CancellationToken cancellationToken = default)
     {
-        if (_connections.TryGetValue(backendId, out BackendPipeConnection? existing) && existing.State == "connected")
+        if (_connections.TryGetValue(backendId, out BackendPipeConnection? existing) && existing.IsUsable)
             return existing;
+        RemoveStaleConnection(backendId, existing);
         if (_control == null || _control.State != "connected")
             throw new InvalidOperationException("Control channel is unavailable.");
 
@@ -39,8 +50,9 @@ internal sealed class BackendConnectionManager : IDisposable
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connections.TryGetValue(backendId, out existing) && existing.State == "connected")
+            if (_connections.TryGetValue(backendId, out existing) && existing.IsUsable)
                 return existing;
+            RemoveStaleConnection(backendId, existing);
 
             ControlResponse response = await _control.SendAsync(
                 "POST",
@@ -70,14 +82,16 @@ internal sealed class BackendConnectionManager : IDisposable
                 throw new InvalidOperationException("Control returned no backend pipe name.");
 
             string pipeName = pipeNameElement.GetString() ?? "";
-            BackendPipeConnection connection = await BackendPipeConnection.ConnectAsync(backendId, pipeName, cancellationToken).ConfigureAwait(false);
+            BackendPipeConnection connection = await BackendPipeConnection.ConnectAsync(backendId, pipeName, expiresAt, cancellationToken).ConfigureAwait(false);
             if (connection.State != "connected")
             {
                 connection.Dispose();
                 throw new IOException("Backend pipe disconnected during setup.");
             }
-            connection.EventReceived += OnBackendEvent;
             connection.Disconnected += () => OnBackendDisconnected(backendId, connection);
+            Action<BackendEvent> eventHandler = value => OnBackendEvent(backendId, connection, value);
+            connection.EventReceived += eventHandler;
+            _eventHandlers[connection] = eventHandler;
             _connections[backendId] = connection;
             return connection;
         }
@@ -106,16 +120,27 @@ internal sealed class BackendConnectionManager : IDisposable
         if (type != "json" || string.IsNullOrWhiteSpace(dataId))
             throw new InvalidOperationException("Only non-empty json streams are supported.");
         BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
+        string streamKey = StreamKey(backendId, dataId, type);
+        SemaphoreSlim streamGate = _streamGates.GetOrAdd(streamKey, _ => new SemaphoreSlim(1, 1));
+        await streamGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_streams.TryGetValue(streamKey, out SharedBackendStream? existing) && existing.Connection == connection)
+            {
+                Interlocked.Increment(ref existing.LeaseCount);
+                return existing.Descriptor;
+            }
+
             ControlResponse response = await connection.SendAsync("POST", "/v1/streams", new { dataId, type }, cancellationToken).ConfigureAwait(false);
             if (response.Error != null || response.Status >= 300 || response.Body is not JsonElement body ||
                 !body.TryGetProperty("streamId", out JsonElement streamId) || streamId.ValueKind != JsonValueKind.String ||
                 !body.TryGetProperty("type", out JsonElement returnedType) || returnedType.GetString() != type ||
                 !body.TryGetProperty("schema", out JsonElement schema))
                 throw new InvalidOperationException(response.Error?.Message ?? "Backend returned an invalid stream descriptor.");
-            BackendStreamDescriptor descriptor = new(streamId.GetString()!, type, JsonSchemaDescriptor.Parse(schema));
-            _schemas[descriptor.StreamId] = descriptor.Schema;
+            string returnedStreamId = streamId.GetString()!;
+            BackendStreamDescriptor descriptor = new(returnedStreamId, type, JsonSchemaDescriptor.Parse(schema));
+            _streams[streamKey] = new SharedBackendStream(streamKey, backendId, connection, descriptor);
+            _schemas[new BackendStreamKey(connection, descriptor.StreamId)] = descriptor.Schema;
             return descriptor;
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
@@ -123,17 +148,25 @@ internal sealed class BackendConnectionManager : IDisposable
             RemoveConnection(backendId, connection);
             throw;
         }
+        finally
+        {
+            streamGate.Release();
+        }
     }
 
     public async Task CloseStreamAsync(string backendId, string streamId, CancellationToken cancellationToken = default)
     {
+        if (await TryReleaseSharedStreamAsync(backendId, streamId, cancellationToken).ConfigureAwait(false))
+            return;
+
         BackendPipeConnection connection = await GetOrConnectAsync(backendId, cancellationToken).ConfigureAwait(false);
         try
         {
             ControlResponse response = await connection.SendAsync("DELETE", $"/v1/streams/{Uri.EscapeDataString(streamId)}", null, cancellationToken).ConfigureAwait(false);
             if (response.Error != null || response.Status >= 300)
                 throw new InvalidOperationException(response.Error?.Message ?? "Backend stream close failed.");
-            _schemas.TryRemove(streamId, out _);
+            _schemas.TryRemove(new BackendStreamKey(connection, streamId), out _);
+            _latestStreamData.TryRemove(new BackendStreamKey(connection, streamId), out _);
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
         {
@@ -159,7 +192,7 @@ internal sealed class BackendConnectionManager : IDisposable
 
         foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections.ToArray())
         {
-            if (_connections.TryRemove(pair.Key, out BackendPipeConnection? connection))
+            if (_connections.ContainsKey(pair.Key))
             {
                 try
                 {
@@ -173,11 +206,12 @@ internal sealed class BackendConnectionManager : IDisposable
                     }
                 }
                 catch { }
-                connection.Dispose();
+                RemoveConnection(pair.Key, pair.Value);
             }
         }
 
         _schemas.Clear();
+        _latestStreamData.Clear();
         _sessionId = Guid.NewGuid().ToString("D");
         _themeId = themeId;
         _themeGeneration = themeGeneration;
@@ -190,19 +224,27 @@ internal sealed class BackendConnectionManager : IDisposable
 
         if (_control != null)
             _control.Disconnected -= OnControlDisconnected;
+        _expiryTimer.Dispose();
         RotateThemeScopeCore();
         _schemas.Clear();
+        _latestStreamData.Clear();
+        _streams.Clear();
+        _eventSignal.Release();
+        if (Task.CurrentId != _eventDispatcher.Id)
+        {
+            try { _eventDispatcher.Wait(TimeSpan.FromSeconds(1)); } catch { }
+        }
+        _eventSignal.Dispose();
         StreamEventReceived = null;
     }
 
     private void OnControlDisconnected()
     {
         foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections.ToArray())
-        {
-            if (_connections.TryRemove(pair.Key, out BackendPipeConnection? connection))
-                connection.Dispose();
-        }
+            RemoveConnection(pair.Key, pair.Value);
         _schemas.Clear();
+        _latestStreamData.Clear();
+        _streams.Clear();
     }
 
     private void OnBackendDisconnected(string backendId, BackendPipeConnection connection) => RemoveConnection(backendId, connection);
@@ -210,29 +252,166 @@ internal sealed class BackendConnectionManager : IDisposable
     private void RemoveConnection(string backendId, BackendPipeConnection connection)
     {
         if (_connections.TryRemove(new KeyValuePair<string, BackendPipeConnection>(backendId, connection)))
+        {
+            foreach (SharedBackendStream stream in _streams.Values.Where(value => ReferenceEquals(value.Connection, connection)).ToArray())
+                _streams.TryRemove(stream.Key, out _);
+            foreach (BackendStreamKey key in _schemas.Keys.Where(key => ReferenceEquals(key.Connection, connection)).ToArray())
+                _schemas.TryRemove(key, out _);
+            foreach (BackendStreamKey key in _latestStreamData.Keys.Where(key => ReferenceEquals(key.Connection, connection)).ToArray())
+                _latestStreamData.TryRemove(key, out _);
+            if (_eventHandlers.TryRemove(connection, out Action<BackendEvent>? eventHandler))
+                connection.EventReceived -= eventHandler;
             connection.Dispose();
+        }
     }
 
     private static bool IsConnectionFailure(Exception exception) => exception is IOException or InvalidDataException or TimeoutException or ObjectDisposedException;
 
-    private void OnBackendEvent(BackendEvent value)
+    private void OnBackendEvent(string backendId, BackendPipeConnection connection, BackendEvent value)
+    {
+        if (Volatile.Read(ref _disposed) != 0 ||
+            !_connections.TryGetValue(backendId, out BackendPipeConnection? current) ||
+            !ReferenceEquals(current, connection))
+            return;
+
+        SharedBackendStream? stream = _streams.Values.FirstOrDefault(candidate =>
+            ReferenceEquals(candidate.Connection, connection) && candidate.Descriptor.StreamId == value.StreamId);
+        if (stream == null)
+            return;
+        BackendEvent scopedValue = value with { BackendId = backendId };
+
+        if (scopedValue.Name == "stream.overflow")
+        {
+            if (Volatile.Read(ref _disposed) == 0)
+                StreamEventReceived?.Invoke(scopedValue);
+            return;
+        }
+        if (scopedValue.Name != "stream.data" || scopedValue.Type != "json" || scopedValue.Data is not JsonElement data ||
+            !_schemas.TryGetValue(new BackendStreamKey(connection, scopedValue.StreamId), out JsonSchemaDescriptor? schema) || !schema.Matches(data))
+            return;
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            _latestStreamData[new BackendStreamKey(connection, scopedValue.StreamId)] = data.Clone();
+            _eventQueue.Enqueue(scopedValue, overflow => StreamEventReceived?.Invoke(overflow));
+            _eventSignal.Release();
+        }
+    }
+
+    private async Task DispatchEventsAsync()
+    {
+        try
+        {
+            while (Volatile.Read(ref _disposed) == 0)
+            {
+                await _eventSignal.WaitAsync().ConfigureAwait(false);
+                foreach (BackendEvent value in _eventQueue.Drain())
+                    if (Volatile.Read(ref _disposed) == 0)
+                        StreamEventReceived?.Invoke(value);
+            }
+        }
+        catch (ObjectDisposedException) { }
+        catch (OperationCanceledException) { }
+    }
+
+    private void ExpireConnections()
     {
         if (Volatile.Read(ref _disposed) != 0)
             return;
+        foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections.ToArray())
+            if (!pair.Value.IsUsable)
+                RemoveConnection(pair.Key, pair.Value);
+    }
 
-        if (value.Name == "stream.overflow")
+    private void RemoveStaleConnection(string backendId, BackendPipeConnection? connection)
+    {
+        if (connection != null && !connection.IsUsable)
+            RemoveConnection(backendId, connection);
+    }
+
+    public bool TryGetLatestStreamData(string backendId, string streamId, out JsonElement data)
+    {
+        SharedBackendStream? shared = _streams.Values.FirstOrDefault(value =>
+            value.BackendId == backendId && value.Descriptor.StreamId == streamId);
+        if (shared != null &&
+            _latestStreamData.TryGetValue(new BackendStreamKey(shared.Connection, streamId), out JsonElement latest))
         {
-            if (Volatile.Read(ref _disposed) == 0)
-                StreamEventReceived?.Invoke(value);
-            return;
+            data = latest.Clone();
+            return true;
         }
-        if (value.Name != "stream.data" || value.Type != "json" || value.Data is not JsonElement data ||
-            !_schemas.TryGetValue(value.StreamId, out JsonSchemaDescriptor? schema) || !schema.Matches(data))
-            return;
-        if (Volatile.Read(ref _disposed) == 0)
-            StreamEventReceived?.Invoke(value);
+
+        data = default;
+        return false;
+    }
+
+    private async Task<bool> TryReleaseSharedStreamAsync(string backendId, string streamId, CancellationToken cancellationToken)
+    {
+        SharedBackendStream? shared = _streams.Values.FirstOrDefault(value => value.BackendId == backendId && value.Descriptor.StreamId == streamId);
+        if (shared == null)
+            return false;
+
+        SemaphoreSlim streamGate = _streamGates.GetOrAdd(shared.Key, _ => new SemaphoreSlim(1, 1));
+        await streamGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_streams.TryGetValue(shared.Key, out shared))
+                return false;
+            if (Interlocked.Decrement(ref shared.LeaseCount) > 0)
+                return true;
+            _streams.TryRemove(shared.Key, out _);
+            _schemas.TryRemove(new BackendStreamKey(shared.Connection, streamId), out _);
+            _latestStreamData.TryRemove(new BackendStreamKey(shared.Connection, streamId), out _);
+            // The local lease is released even if the backend has already disconnected or
+            // forgot the stream. The connection/session cleanup path owns stale remote state.
+            await CloseSharedStreamAsync(shared).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            streamGate.Release();
+        }
+    }
+
+    private async Task<bool> CloseSharedStreamAsync(SharedBackendStream shared)
+    {
+        try
+        {
+            ControlResponse response = await shared.Connection.SendAsync(
+                "DELETE",
+                $"/v1/streams/{Uri.EscapeDataString(shared.Descriptor.StreamId)}",
+                null,
+                CancellationToken.None).ConfigureAwait(false);
+            return response.Error == null && response.Status < 300;
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex))
+        {
+            RemoveConnection(shared.BackendId, shared.Connection);
+            return false;
+        }
+    }
+
+    private static string StreamKey(string backendId, string dataId, string type) =>
+        $"{backendId}\n{dataId}\n{type}";
+
+    private sealed class SharedBackendStream
+    {
+        public SharedBackendStream(string key, string backendId, BackendPipeConnection connection, BackendStreamDescriptor descriptor)
+        {
+            Key = key;
+            BackendId = backendId;
+            Connection = connection;
+            Descriptor = descriptor;
+            LeaseCount = 1;
+        }
+
+        public string Key { get; }
+        public string BackendId { get; }
+        public BackendPipeConnection Connection { get; }
+        public BackendStreamDescriptor Descriptor { get; }
+        public int LeaseCount;
     }
 }
+
+internal readonly record struct BackendStreamKey(BackendPipeConnection Connection, string StreamId);
 
 internal sealed class BackendPipeConnection : IDisposable
 {
@@ -245,17 +424,20 @@ internal sealed class BackendPipeConnection : IDisposable
     private readonly Task _readerTask;
     private int _state;
 
-    private BackendPipeConnection(string backendId, NamedPipeClientStream pipe)
+    private BackendPipeConnection(string backendId, NamedPipeClientStream pipe, DateTimeOffset expiresAt)
     {
         BackendId = backendId;
         _pipe = pipe;
         _reader = new BoundedLineReader(pipe);
         _writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
         _state = 1;
+        ExpiresAt = expiresAt;
         _readerTask = Task.Run(ReadAsync);
     }
 
     public string BackendId { get; }
+    public DateTimeOffset ExpiresAt { get; }
+    public bool IsUsable => State == "connected" && ExpiresAt > DateTimeOffset.UtcNow;
     public string State => Volatile.Read(ref _state) switch
     {
         1 => "connected",
@@ -266,7 +448,7 @@ internal sealed class BackendPipeConnection : IDisposable
     public event Action<BackendEvent>? EventReceived;
     public event Action? Disconnected;
 
-    public static async Task<BackendPipeConnection> ConnectAsync(string backendId, string pipeName, CancellationToken cancellationToken)
+    public static async Task<BackendPipeConnection> ConnectAsync(string backendId, string pipeName, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
         const string prefix = "\\\\.\\pipe\\";
         string name = pipeName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
@@ -279,7 +461,7 @@ internal sealed class BackendPipeConnection : IDisposable
         try
         {
             await pipe.ConnectAsync(5000, cancellationToken).ConfigureAwait(false);
-            return new BackendPipeConnection(backendId, pipe);
+            return new BackendPipeConnection(backendId, pipe, expiresAt);
         }
         catch
         {
