@@ -19,11 +19,14 @@ internal static class Program
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
+            (nameof(PersistenceMigratesLegacySettings), PersistenceMigratesLegacySettings),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
             (nameof(BackendRegistryLoadsDefinitions), BackendRegistryLoadsDefinitions),
-            (nameof(WinGestureTrackerDistinguishesTapAndCombo), WinGestureTrackerDistinguishesTapAndCombo)
+            (nameof(WinGestureTrackerDistinguishesTapAndCombo), WinGestureTrackerDistinguishesTapAndCombo),
+            (nameof(EscapePanicTrackerTriggersOnlyAfterTenRapidPresses), EscapePanicTrackerTriggersOnlyAfterTenRapidPresses),
+            (nameof(EscapePanicTrackerIgnoresPressesOutsideWindow), EscapePanicTrackerIgnoresPressesOutsideWindow)
         };
 
         int failures = 0;
@@ -126,11 +129,12 @@ internal static class Program
             persistence.WriteState(new[] { Path.Combine(root, "one.json") }, themeId);
             AssertEqual(themeId, persistence.ReadState().ActiveThemeId);
             string ultralightRoot = Path.Combine(root, "ultralight");
-            persistence.WriteSettings(new PersistentSettings(RendererPath: Path.Combine(root, "Aether.exe"), TrayEnabled: false, RestoreState: false, WindowsKeyOverride: true, StatusPollingEnabled: false, UltralightRoot: ultralightRoot));
+            persistence.WriteSettings(new PersistentSettings(RendererPath: Path.Combine(root, "Aether.exe"), TrayEnabled: false, RestoreState: false, WindowsKeyOverride: true, PanicEscapeEnabled: false, StatusPollingEnabled: false, UltralightRoot: ultralightRoot));
             PersistentSettings settings = persistence.ReadSettings();
             AssertFalse(settings.TrayEnabled);
             AssertFalse(settings.RestoreState);
             AssertTrue(settings.WindowsKeyOverride);
+            AssertFalse(settings.PanicEscapeEnabled);
             AssertFalse(settings.StatusPollingEnabled);
             AssertEqual(Path.Combine(root, "Aether.exe"), settings.RendererPath);
             AssertEqual(ultralightRoot, settings.UltralightRoot);
@@ -159,6 +163,7 @@ internal static class Program
             AssertEqual(0, persistence.ReadState().Files.Count);
             AssertEqual(0, persistence.ReadThemes().Themes.Count);
             AssertEqual(true, persistence.ReadSettings().TrayEnabled);
+            AssertEqual(true, persistence.ReadSettings().PanicEscapeEnabled);
             AssertEqual<string?>(null, persistence.ReadSettings().RendererPath);
             AssertEqual<string?>(null, persistence.ReadSettings().UltralightRoot);
 
@@ -166,6 +171,29 @@ internal static class Program
             AssertTrue(File.Exists(paths.BackendRegistryFile));
             AssertEqual(0, registry.Definitions.Count);
             AssertEqual(0, diagnostics.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void PersistenceMigratesLegacySettings()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-legacy-settings-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            Directory.CreateDirectory(paths.ChronosRoot);
+            File.WriteAllText(paths.SettingsFile, "{\"schemaVersion\":1,\"trayEnabled\":false,\"restoreState\":false,\"windowsKeyOverride\":true,\"statusPollingEnabled\":false}");
+            var persistence = new PersistenceStore(paths);
+            PersistentSettings settings = persistence.ReadSettings();
+            AssertEqual(2, settings.SchemaVersion);
+            AssertFalse(settings.TrayEnabled);
+            AssertFalse(settings.RestoreState);
+            AssertTrue(settings.WindowsKeyOverride);
+            AssertTrue(settings.PanicEscapeEnabled);
+            AssertFalse(settings.StatusPollingEnabled);
         }
         finally
         {
@@ -251,6 +279,24 @@ internal static class Program
         AssertEqual(WinGestureDecision.Suppress, tracker.Handle(NativeMethods.VK_LWIN, true, false, false));
         AssertEqual(WinGestureDecision.ReplayAndSuppress, tracker.Handle('R', true, false, false));
         AssertEqual(WinGestureDecision.ReplayAndSuppress, tracker.Handle(NativeMethods.VK_LWIN, false, true, false));
+    }
+
+    private static void EscapePanicTrackerTriggersOnlyAfterTenRapidPresses()
+    {
+        var tracker = new EscapePanicGestureTracker(TimeSpan.FromSeconds(2));
+        for (int index = 1; index < 10; index++)
+            AssertFalse(tracker.RegisterPress(index * 100));
+        AssertTrue(tracker.RegisterPress(1000));
+        AssertFalse(tracker.RegisterPress(1100));
+    }
+
+    private static void EscapePanicTrackerIgnoresPressesOutsideWindow()
+    {
+        var tracker = new EscapePanicGestureTracker(TimeSpan.FromSeconds(2), triggerCount: 3);
+        AssertFalse(tracker.RegisterPress(0));
+        AssertFalse(tracker.RegisterPress(2501));
+        AssertFalse(tracker.RegisterPress(2600));
+        AssertTrue(tracker.RegisterPress(2700));
     }
 
     private static void AssertTrue(bool value)

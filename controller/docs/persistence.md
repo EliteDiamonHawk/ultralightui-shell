@@ -22,10 +22,12 @@ active theme. Missing or removed active theme IDs are not restored. Legacy
 root-level state and theme files are not read.
 
 Settings contain tray visibility, restore-state behavior, Windows Key Override,
-status polling, optional renderer path, and optional Ultralight install root.
+Panic Escape, status polling, optional renderer path, and optional Ultralight
+install root. Panic Escape defaults enabled.
 When the Ultralight root is empty, Chronos omits `--ultralight-root` and Aether
 uses its own default resolution. UI changes write settings immediately. Explicit
-CLI values override them for current launch only.
+CLI values override them for current launch only. Panic-triggered Win-key
+disable is runtime-only; it does not overwrite saved Win-key preference.
 
 If no explicit or restored theme exists, Chronos starts without Aether and
 waits for a theme selection. Renderer startup failure does not discard the

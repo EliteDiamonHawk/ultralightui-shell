@@ -11,6 +11,7 @@ internal static class NativeMethods
     internal const int WM_SYSKEYUP = 0x0105;
     internal const int VK_LWIN = 0x5B;
     internal const int VK_RWIN = 0x5C;
+    internal const int VK_ESCAPE = 0x1B;
     internal const uint LLKHF_INJECTED = 0x00000010;
     internal const uint INPUT_KEYBOARD = 1;
     internal const uint KEYEVENTF_KEYUP = 0x0002;

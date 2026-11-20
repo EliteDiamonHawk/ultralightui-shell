@@ -9,6 +9,7 @@ internal sealed record ShellUiSnapshot(
     bool TrayEnabled,
     bool TrayVisible,
     bool WindowsKeyOverrideEnabled,
+    bool EscapePanicEnabled,
     string ThemeOrigin,
     string? RendererFailure,
     bool StatusPollingEnabled,
@@ -42,6 +43,7 @@ internal sealed class ShellForm : Form
     private readonly Label _themeOrigin = new();
     private readonly CheckBox _trayEnabled = new();
     private readonly CheckBox _windowsKeyOverride = new();
+    private readonly CheckBox _escapePanic = new();
     private readonly CheckBox _statusPollingEnabled = new();
     private readonly CheckBox _restoreState = new();
     private readonly TextBox _rendererPath = new();
@@ -236,10 +238,12 @@ internal sealed class ShellForm : Form
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8) };
         _trayEnabled.Text = "Tray enabled";
         _windowsKeyOverride.Text = "Windows Key Override";
+        _escapePanic.Text = "Panic Escape enabled";
         _statusPollingEnabled.Text = "Status polling enabled";
         _restoreState.Text = "Restore theme state on launch";
         _trayEnabled.AutoSize = true;
         _windowsKeyOverride.AutoSize = true;
+        _escapePanic.AutoSize = true;
         _statusPollingEnabled.AutoSize = true;
         _restoreState.AutoSize = true;
         _trayEnabled.CheckedChanged += (_, _) =>
@@ -251,6 +255,24 @@ internal sealed class ShellForm : Form
         {
             if (!_updating)
                 RunSync(() => _host.SetCurrentWinToggle(_windowsKeyOverride.Checked));
+        };
+        _escapePanic.CheckedChanged += (_, _) =>
+        {
+            if (_updating)
+                return;
+            if (!_escapePanic.Checked && MessageBox.Show(
+                    this,
+                    "Disable Panic Escape? Rapid Escape presses will no longer disable Windows Key Override.",
+                    "KhaosShell",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                SetEscapePanicCheckbox(true);
+                return;
+            }
+
+            if (!RunSync(() => _host.SetEscapePanicEnabled(_escapePanic.Checked)))
+                Render(_host.GetUiSnapshot(), ShellRenderTarget.Options);
         };
         _statusPollingEnabled.CheckedChanged += (_, _) =>
         {
@@ -279,6 +301,7 @@ internal sealed class ShellForm : Form
         ultralightButtons.Controls.Add(Button("Save", (_, _) => SaveUltralightRoot()));
         options.Controls.Add(_trayEnabled);
         options.Controls.Add(_windowsKeyOverride);
+        options.Controls.Add(_escapePanic);
         options.Controls.Add(_statusPollingEnabled);
         options.Controls.Add(_restoreState);
         options.Controls.Add(rendererButtons);
@@ -509,6 +532,7 @@ internal sealed class ShellForm : Form
                 _trayEnabled.Enabled = snapshot.TrayEnabled;
                 _trayEnabled.Checked = snapshot.TrayVisible;
                 _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+                SetEscapePanicCheckbox(snapshot.EscapePanicEnabled);
                 _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
                 _restoreState.Checked = snapshot.Settings.RestoreState;
                 if (!_rendererPath.Focused && !_rendererPath.Modified)
@@ -570,6 +594,14 @@ internal sealed class ShellForm : Form
     }
 
     private void SetOutput(string text) => _statusOutput.Text = text;
+
+    private void SetEscapePanicCheckbox(bool value)
+    {
+        bool wasUpdating = _updating;
+        _updating = true;
+        try { _escapePanic.Checked = value; }
+        finally { _updating = wasUpdating; }
+    }
 
     private void BrowseRendererPath()
     {

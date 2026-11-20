@@ -27,7 +27,7 @@ idle state.
 
 | Component | Owns |
 | --- | --- |
-| Chronos | Aether process, inherited control session, state/settings/theme register, tray, Windows Key Override policy, backend grants, durable log intake |
+| Chronos | Aether process, inherited control session, state/settings/theme register, tray, Windows Key Override policy, pass-through Escape panic listener, backend grants, durable log intake |
 | Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
@@ -46,7 +46,7 @@ an action. WinForms status uses inherited events plus optional timer polling;
 
 ## Shutdown
 
-Shutdown disables and unhooks Win policy, removes tray UI, requests Aether
+Shutdown disables and unhooks Win policy and Escape panic listener, removes tray UI, requests Aether
 exit, waits up to ten seconds for Aether to terminate, then revokes backend
 grants, disposes control streams, and releases the mutex. Aether is
 force-terminated only if graceful shutdown times out.

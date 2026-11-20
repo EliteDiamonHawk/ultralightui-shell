@@ -25,10 +25,11 @@ internal sealed record ThemeRegistryState(
 }
 
 internal sealed record PersistentSettings(
-    int SchemaVersion = 1,
+    int SchemaVersion = 2,
     bool TrayEnabled = true,
     bool RestoreState = true,
     bool WindowsKeyOverride = false,
+    bool PanicEscapeEnabled = true,
     bool StatusPollingEnabled = true,
     string? RendererPath = null,
     string? UltralightRoot = null);
@@ -36,7 +37,7 @@ internal sealed record PersistentSettings(
 internal sealed class PersistenceStore
 {
     private const int CurrentSchemaVersion = 2;
-    private const int CurrentSettingsSchemaVersion = 1;
+    private const int CurrentSettingsSchemaVersion = 2;
     private readonly ChronosPaths _paths;
     private readonly Action<string> _diagnostic;
 
@@ -70,9 +71,12 @@ internal sealed class PersistenceStore
     public PersistentSettings ReadSettings()
     {
         PersistentSettings? settings = Read<PersistentSettings>(_paths.SettingsFile);
-        return settings?.SchemaVersion == CurrentSettingsSchemaVersion
-            ? settings
-            : new PersistentSettings(CurrentSettingsSchemaVersion);
+        return settings?.SchemaVersion switch
+        {
+            CurrentSettingsSchemaVersion => settings,
+            1 => settings with { SchemaVersion = CurrentSettingsSchemaVersion, PanicEscapeEnabled = true },
+            _ => new PersistentSettings(CurrentSettingsSchemaVersion)
+        };
     }
 
     public void WriteSettings(PersistentSettings settings)

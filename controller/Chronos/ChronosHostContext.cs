@@ -15,6 +15,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly RendererCommandService _commands;
     private RendererSession? _renderer;
     private readonly WinMenuToggleController _winToggle;
+    private readonly EscapePanicController _escapePanic;
     private readonly TrayController? _tray;
     private bool _statusPollingEnabled;
     private PersistentSettings _settings;
@@ -63,6 +64,8 @@ internal sealed class ChronosHostContext : ApplicationContext
         _commands = new RendererCommandService(new AetherCommandClient());
         _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
         _winToggle.StateChanged += OnWinToggleChanged;
+        _escapePanic = new EscapePanicController(_settings.PanicEscapeEnabled, QueuePanicTrigger, Diagnostic);
+        _escapePanic.StateChanged += OnEscapePanicChanged;
         _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
         StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
@@ -81,6 +84,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _tray != null,
         _tray?.Visible == true,
         _winToggle.Enabled,
+        _escapePanic.Enabled,
         _themeOrigin,
         _rendererFailure,
         _statusPollingEnabled,
@@ -219,6 +223,12 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         _winToggle.SetEnabled(enabled);
         UpdateSettings(_settings with { WindowsKeyOverride = _winToggle.Enabled });
+    }
+
+    public void SetEscapePanicEnabled(bool enabled)
+    {
+        _escapePanic.SetEnabled(enabled);
+        UpdateSettings(_settings with { PanicEscapeEnabled = enabled });
     }
 
     public void SetTrayVisible(bool visible)
@@ -666,6 +676,33 @@ internal sealed class ChronosHostContext : ApplicationContext
         NotifyUiStateChanged();
     }
 
+    private void OnEscapePanicChanged(bool enabled)
+    {
+        NotifyUiStateChanged();
+    }
+
+    private void QueuePanicTrigger()
+    {
+        if (_exiting)
+            return;
+        try { _dispatcher.BeginInvoke((Action)TriggerPanic); }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException) { }
+    }
+
+    private void TriggerPanic()
+    {
+        if (_exiting)
+            return;
+
+        _winToggle.SetEnabled(false);
+        MessageBox.Show(
+            _shellForm,
+            "Panic Escape triggered. Windows Key Override has been disabled.",
+            "KhaosShell",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
     private void ShowShellForm()
     {
         if (_exiting || _tray == null)
@@ -693,6 +730,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _exiting = true;
         try { _shellForm?.CloseForShutdown(); } catch { }
         try { _winToggle.Dispose(); } catch { }
+        try { _escapePanic.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
         StopRenderer(requestExit: true);
         _backends.Dispose();
