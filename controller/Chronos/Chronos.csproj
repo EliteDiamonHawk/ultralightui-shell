@@ -10,7 +10,11 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Chronos</AssemblyName>
-    <RootNamespace>Chronos</RootNamespace>
+    <RootNamespace>KhaosShell.Chronos</RootNamespace>
+    <Product>KhaosShell</Product>
+    <AssemblyTitle>KhaosShell</AssemblyTitle>
+    <Company>KhaosShell</Company>
+    <Description>KhaosShell</Description>
   </PropertyGroup>
 
   <ItemGroup>
