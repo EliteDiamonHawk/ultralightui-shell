@@ -12,11 +12,11 @@ public sealed record RendererPaths(
 {
     public static RendererPaths Resolve(string? ultralightRoot)
     {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        if (string.IsNullOrWhiteSpace(appData))
-            appData = AppContext.BaseDirectory;
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localAppData))
+            localAppData = AppContext.BaseDirectory;
 
-        string root = Path.Combine(appData, "KhaosShell");
+        string root = Path.Combine(localAppData, "KhaosShell");
         string executableBase = Path.GetFullPath(AppContext.BaseDirectory);
         string sdkRoot = string.IsNullOrWhiteSpace(ultralightRoot)
             ? executableBase

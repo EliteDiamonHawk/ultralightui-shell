@@ -65,7 +65,7 @@ Aether.exe --exit
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 
-Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection and returns `OK ...` or `ERR ...`.
+Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection. `show` commands return a JSON object; other successful commands return `OK ...`, and failures return `ERR ...`.
 
 The inherited controller channel supports `POST /v1/renderer/configure`,
 `GET /v1/pipes`, and `PUT /v1/logging/batch-limits`. Managed Aether emits
@@ -77,7 +77,7 @@ The tray menu exposes the same common actions.
 
 ## Responses and exit codes
 
-Successful pipe responses start with `OK`. Failures start with `ERR` and are written to stderr by the command client.
+Successful pipe responses start with `OK`, except for `show` commands, which return a JSON object. Failures start with `ERR` and are written to stderr by the command client.
 
 - `0`: command or startup succeeded.
 - `1`: unexpected startup/runtime error.

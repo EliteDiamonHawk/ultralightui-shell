@@ -33,11 +33,7 @@ internal sealed class AetherCommandClient
                 : frame.TooLarge
                     ? "ERR Aether response exceeded 1 MiB."
                     : frame.Text ?? "ERR No response from Aether.";
-            return response.StartsWith("ERR ", StringComparison.Ordinal)
-                ? new AetherCommandResult(false, response, response[4..])
-                : response.StartsWith("OK ", StringComparison.Ordinal)
-                    ? new AetherCommandResult(true, response, response[3..])
-                    : new AetherCommandResult(false, $"ERR Invalid response from Aether: {response}", response, true);
+            return ParseResponse(command, response);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -46,6 +42,32 @@ internal sealed class AetherCommandClient
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
             return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message, true);
+        }
+    }
+
+    internal static AetherCommandResult ParseResponse(RendererCommand command, string response)
+    {
+        if (response.StartsWith("ERR ", StringComparison.Ordinal))
+            return new AetherCommandResult(false, response, response[4..]);
+        if (response.StartsWith("OK ", StringComparison.Ordinal))
+            return new AetherCommandResult(true, response, response[3..]);
+
+        if (command.Kind == RendererCommandKind.Show && IsJsonObject(response))
+            return new AetherCommandResult(true, response, response);
+
+        return new AetherCommandResult(false, $"ERR Invalid response from Aether: {response}", response, true);
+    }
+
+    private static bool IsJsonObject(string response)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(response);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 }

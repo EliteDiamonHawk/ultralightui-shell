@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text;
 using Chronos;
+using KhaosShell.Contracts;
 
 namespace Chronos.Tests;
 
@@ -18,6 +19,7 @@ internal static class Program
             (nameof(ControlCodecRoundTrips), ControlCodecRoundTrips),
             (nameof(ControlCodecRejectsOversizedFrame), ControlCodecRejectsOversizedFrame),
             (nameof(ControlCodecAcceptsUnmatchedError), ControlCodecAcceptsUnmatchedError),
+            (nameof(RendererCommandsAcceptShowPayload), RendererCommandsAcceptShowPayload),
             (nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames),
             (nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame),
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
@@ -120,6 +122,21 @@ internal static class Program
         string invalidId = "{\"id\":\"not-a-uuid\",\"method\":\"GET\",\"path\":\"/v1/pipes\"}";
         AssertFalse(ControlCodec.TryParseRequest(invalidId, out _, out _, out string? requestId));
         AssertEqual<string?>(null, requestId);
+    }
+
+    private static void RendererCommandsAcceptShowPayload()
+    {
+        AetherCommandResult result = AetherCommandClient.ParseResponse(
+            new RendererCommand(RendererCommandKind.Show, Topic: "config"),
+            "{\"files\":[]}");
+        AssertTrue(result.Success);
+        AssertEqual("{\"files\":[]}", result.Payload);
+
+        AetherCommandResult invalid = AetherCommandClient.ParseResponse(
+            new RendererCommand(RendererCommandKind.Show, Topic: "config"),
+            "not-json");
+        AssertFalse(invalid.Success);
+        AssertTrue(invalid.TransportFailure);
     }
 
     private static void BoundedReaderPreservesFrames()
