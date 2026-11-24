@@ -1,6 +1,15 @@
 # Minimal backend
 
-Generic backend protocol fixture for Chronos and Aether.
+Minimal backend template for Chronos/Aether-compatible backends. It demonstrates
+the generic transport contract, backend-owned routes, subscription-backed
+server events, snapshot resync, and latest-state backpressure. It is not a
+production backend.
+
+Detailed template documentation:
+
+- [`docs/README.md`](docs/README.md): template overview and lifecycle.
+- [`docs/protocol.md`](docs/protocol.md): NDJSON, requests, responses, and streams.
+- [`docs/routes.md`](docs/routes.md): sample queries, mutations, and subscriptions.
 
 Build:
 
@@ -38,6 +47,13 @@ Supported reference routes:
 ```text
 GET /v1/minimal/health
 GET /v1/minimal/value
+
+Mutation routes:
+
+```text
+PUT  /v1/minimal/value
+POST /v1/minimal/commands/increment
+```
 ```
 
 Supported stream:
@@ -47,6 +63,12 @@ dataId: minimal.value
 type: json
 schema: {"kind":"object","fields":{"value":{"kind":"number"}}}
 ```
+
+`minimal.value` is a subscription-backed state stream. The backend sends a
+snapshot after successful subscription, then sends changed values. On a new
+pipe/session, opening the subscription again provides resync. Intermediate
+state updates may be coalesced for slow consumers; JavaScript owns polling and
+may use browser-native WebSockets independently.
 
 Run tests after building the backend:
 

@@ -51,6 +51,7 @@ internal static class Program
             ,(nameof(LoggerRedactsProperties), LoggerRedactsProperties)
             ,(nameof(LoggerBatchesThroughController), LoggerBatchesThroughController)
             ,(nameof(LoggerDisableFlushesBeforeDisabling), LoggerDisableFlushesBeforeDisabling)
+            ,(nameof(MultipleBackendsResolveIndependentLogicalPipes), MultipleBackendsResolveIndependentLogicalPipes)
         };
 
         if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Ultralight.dll")))
@@ -415,6 +416,35 @@ internal static class Program
         AssertTrue(ControlPipeCodec.TryParseResponse(error, out ControlResponse? response));
         AssertEqual<string?>(null, response!.Id);
         AssertFalse(ControlPipeCodec.TryParseResponse("{\"id\":null,\"status\":200}", out _));
+    }
+
+    private static void MultipleBackendsResolveIndependentLogicalPipes()
+    {
+        var spec = new RendererWindowSpec(
+            "multi-backend",
+            "file:///multi-backend.html",
+            new Rectangle(0, 0, 10, 10),
+            new Rectangle(0, 0, 10, 10),
+            "widgets",
+            WindowKind.Widget,
+            Bridge: new BridgePolicy(
+                true,
+                new[] { "minimal-a", "minimal-b" },
+                Array.Empty<string>(),
+                Array.Empty<string>()));
+        using var bridge = new RendererJsBridge(spec, action => { action(); return true; });
+
+        LogicalBackendPipe first = bridge.ResolveBackendPipe("minimal-a");
+        LogicalBackendPipe second = bridge.ResolveBackendPipe("minimal-b");
+
+        AssertEqual("multi-backend:minimal-a", first.PipeId);
+        AssertEqual("renderer://backend/minimal-a", first.PipeName);
+        AssertEqual("minimal-a", first.BackendId);
+        AssertEqual("unavailable", first.State);
+        AssertEqual("multi-backend:minimal-b", second.PipeId);
+        AssertEqual("renderer://backend/minimal-b", second.PipeName);
+        AssertEqual("minimal-b", second.BackendId);
+        AssertThrows<InvalidOperationException>(() => bridge.ResolveBackendPipe("minimal-c"));
     }
 
     private static void BoundedReaderPreservesFrames()

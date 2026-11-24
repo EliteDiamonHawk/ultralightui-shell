@@ -41,7 +41,7 @@ internal static class BackendCodec
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DictionaryKeyPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
     };
 
     public static bool TryParseRequest(string line, out BackendRequest? request, out BackendError? error)

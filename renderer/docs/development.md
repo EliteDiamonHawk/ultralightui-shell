@@ -16,6 +16,35 @@ nodes and field names that cannot be represented by Ultralight are rejected.
 The current bridge publishes backend values read-only; page edits and DOM data
 actions are not forwarded to backends.
 
+## Multiple backends and logical pipe routes
+
+A renderer view may allow multiple backend IDs in its bridge policy. Aether
+keeps backend connections, request routing, stream leases, schemas, and latest
+stream values scoped by backend ID.
+
+Page JavaScript selects the backend on every operation:
+
+```js
+await window.renderer.request({
+  backendId: "minimal-a",
+  method: "GET",
+  path: "/v1/minimal/health"
+});
+
+await window.renderer.openStream({
+  backendId: "minimal-b",
+  dataId: "minimal.value",
+  type: "json"
+});
+```
+
+`openPipe({ backendId })` returns a logical route such as
+`renderer://backend/minimal-a`. Aether resolves the actual private named pipe
+through Chronos internally; page JavaScript never receives the OS pipe name.
+Backend routes use the backend connection. `control(...)` uses the separate
+Chronos control channel. Browser JavaScript may use its own WebSocket directly;
+Aether does not proxy or manage it.
+
 ## SDK layout
 
 Default local SDK location:

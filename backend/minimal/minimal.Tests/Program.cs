@@ -118,39 +118,67 @@ internal static class Program
                 AssertEqual(pipeName, readiness.RootElement.GetProperty("pipeName").GetString());
             }
 
-            using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-            client.Connect(5000);
-            using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(client, new UTF8Encoding(false), false, 4096, leaveOpen: true);
-
-            string healthId = Guid.NewGuid().ToString("D");
-            writer.WriteLine($"{{\"id\":\"{healthId}\",\"method\":\"POST\",\"path\":\"/v1/request\",\"body\":{{\"method\":\"GET\",\"path\":\"/v1/minimal/health\",\"body\":null}}}}");
-            using (JsonDocument response = ReadResponse(reader, healthId))
+            using (NamedPipeClientStream client = Connect(pipeName))
+            using (var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true })
+            using (var reader = new StreamReader(client, new UTF8Encoding(false), false, 4096, leaveOpen: true))
             {
-                AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
-                AssertTrue(response.RootElement.GetProperty("body").GetProperty("ok").GetBoolean());
+                string healthId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{healthId}\",\"method\":\"POST\",\"path\":\"/v1/request\",\"body\":{{\"method\":\"GET\",\"path\":\"/v1/minimal/health\",\"body\":null}}}}");
+                using (JsonDocument response = ReadResponse(reader, healthId))
+                {
+                    AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
+                    AssertTrue(response.RootElement.GetProperty("body").GetProperty("ok").GetBoolean());
+                }
+
+                string setId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{setId}\",\"method\":\"POST\",\"path\":\"/v1/request\",\"body\":{{\"method\":\"PUT\",\"path\":\"/v1/minimal/value\",\"body\":{{\"value\":42.5}}}}}}");
+                using (JsonDocument response = ReadResponse(reader, setId))
+                {
+                    AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
+                    AssertEqual(42.5, response.RootElement.GetProperty("body").GetProperty("value").GetDouble());
+                }
+
+                string streamRequestId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{streamRequestId}\",\"method\":\"POST\",\"path\":\"/v1/streams\",\"body\":{{\"dataId\":\"minimal.value\",\"type\":\"json\"}}}}");
+                string streamId;
+                using (JsonDocument response = ReadResponse(reader, streamRequestId))
+                {
+                    AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
+                    streamId = response.RootElement.GetProperty("body").GetProperty("streamId").GetString()!;
+                    AssertEqual("number", response.RootElement.GetProperty("body").GetProperty("schema").GetProperty("fields").GetProperty("value").GetProperty("kind").GetString());
+                }
+
+                using (JsonDocument eventFrame = ReadEvent(reader, streamId))
+                {
+                    AssertEqual("stream.data", eventFrame.RootElement.GetProperty("event").GetString());
+                    AssertEqual(42.5, eventFrame.RootElement.GetProperty("data").GetProperty("value").GetDouble());
+                }
+
+                string incrementId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{incrementId}\",\"method\":\"POST\",\"path\":\"/v1/request\",\"body\":{{\"method\":\"POST\",\"path\":\"/v1/minimal/commands/increment\",\"body\":{{\"delta\":1.5}}}}}}");
+                using (JsonDocument response = ReadResponse(reader, incrementId))
+                    AssertEqual(44.0, response.RootElement.GetProperty("body").GetProperty("value").GetDouble());
+                using (JsonDocument eventFrame = ReadEvent(reader, streamId))
+                    AssertEqual(44.0, eventFrame.RootElement.GetProperty("data").GetProperty("value").GetDouble());
+
+                string closeId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{closeId}\",\"method\":\"DELETE\",\"path\":\"/v1/streams/{streamId}\",\"body\":null}}");
+                using (JsonDocument response = ReadResponse(reader, closeId))
+                    AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
             }
 
-            string streamRequestId = Guid.NewGuid().ToString("D");
-            writer.WriteLine($"{{\"id\":\"{streamRequestId}\",\"method\":\"POST\",\"path\":\"/v1/streams\",\"body\":{{\"dataId\":\"minimal.value\",\"type\":\"json\"}}}}");
-            string streamId;
-            using (JsonDocument response = ReadResponse(reader, streamRequestId))
+            using (NamedPipeClientStream client = Connect(pipeName))
+            using (var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true })
+            using (var reader = new StreamReader(client, new UTF8Encoding(false), false, 4096, leaveOpen: true))
             {
-                AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
-                streamId = response.RootElement.GetProperty("body").GetProperty("streamId").GetString()!;
-                AssertEqual("number", response.RootElement.GetProperty("body").GetProperty("schema").GetProperty("fields").GetProperty("value").GetProperty("kind").GetString());
+                string streamRequestId = Guid.NewGuid().ToString("D");
+                writer.WriteLine($"{{\"id\":\"{streamRequestId}\",\"method\":\"POST\",\"path\":\"/v1/streams\",\"body\":{{\"dataId\":\"minimal.value\",\"type\":\"json\"}}}}");
+                string streamId;
+                using (JsonDocument response = ReadResponse(reader, streamRequestId))
+                    streamId = response.RootElement.GetProperty("body").GetProperty("streamId").GetString()!;
+                using (JsonDocument eventFrame = ReadEvent(reader, streamId))
+                    AssertEqual(44.0, eventFrame.RootElement.GetProperty("data").GetProperty("value").GetDouble());
             }
-
-            using (JsonDocument eventFrame = ReadEvent(reader, streamId))
-            {
-                AssertEqual("stream.data", eventFrame.RootElement.GetProperty("event").GetString());
-                AssertTrue(eventFrame.RootElement.GetProperty("data").GetProperty("value").ValueKind == JsonValueKind.Number);
-            }
-
-            string closeId = Guid.NewGuid().ToString("D");
-            writer.WriteLine($"{{\"id\":\"{closeId}\",\"method\":\"DELETE\",\"path\":\"/v1/streams/{streamId}\",\"body\":null}}");
-            using (JsonDocument response = ReadResponse(reader, closeId))
-                AssertEqual(200, response.RootElement.GetProperty("status").GetInt32());
         }
         finally
         {
@@ -159,6 +187,21 @@ internal static class Program
                 try { process.Kill(entireProcessTree: true); } catch { }
                 process.WaitForExit(5000);
             }
+        }
+    }
+
+    private static NamedPipeClientStream Connect(string pipeName)
+    {
+        var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        try
+        {
+            client.Connect(5000);
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
         }
     }
 
@@ -194,7 +237,7 @@ internal static class Program
         if (directory == null)
             throw new FileNotFoundException("Could not locate backend directory.");
 
-        string path = Path.Combine(directory.FullName, "minimal", "bin", "Debug", "net9.0-windows", "win-x64", "MinimalBackend.exe");
+        string path = Path.Combine(directory.FullName, "minimal", "minimal", "bin", "Debug", "net9.0-windows", "win-x64", "MinimalBackend.exe");
         if (!File.Exists(path))
             throw new FileNotFoundException("Build MinimalBackend before running process integration test.", path);
         return path;

@@ -15,6 +15,7 @@ internal sealed class BackendServer : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<ClientSession, byte> _clients = new();
     private readonly ConcurrentDictionary<string, StreamSubscription> _subscriptions = new(StringComparer.Ordinal);
+    private readonly MinimalValueState _valueState = new();
     private readonly object _listenerSync = new();
     private NamedPipeServerStream? _listener;
     private int _disposed;
@@ -220,15 +221,15 @@ internal sealed class BackendServer : IAsyncDisposable
         Console.Out.Flush();
     }
 
-    private async Task<BackendResponse> HandleAsync(BackendRequest request, ClientSession client)
+    private async Task<(BackendResponse Response, StreamSubscription? Subscription)> HandleAsync(BackendRequest request, ClientSession client)
     {
         if (request.Method == "POST" && request.Path == "/v1/request")
-            return HandleRequest(request);
+            return (HandleRequest(request), null);
         if (request.Method == "POST" && request.Path == "/v1/streams")
             return await OpenStreamAsync(request, client).ConfigureAwait(false);
         if (request.Method == "DELETE" && request.Path.StartsWith("/v1/streams/", StringComparison.Ordinal))
-            return await CloseStreamAsync(request, client).ConfigureAwait(false);
-        return Failure(request.Id, 404, "route_not_found", "Backend route was not found.");
+            return (await CloseStreamAsync(request, client).ConfigureAwait(false), null);
+        return (Failure(request.Id, 404, "route_not_found", "Backend route was not found."), null);
     }
 
     private BackendResponse HandleRequest(BackendRequest request)
@@ -243,42 +244,59 @@ internal sealed class BackendServer : IAsyncDisposable
         if (!path.StartsWith("/v1/", StringComparison.Ordinal))
             return Failure(request.Id, 400, "path_invalid", "Nested path must begin with /v1/.");
 
-        if (method != "GET")
-            return Failure(request.Id, 405, "method_not_allowed", "Reference routes allow GET only.");
-
-        return path switch
-        {
-            "/v1/minimal/health" => Success(request.Id, new
+        if (method == "GET" && path == "/v1/minimal/health")
+            return Success(request.Id, new
             {
                 ok = true,
                 backendId = _options.BackendId,
                 protocol = _options.Protocol
-            }),
-            "/v1/minimal/value" => Success(request.Id, new { value = CurrentValue() }),
-            _ => Failure(request.Id, 404, "route_not_found", "Reference route was not found.")
-        };
+            });
+
+        if (method == "GET" && path == "/v1/minimal/value")
+            return Success(request.Id, ValueBody(_valueState.Read()));
+
+        if (method == "PUT" && path == "/v1/minimal/value")
+        {
+            if (!TryGetFiniteNumber(requestBody: GetNestedBody(body), "value", out double value, out BackendResponse? error))
+                return error! with { Id = request.Id };
+            return Success(request.Id, ValueBody(SetValue(value)));
+        }
+
+        if (method == "POST" && path == "/v1/minimal/commands/increment")
+        {
+            if (!TryGetFiniteNumber(requestBody: GetNestedBody(body), "delta", out double delta, out BackendResponse? error))
+                return error! with { Id = request.Id };
+            if (!_valueState.TryAdd(delta, out double result, out bool changed))
+                return Failure(request.Id, 400, "value_out_of_range", "The resulting value must be finite.");
+            if (changed)
+                PublishValue(result);
+            return Success(request.Id, ValueBody(result));
+        }
+
+        if (path is "/v1/minimal/health" or "/v1/minimal/value" or "/v1/minimal/commands/increment")
+            return Failure(request.Id, 405, "method_not_allowed", "The requested route does not allow this method.");
+        return Failure(request.Id, 404, "route_not_found", "Reference route was not found.");
     }
 
-    private Task<BackendResponse> OpenStreamAsync(BackendRequest request, ClientSession client)
+    private Task<(BackendResponse Response, StreamSubscription? Subscription)> OpenStreamAsync(BackendRequest request, ClientSession client)
     {
         if (!BackendCodec.TryGetObject(request.Body, out JsonElement body))
-            return Task.FromResult(Failure(request.Id, 400, "stream_body_invalid", "Stream body must be an object."));
+            return Task.FromResult((Failure(request.Id, 400, "stream_body_invalid", "Stream body must be an object."), (StreamSubscription?)null));
 
         string dataId = BackendCodec.GetString(body, "dataId") ?? "";
         string type = BackendCodec.GetString(body, "type") ?? "";
         if (type != "json")
-            return Task.FromResult(Failure(request.Id, 400, "stream_type_unsupported", "Only json streams are supported."));
+            return Task.FromResult((Failure(request.Id, 400, "stream_type_unsupported", "Only json streams are supported."), (StreamSubscription?)null));
         if (dataId != "minimal.value")
-            return Task.FromResult(Failure(request.Id, 404, "data_not_found", "Reference data ID was not found."));
+            return Task.FromResult((Failure(request.Id, 404, "data_not_found", "Reference data ID was not found."), (StreamSubscription?)null));
 
         string streamId = Guid.NewGuid().ToString("D");
-        var subscription = new StreamSubscription(streamId, client, _shutdown.Token);
+        var subscription = new StreamSubscription(streamId, dataId, client, _shutdown.Token);
         if (!_subscriptions.TryAdd(streamId, subscription))
-            return Task.FromResult(Failure(request.Id, 500, "stream_create_failed", "Could not allocate stream."));
+            return Task.FromResult((Failure(request.Id, 500, "stream_create_failed", "Could not allocate stream."), (StreamSubscription?)null));
         client.AddSubscription(subscription);
-        subscription.Start();
 
-        return Task.FromResult(Success(request.Id, new
+        return Task.FromResult((Success(request.Id, new
         {
             streamId,
             type,
@@ -287,7 +305,7 @@ internal sealed class BackendServer : IAsyncDisposable
                 kind = "object",
                 fields = new { value = new { kind = "number" } }
             }
-        }));
+        }), (StreamSubscription?)subscription));
     }
 
     private async Task<BackendResponse> CloseStreamAsync(BackendRequest request, ClientSession client)
@@ -314,7 +332,51 @@ internal sealed class BackendServer : IAsyncDisposable
     private static BackendResponse Failure(string id, int status, string code, string message) =>
         new(id, status, Error: new BackendError(code, message));
 
-    private static double CurrentValue() => Math.Round(20.0 + (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 10000) / 1000.0, 3);
+    private static object ValueBody(double value) => new { value };
+
+    private double SetValue(double value)
+    {
+        double normalized = Math.Round(value, 3);
+        double result = _valueState.Set(normalized, out bool changed);
+        if (changed)
+            PublishValue(result);
+        return result;
+    }
+
+    private void PublishValue(double value)
+    {
+        object body = ValueBody(value);
+        foreach (StreamSubscription subscription in _subscriptions.Values.ToArray())
+            if (subscription.DataId == "minimal.value")
+                subscription.Publish(body);
+    }
+
+    private static JsonElement? GetNestedBody(JsonElement body) =>
+        body.TryGetProperty("body", out JsonElement value) && value.ValueKind != JsonValueKind.Null
+            ? value
+            : null;
+
+    private static bool TryGetFiniteNumber(
+        JsonElement? requestBody,
+        string field,
+        out double value,
+        out BackendResponse? error)
+    {
+        value = 0;
+        error = null;
+        if (requestBody is not JsonElement body || body.ValueKind != JsonValueKind.Object)
+        {
+            error = Failure("", 400, "request_body_invalid", "Request body must be an object.");
+            return false;
+        }
+        if (!body.TryGetProperty(field, out JsonElement property) || property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetDouble(out value) || !double.IsFinite(value))
+        {
+            error = Failure("", 400, "field_invalid", $"Field '{field}' must be a finite number.");
+            return false;
+        }
+        return true;
+    }
 
     private sealed class ClientSession : IAsyncDisposable
     {
@@ -325,6 +387,7 @@ internal sealed class BackendServer : IAsyncDisposable
         private readonly SemaphoreSlim _writeLock = new(1, 1);
         private readonly CancellationTokenSource _shutdown;
         private readonly ConcurrentDictionary<string, StreamSubscription> _subscriptions = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, byte> _inflightRequests = new(StringComparer.Ordinal);
         private int _disposed;
 
         public ClientSession(BackendServer server, NamedPipeServerStream stream, CancellationToken serverToken)
@@ -388,10 +451,23 @@ internal sealed class BackendServer : IAsyncDisposable
 
         private async Task CompleteRequestAsync(BackendRequest request)
         {
+            if (!_inflightRequests.TryAdd(request.Id, 0))
+            {
+                try
+                {
+                    await WriteLineAsync(BackendCodec.SerializeResponse(
+                        Failure(request.Id, 409, "request_id_in_flight", "Request ID is already in flight.")),
+                        _shutdown.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+                return;
+            }
+
             BackendResponse response;
+            StreamSubscription? subscription = null;
             try
             {
-                response = await _server.HandleAsync(request, this).ConfigureAwait(false);
+                (response, subscription) = await _server.HandleAsync(request, this).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
             {
@@ -403,8 +479,16 @@ internal sealed class BackendServer : IAsyncDisposable
                 response = new BackendResponse(request.Id, 500, Error: new BackendError("internal_error", "Backend request failed."));
             }
 
-            try { await WriteLineAsync(BackendCodec.SerializeResponse(response), _shutdown.Token).ConfigureAwait(false); }
+            try
+            {
+                await WriteLineAsync(BackendCodec.SerializeResponse(response), _shutdown.Token).ConfigureAwait(false);
+                subscription?.Start(ValueBody(_server._valueState.Read()));
+            }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+            finally
+            {
+                _inflightRequests.TryRemove(request.Id, out _);
+            }
         }
 
         private async Task WriteLineAsync(string line, CancellationToken cancellationToken)
@@ -415,33 +499,98 @@ internal sealed class BackendServer : IAsyncDisposable
         }
     }
 
+    private sealed class MinimalValueState
+    {
+        private readonly object _sync = new();
+        private double _value = 20.0;
+
+        public double Read()
+        {
+            lock (_sync)
+                return _value;
+        }
+
+        public double Set(double value, out bool changed)
+        {
+            lock (_sync)
+            {
+                changed = _value != value;
+                _value = value;
+                return _value;
+            }
+        }
+
+        public bool TryAdd(double delta, out double result, out bool changed)
+        {
+            lock (_sync)
+            {
+                result = _value + delta;
+                changed = _value != result;
+                if (!double.IsFinite(result))
+                    return false;
+                _value = result;
+                return true;
+            }
+        }
+    }
+
     private sealed class StreamSubscription : IAsyncDisposable
     {
         private readonly CancellationTokenSource _shutdown;
+        private readonly SemaphoreSlim _signal = new(0, 1);
+        private readonly object _pendingSync = new();
         private Task? _producer;
+        private object? _pending;
+        private bool _started;
         private int _disposed;
 
-        public StreamSubscription(string streamId, ClientSession owner, CancellationToken serverToken)
+        public StreamSubscription(string streamId, string dataId, ClientSession owner, CancellationToken serverToken)
         {
             StreamId = streamId;
+            DataId = dataId;
             Owner = owner;
             _shutdown = CancellationTokenSource.CreateLinkedTokenSource(serverToken);
         }
 
         public string StreamId { get; }
+        public string DataId { get; }
         public ClientSession Owner { get; }
 
-        public void Start() => _producer = Task.Run(ProduceAsync);
+        public void Start(object snapshot)
+        {
+            lock (_pendingSync)
+            {
+                if (_started || Volatile.Read(ref _disposed) != 0)
+                    return;
+                _started = true;
+                _pending = snapshot;
+            }
+            _producer = Task.Run(ProduceAsync);
+            Signal();
+        }
+
+        public void Publish(object data)
+        {
+            lock (_pendingSync)
+            {
+                if (!_started || Volatile.Read(ref _disposed) != 0)
+                    return;
+                _pending = data;
+            }
+            Signal();
+        }
 
         public async ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
                 return;
             _shutdown.Cancel();
+            Signal();
             if (_producer != null && Task.CurrentId != _producer.Id)
             {
                 try { await _producer.ConfigureAwait(false); } catch (OperationCanceledException) { }
             }
+            _signal.Dispose();
             _shutdown.Dispose();
         }
 
@@ -451,12 +600,26 @@ internal sealed class BackendServer : IAsyncDisposable
             {
                 while (!_shutdown.IsCancellationRequested)
                 {
-                    await Owner.SendEventAsync(new BackendEvent(StreamId, "json", new { value = CurrentValue() }), _shutdown.Token).ConfigureAwait(false);
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), _shutdown.Token).ConfigureAwait(false);
+                    await _signal.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                    object? data;
+                    lock (_pendingSync)
+                    {
+                        data = _pending;
+                        _pending = null;
+                    }
+                    if (data != null)
+                        await Owner.SendEventAsync(new BackendEvent(StreamId, "json", data), _shutdown.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
             catch (IOException) { }
+            catch (ObjectDisposedException) { }
+        }
+
+        private void Signal()
+        {
+            try { _signal.Release(); }
+            catch (SemaphoreFullException) { }
             catch (ObjectDisposedException) { }
         }
     }

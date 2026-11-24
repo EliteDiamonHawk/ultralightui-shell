@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Aether;
 
+internal sealed record LogicalBackendPipe(string PipeId, string PipeName, string BackendId, string State);
+
 internal sealed class RendererJsBridge : IDisposable
 {
     private static readonly JsonSerializerOptions BridgeJsonOptions = new()
@@ -86,6 +88,18 @@ internal sealed class RendererJsBridge : IDisposable
     public bool CanUseRuntimeCommand(string command) =>
         _spec.Bridge?.IsEnabled(_spec.Url) == true &&
         _spec.Bridge.RuntimeCommands.Contains(command, StringComparer.Ordinal);
+
+    internal LogicalBackendPipe ResolveBackendPipe(string backendId)
+    {
+        if (!CanUseBackend(backendId))
+            throw new InvalidOperationException("Backend is not allowed for this renderer view.");
+
+        return new LogicalBackendPipe(
+            $"{_spec.LogicalId}:{backendId}",
+            $"renderer://backend/{backendId}",
+            backendId,
+            _backends == null || _control?.State != "connected" ? "unavailable" : "available");
+    }
 
     public Task<ControlResponse> RequestAsync(string backendId, string method, string path, object? body, CancellationToken cancellationToken = default)
     {
@@ -222,20 +236,22 @@ internal sealed class RendererJsBridge : IDisposable
     {
         exception = IntPtr.Zero;
         if (!TryGetObject(args, argumentCount, out JsonElement input, out string error) ||
-            !TryGetBackendId(input, out string backendId, out error) ||
-            !CanUseBackend(backendId))
+            !TryGetBackendId(input, out string backendId, out error))
         {
             exception = CreateTypeError(context, error.Length == 0 ? "Backend is not allowed for this renderer view." : error);
             return IntPtr.Zero;
         }
 
-        return CreateJsonValue(context, JsonSerializer.Serialize(new
+        try
         {
-            pipeId = $"{_spec.LogicalId}:{backendId}",
-            pipeName = $"renderer://backend/{backendId}",
-            backendId,
-            state = _backends == null || _control?.State != "connected" ? "unavailable" : "available"
-        }, BridgeJsonOptions), out exception);
+            LogicalBackendPipe pipe = ResolveBackendPipe(backendId);
+            return CreateJsonValue(context, JsonSerializer.Serialize(pipe, BridgeJsonOptions), out exception);
+        }
+        catch (InvalidOperationException ex)
+        {
+            exception = CreateTypeError(context, ex.Message);
+            return IntPtr.Zero;
+        }
     }
 
     private void Request(IntPtr userData, IntPtr context, IntPtr thisValue, IntPtr args, UIntPtr argumentCount, IntPtr resolver) =>
