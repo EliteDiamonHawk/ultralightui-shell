@@ -32,6 +32,8 @@ internal static class Program
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
             (nameof(ConfigurationParsesMenuIdsAndBridge), ConfigurationParsesMenuIdsAndBridge),
+            (nameof(ConfigurationRejectsInvalidRuntimeCommands), ConfigurationRejectsInvalidRuntimeCommands),
+            (nameof(RuntimeCommandPayloadsMapAndValidate), RuntimeCommandPayloadsMapAndValidate),
             (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
             (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
@@ -264,15 +266,53 @@ internal static class Program
 
     private static void ConfigurationParsesMenuIdsAndBridge()
     {
-        string path = WriteTemp("{\"menu\":{\"id\":\"main.menu\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"enabled\":true,\"backend-ids\":[\"cpu\"],\"control-routes\":[\"/v1/windows/{id}/reveal\"]}}}");
+        string path = WriteTemp("{\"menu\":{\"id\":\"main.menu\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"enabled\":true,\"backend-ids\":[\"cpu\"],\"control-routes\":[\"/v1/windows/{id}/reveal\"],\"runtime-commands\":[\"toggleMenu\",\"hideWindow\"]}}}");
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
             AssertEqual("main.menu", configuration.Menu!.Id);
             AssertTrue(configuration.Menu.Bridge!.Enabled == true);
             AssertEqual("cpu", configuration.Menu.Bridge.BackendIds.Single());
+            AssertEqual("toggleMenu", configuration.Menu.Bridge.RuntimeCommands[0]);
+            AssertEqual("hideWindow", configuration.Menu.Bridge.RuntimeCommands[1]);
         }
         finally { Delete(path); }
+    }
+
+    private static void ConfigurationRejectsInvalidRuntimeCommands()
+    {
+        string unknown = WriteTemp("{\"widgets\":[],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"runtime-commands\":[\"exit\"]}}}");
+        string duplicate = WriteTemp("{\"widgets\":[],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"runtime-commands\":[\"reload\",\"reload\"]}}}");
+        try
+        {
+            AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { unknown }));
+            AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { duplicate }));
+        }
+        finally { Delete(unknown); Delete(duplicate); }
+    }
+
+    private static void RuntimeCommandPayloadsMapAndValidate()
+    {
+        using JsonDocument menu = JsonDocument.Parse("{\"command\":\"toggleMenu\"}");
+        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(menu.RootElement, out _, out RendererCommand toggle, out _));
+        AssertEqual(RendererCommandKind.ToggleMenu, toggle.Kind);
+
+        using JsonDocument window = JsonDocument.Parse("{\"command\":\"hideWindow\",\"targetId\":\"widget-1\"}");
+        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(window.RootElement, out _, out RendererCommand hide, out _));
+        AssertEqual(RendererCommandKind.HideWindow, hide.Kind);
+        AssertEqual("widget-1", hide.TargetId);
+
+        using JsonDocument group = JsonDocument.Parse("{\"command\":\"pause\",\"all\":true}");
+        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(group.RootElement, out _, out RendererCommand pause, out _));
+        AssertEqual(RendererCommandKind.Pause, pause.Kind);
+        AssertTrue(pause.All);
+
+        using JsonDocument invalidTarget = JsonDocument.Parse("{\"command\":\"hideWindow\"}");
+        AssertFalse(RendererJsBridge.TryParseRuntimeCommand(invalidTarget.RootElement, out _, out _, out _));
+        using JsonDocument conflictingScope = JsonDocument.Parse("{\"command\":\"status\",\"group\":\"desktop\",\"all\":true}");
+        AssertFalse(RendererJsBridge.TryParseRuntimeCommand(conflictingScope.RootElement, out _, out _, out _));
+        using JsonDocument forbidden = JsonDocument.Parse("{\"command\":\"exit\"}");
+        AssertFalse(RendererJsBridge.TryParseRuntimeCommand(forbidden.RootElement, out _, out _, out _));
     }
 
     private static void ConfigurationRejectsNonAsciiIds()

@@ -114,11 +114,22 @@ Add `bridge` to a wallpaper, widget, or menu when that page needs backend access
 "bridge": {
   "enabled": true,
   "backend-ids": ["nyx"],
-  "control-routes": ["/v1/status"]
+  "control-routes": ["/v1/status"],
+  "runtime-commands": ["toggleMenu", "hideMenu"]
 }
 ```
 
-`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
+`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. `runtime-commands` grants page JavaScript access to selected safe Aether commands. Supported values are `showMenu`, `hideMenu`, `toggleMenu`, `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and `reload`. Permissions default to empty.
+
+When granted, page JavaScript can call:
+
+```js
+await window.aether.command({ command: "toggleMenu" });
+await window.aether.command({ command: "hideWindow", targetId: "widget-1" });
+await window.aether.command({ command: "pause", group: "desktop" });
+```
+
+Menu commands accept no target fields. Window commands require `targetId`. Group commands accept optional `group` or `all`, but not both. The Promise resolves to `{ command, message }`; invalid, unauthorized, or failed commands reject. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
 
 ## Thread groups and reload
 

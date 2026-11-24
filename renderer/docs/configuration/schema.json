@@ -50,6 +50,24 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "pattern": "^/v1/" }
+        },
+        "runtime-commands": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "showMenu",
+              "hideMenu",
+              "toggleMenu",
+              "showWindow",
+              "hideWindow",
+              "pause",
+              "resume",
+              "status",
+              "reload"
+            ]
+          }
         }
       }
     },

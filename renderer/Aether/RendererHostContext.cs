@@ -117,7 +117,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             foreach (string groupName in snapshot.Select(spec => spec.ThreadGroup).Distinct(StringComparer.Ordinal))
             {
-                var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger, _backendManager, _controlChannel);
+                var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger, _backendManager, _controlChannel, HandleCommand);
                 group.Start();
                 result.Add(groupName, group);
             }

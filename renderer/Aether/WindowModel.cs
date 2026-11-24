@@ -44,10 +44,11 @@ public sealed record WindowSnapshot(
 public sealed record BridgePolicy(
     bool? Enabled,
     IReadOnlyList<string> BackendIds,
-    IReadOnlyList<string> ControlRoutes)
+    IReadOnlyList<string> ControlRoutes,
+    IReadOnlyList<string> RuntimeCommands)
 {
     public static BridgePolicy Default { get; } =
-        new(null, Array.Empty<string>(), Array.Empty<string>());
+        new(null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
 
     public bool IsEnabled(string url) => Enabled ?? url.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 }

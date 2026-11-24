@@ -39,6 +39,10 @@
     "transparent": true,
     "auto-hide": true,
     "hidden-behavior": "pause",
-    "thread-group": "menu"
+    "thread-group": "menu",
+    "bridge": {
+      "enabled": true,
+      "runtime-commands": ["toggleMenu", "hideMenu", "showMenu"]
+    }
   }
 }

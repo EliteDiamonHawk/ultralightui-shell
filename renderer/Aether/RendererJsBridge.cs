@@ -26,11 +26,13 @@ internal sealed class RendererJsBridge : IDisposable
     private readonly BackendConnectionManager? _backends;
     private readonly ControlPipeChannel? _control;
     private readonly Func<Action, bool> _ownerPoster;
+    private readonly Func<RendererCommand, string>? _runtimeCommandExecutor;
     private readonly UltralightNative.JsFunctionCallback _openPipeCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _requestCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _openStreamCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _closeStreamCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _controlCallback;
+    private readonly UltralightNative.JsAsyncFunctionCallback _runtimeCommandCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _createBindingCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _destroyBindingCallback;
     private readonly UltralightNative.JsFunctionCallback _onStreamCallback;
@@ -50,12 +52,14 @@ internal sealed class RendererJsBridge : IDisposable
         RendererWindowSpec spec,
         Func<Action, bool> ownerPoster,
         BackendConnectionManager? backends = null,
-        ControlPipeChannel? control = null)
+        ControlPipeChannel? control = null,
+        Func<RendererCommand, string>? runtimeCommandExecutor = null)
     {
         _spec = spec;
         _backends = backends;
         _control = control;
         _ownerPoster = ownerPoster;
+        _runtimeCommandExecutor = runtimeCommandExecutor;
         if (_backends != null)
             _backends.StreamEventReceived += OnStreamEvent;
         _openPipeCallback = OpenPipe;
@@ -63,6 +67,7 @@ internal sealed class RendererJsBridge : IDisposable
         _openStreamCallback = OpenStream;
         _closeStreamCallback = CloseStream;
         _controlCallback = Control;
+        _runtimeCommandCallback = RuntimeCommand;
         _createBindingCallback = CreateBinding;
         _destroyBindingCallback = DestroyBinding;
         _onStreamCallback = OnStream;
@@ -77,6 +82,10 @@ internal sealed class RendererJsBridge : IDisposable
     public bool CanUseControl(string path) =>
         _spec.Bridge?.IsEnabled(_spec.Url) == true &&
         _spec.Bridge.ControlRoutes.Contains(path, StringComparer.Ordinal);
+
+    public bool CanUseRuntimeCommand(string command) =>
+        _spec.Bridge?.IsEnabled(_spec.Url) == true &&
+        _spec.Bridge.RuntimeCommands.Contains(command, StringComparer.Ordinal);
 
     public Task<ControlResponse> RequestAsync(string backendId, string method, string path, object? body, CancellationToken cancellationToken = default)
     {
@@ -130,7 +139,8 @@ internal sealed class RendererJsBridge : IDisposable
                 streams = _backends != null && _control != null,
                 bindings = _backends != null && _control != null,
                 backendIds = _spec.Bridge.BackendIds,
-                controlRoutes = _spec.Bridge.ControlRoutes
+                controlRoutes = _spec.Bridge.ControlRoutes,
+                runtimeCommands = _spec.Bridge.RuntimeCommands
             }, BridgeJsonOptions);
             if (!UltralightNative.ulJSAPISetConstantString(api, "windowId", _spec.LogicalId) ||
                 !UltralightNative.ulJSAPISetConstantString(api, "pipeName", $"renderer://backend/{defaultBackend}") ||
@@ -140,6 +150,7 @@ internal sealed class RendererJsBridge : IDisposable
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "openStream", _openStreamCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "closeStream", _closeStreamCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "control", _controlCallback, IntPtr.Zero, IntPtr.Zero) ||
+                (_runtimeCommandExecutor != null && !UltralightNative.ulJSAPIBindAsyncFunction(api, "aether.command", _runtimeCommandCallback, IntPtr.Zero, IntPtr.Zero)) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "createBinding", _createBindingCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "destroyBinding", _destroyBindingCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindFunction(api, "onStream", _onStreamCallback, IntPtr.Zero, IntPtr.Zero))
@@ -316,6 +327,32 @@ internal sealed class RendererJsBridge : IDisposable
                 return PromiseResult.Success(new { status = response.Status, body = response.Body, error = response.Error });
             }
             catch (Exception ex) { return PromiseResult.Failure(ex.Message); }
+        });
+
+    private void RuntimeCommand(IntPtr userData, IntPtr context, IntPtr thisValue, IntPtr args, UIntPtr argumentCount, IntPtr resolver) =>
+        BeginAsync(context, resolver, args, argumentCount, input =>
+        {
+            if (!TryParseRuntimeCommand(input, out string commandName, out RendererCommand command, out string error))
+                return Task.FromResult(PromiseResult.Failure(error));
+            if (!CanUseRuntimeCommand(commandName))
+                return Task.FromResult(PromiseResult.Failure("Runtime command is not allowed for this renderer view."));
+            if (_runtimeCommandExecutor == null)
+                return Task.FromResult(PromiseResult.Failure("Runtime commands are unavailable for this renderer view."));
+
+            try
+            {
+                string response = _runtimeCommandExecutor(command);
+                if (response.StartsWith("ERR ", StringComparison.Ordinal))
+                    return Task.FromResult(PromiseResult.Failure(response[4..]));
+                string message = response.StartsWith("OK ", StringComparison.Ordinal)
+                    ? response[3..]
+                    : response;
+                return Task.FromResult(PromiseResult.Success(new { command = commandName, message }));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult(PromiseResult.Failure(ex.Message));
+            }
         });
 
     private void CreateBinding(IntPtr userData, IntPtr context, IntPtr thisValue, IntPtr args, UIntPtr argumentCount, IntPtr resolver) =>
@@ -868,6 +905,109 @@ internal sealed class RendererJsBridge : IDisposable
         foreach ((string name, JsonSchemaDescriptor schema) in left.Fields)
             if (!right.Fields.TryGetValue(name, out JsonSchemaDescriptor? other) || !SchemasEqual(schema, other))
                 return false;
+        return true;
+    }
+
+    internal static bool TryParseRuntimeCommand(
+        JsonElement input,
+        out string commandName,
+        out RendererCommand command,
+        out string error)
+    {
+        commandName = "";
+        command = new RendererCommand(RendererCommandKind.None);
+        error = "";
+
+        if (input.ValueKind != JsonValueKind.Object)
+        {
+            error = "The runtime command argument must be an object.";
+            return false;
+        }
+
+        foreach (JsonProperty property in input.EnumerateObject())
+        {
+            if (property.Name is not ("command" or "group" or "all" or "targetId"))
+            {
+                error = $"Unknown runtime command property: {property.Name}.";
+                return false;
+            }
+        }
+
+        if (!TryGetString(input, "command", out commandName, out error))
+            return false;
+        if (!RuntimeCommandNames.TryMap(commandName, out RendererCommandKind kind))
+        {
+            error = $"Unknown runtime command: {commandName}.";
+            return false;
+        }
+
+        string? group = null;
+        if (input.TryGetProperty("group", out JsonElement groupValue))
+        {
+            if (groupValue.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(groupValue.GetString()))
+            {
+                error = "group must be a non-empty string.";
+                return false;
+            }
+            group = groupValue.GetString()!.Trim();
+        }
+
+        bool all = false;
+        if (input.TryGetProperty("all", out JsonElement allValue))
+        {
+            if (allValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                error = "all must be a boolean.";
+                return false;
+            }
+            all = allValue.GetBoolean();
+        }
+
+        string? targetId = null;
+        if (input.TryGetProperty("targetId", out JsonElement targetValue))
+        {
+            if (targetValue.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(targetValue.GetString()))
+            {
+                error = "targetId must be a non-empty string.";
+                return false;
+            }
+            targetId = targetValue.GetString()!.Trim();
+        }
+
+        if (group != null && all)
+        {
+            error = "group and all cannot be used together.";
+            return false;
+        }
+
+        if (kind is RendererCommandKind.ShowMenu or RendererCommandKind.HideMenu or RendererCommandKind.ToggleMenu)
+        {
+            if (group != null || all || targetId != null)
+            {
+                error = $"{commandName} does not accept group, all, or targetId.";
+                return false;
+            }
+        }
+        else if (kind is RendererCommandKind.RevealWindow or RendererCommandKind.HideWindow)
+        {
+            if (targetId == null)
+            {
+                error = $"{commandName} requires targetId.";
+                return false;
+            }
+            if (group != null || all)
+            {
+                error = $"{commandName} does not accept group or all.";
+                return false;
+            }
+        }
+        else if (targetId != null)
+        {
+            error = $"{commandName} does not accept targetId.";
+            return false;
+        }
+
+        command = new RendererCommand(kind, Group: group, All: all, TargetId: targetId);
         return true;
     }
 

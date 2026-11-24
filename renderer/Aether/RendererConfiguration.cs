@@ -431,7 +431,7 @@ public sealed class RendererConfiguration
         if (!TryGet(element, "bridge", out JsonElement bridge))
             return BridgePolicy.Default;
         RequireKind(bridge, JsonValueKind.Object, $"{prefix} bridge");
-        ValidateProperties(bridge, $"{prefix} bridge", "enabled", "backend-ids", "control-routes");
+        ValidateProperties(bridge, $"{prefix} bridge", "enabled", "backend-ids", "control-routes", "runtime-commands");
 
         bool? enabled = GetOptionalBool(bridge, "enabled");
         var backendIds = new List<string>();
@@ -460,7 +460,20 @@ public sealed class RendererConfiguration
             }
         }
 
-        return new BridgePolicy(enabled, backendIds, controlRoutes);
+        var runtimeCommands = new List<string>();
+        if (TryGet(bridge, "runtime-commands", out JsonElement commands))
+        {
+            RequireKind(commands, JsonValueKind.Array, $"{prefix} bridge runtime-commands");
+            foreach (JsonElement item in commands.EnumerateArray())
+            {
+                string command = GetString(item, $"{prefix} bridge runtime-commands").Trim();
+                if (!RuntimeCommandNames.TryMap(command, out _) || runtimeCommands.Contains(command, StringComparer.Ordinal))
+                    throw new RendererConfigurationException($"{prefix} bridge runtime-commands contains an invalid or duplicate command.");
+                runtimeCommands.Add(command);
+            }
+        }
+
+        return new BridgePolicy(enabled, backendIds, controlRoutes, runtimeCommands);
     }
 
     private static void ValidateProperties(JsonElement element, string prefix, params string[] allowed)

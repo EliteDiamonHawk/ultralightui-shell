@@ -11,13 +11,14 @@ public sealed class RuntimeGroupHost : IDisposable
     private readonly RendererLogger _logger;
     private readonly BackendConnectionManager? _backends;
     private readonly ControlPipeChannel? _control;
+    private readonly Func<RendererCommand, string>? _runtimeCommandExecutor;
     private readonly ManualResetEventSlim _ready = new(false);
     private Thread? _thread;
     private RuntimeGroupContext? _context;
     private Exception? _startupException;
     private int _disposed;
 
-    internal RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory, RendererLogger logger, BackendConnectionManager? backends = null, ControlPipeChannel? control = null)
+    internal RuntimeGroupHost(string name, HostOptions options, Func<IReadOnlyList<RendererWindowSpec>> specFactory, RendererLogger logger, BackendConnectionManager? backends = null, ControlPipeChannel? control = null, Func<RendererCommand, string>? runtimeCommandExecutor = null)
     {
         Name = name;
         _options = options;
@@ -25,6 +26,7 @@ public sealed class RuntimeGroupHost : IDisposable
         _logger = logger;
         _backends = backends;
         _control = control;
+        _runtimeCommandExecutor = runtimeCommandExecutor;
     }
 
     public string Name { get; }
@@ -101,7 +103,7 @@ public sealed class RuntimeGroupHost : IDisposable
         int startupSignaled = 0;
         try
         {
-            context = new RuntimeGroupContext(Name, _options, _specFactory, _logger, _backends, _control);
+            context = new RuntimeGroupContext(Name, _options, _specFactory, _logger, _backends, _control, _runtimeCommandExecutor);
             lock (_sync) _context = context;
             idleHandler = (_, _) =>
             {
@@ -148,6 +150,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly RendererLogger _logger;
     private readonly BackendConnectionManager? _backends;
     private readonly ControlPipeChannel? _control;
+    private readonly Func<RendererCommand, string>? _runtimeCommandExecutor;
     private readonly Control _dispatcher = new();
     private readonly object _windowSync = new();
     private readonly UltralightRuntime _runtime;
@@ -173,7 +176,8 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         Func<IReadOnlyList<RendererWindowSpec>> specFactory,
         RendererLogger logger,
         BackendConnectionManager? backends = null,
-        ControlPipeChannel? control = null)
+        ControlPipeChannel? control = null,
+        Func<RendererCommand, string>? runtimeCommandExecutor = null)
     {
         _name = name;
         _options = options;
@@ -181,9 +185,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         _logger = logger;
         _backends = backends;
         _control = control;
+        _runtimeCommandExecutor = runtimeCommandExecutor;
         _currentSpecs = specFactory().Where(spec => spec.ThreadGroup == name).ToList();
         _dispatcher.CreateControl();
-        _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control);
+        _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control, _runtimeCommandExecutor);
         _embedder = new DesktopEmbedder(options.Verbose);
         _startMenuController = new StartMenuWindowController(options.Verbose);
         _timer = new System.Windows.Forms.Timer { Interval = 16 };

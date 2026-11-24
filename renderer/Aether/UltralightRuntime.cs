@@ -5,11 +5,13 @@ public sealed class UltralightRuntime : IDisposable
     private IntPtr _app;
     private readonly BackendConnectionManager? _backends;
     private readonly ControlPipeChannel? _control;
+    private readonly Func<RendererCommand, string>? _runtimeCommandExecutor;
 
-    internal UltralightRuntime(string? ultralightRoot = null, BackendConnectionManager? backends = null, ControlPipeChannel? control = null)
+    internal UltralightRuntime(string? ultralightRoot = null, BackendConnectionManager? backends = null, ControlPipeChannel? control = null, Func<RendererCommand, string>? runtimeCommandExecutor = null)
     {
         _backends = backends;
         _control = control;
+        _runtimeCommandExecutor = runtimeCommandExecutor;
         string stage = "runtime file validation";
         try
         {
@@ -129,7 +131,8 @@ public sealed class UltralightRuntime : IDisposable
                     spec,
                     ownerPoster ?? throw new InvalidOperationException("Ultralight bridge requires an owner-thread dispatcher."),
                     _backends,
-                    _control);
+                    _control,
+                    _runtimeCommandExecutor);
                 bridge.Attach(view);
             }
 
