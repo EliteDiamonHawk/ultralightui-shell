@@ -47,6 +47,7 @@ internal sealed class EscapePanicController : IDisposable
     private IntPtr _hook;
     private bool _disposed;
     private bool _enabled;
+    private int _triggered;
 
     public EscapePanicController(bool enabled, Action trigger, Action<string> diagnostic)
     {
@@ -69,6 +70,7 @@ internal sealed class EscapePanicController : IDisposable
         if (!enabled)
         {
             _enabled = false;
+            Interlocked.Exchange(ref _triggered, 0);
             if (_hook != IntPtr.Zero)
             {
                 NativeMethods.UnhookWindowsHookEx(_hook);
@@ -90,6 +92,7 @@ internal sealed class EscapePanicController : IDisposable
         }
 
         _enabled = true;
+        Interlocked.Exchange(ref _triggered, 0);
         StateChanged?.Invoke(true);
     }
 
@@ -102,6 +105,7 @@ internal sealed class EscapePanicController : IDisposable
             NativeMethods.UnhookWindowsHookEx(_hook);
         _hook = IntPtr.Zero;
         _tracker.Reset();
+        Interlocked.Exchange(ref _triggered, 1);
     }
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
@@ -113,7 +117,8 @@ internal sealed class EscapePanicController : IDisposable
             bool repeat = keyDown && (data.Flags & 0x80) != 0;
             if ((data.Flags & NativeMethods.LLKHF_INJECTED) == 0 &&
                 data.VirtualKeyCode == NativeMethods.VK_ESCAPE && keyDown && !repeat &&
-                _tracker.RegisterPress(Environment.TickCount64))
+                _tracker.RegisterPress(Environment.TickCount64) &&
+                Interlocked.Exchange(ref _triggered, 1) == 0)
             {
                 try { _trigger(); }
                 catch (Exception ex) { _diagnostic($"Escape Panic trigger dispatch failed: {ex.Message}"); }

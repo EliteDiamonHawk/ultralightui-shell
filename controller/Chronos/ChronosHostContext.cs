@@ -16,6 +16,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     private RendererSession? _renderer;
     private readonly WinMenuToggleController _winToggle;
     private readonly EscapePanicController _escapePanic;
+    private readonly KeybindController _keybinds;
     private readonly TrayController? _tray;
     private bool _statusPollingEnabled;
     private PersistentSettings _settings;
@@ -66,6 +67,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _winToggle.StateChanged += OnWinToggleChanged;
         _escapePanic = new EscapePanicController(_settings.PanicEscapeEnabled, QueuePanicTrigger, Diagnostic);
         _escapePanic.StateChanged += OnEscapePanicChanged;
+        _keybinds = new KeybindController(_settings.Keybinds ?? KeybindCatalog.DefaultBindings, DispatchKeybindAsync, Diagnostic);
         _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
         StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
@@ -78,18 +80,24 @@ internal sealed class ChronosHostContext : ApplicationContext
     public IReadOnlyList<ThemeDefinition> Themes => _themes.Themes;
     public string ThemesDirectory => _paths.ThemesDirectory;
 
-    public ShellUiSnapshot GetUiSnapshot() => new(
-        _commands.Capabilities,
-        _commands.IsConnected,
-        _tray != null,
-        _tray?.Visible == true,
-        _winToggle.Enabled,
-        _escapePanic.Enabled,
-        _themeOrigin,
-        _rendererFailure,
-        _statusPollingEnabled,
-        _exiting,
-        _settings);
+    public ShellUiSnapshot GetUiSnapshot()
+    {
+        IReadOnlyList<KeybindDefinition> bindings = KeybindCatalog.SetWindowsBindingEnabled(
+            _settings.Keybinds ?? KeybindCatalog.DefaultBindings,
+            _winToggle.Enabled);
+        return new(
+            _commands.Capabilities,
+            _commands.IsConnected,
+            _tray != null,
+            _tray?.Visible == true,
+            _winToggle.Enabled,
+            _escapePanic.Enabled,
+            _themeOrigin,
+            _rendererFailure,
+            _statusPollingEnabled,
+            _exiting,
+            _settings with { Keybinds = bindings });
+    }
 
     public async Task RefreshUiAsync()
     {
@@ -223,13 +231,27 @@ internal sealed class ChronosHostContext : ApplicationContext
     public void SetCurrentWinToggle(bool enabled)
     {
         _winToggle.SetEnabled(enabled);
-        UpdateSettings(_settings with { WindowsKeyOverride = _winToggle.Enabled });
+        IReadOnlyList<KeybindDefinition> bindings = KeybindCatalog.SetWindowsBindingEnabled(
+            _settings.Keybinds ?? KeybindCatalog.DefaultBindings,
+            _winToggle.Enabled);
+        UpdateSettings(_settings with { WindowsKeyOverride = _winToggle.Enabled, Keybinds = bindings });
     }
 
     public void SetEscapePanicEnabled(bool enabled)
     {
         _escapePanic.SetEnabled(enabled);
         UpdateSettings(_settings with { PanicEscapeEnabled = enabled });
+    }
+
+    public void SetKeybinds(IReadOnlyList<KeybindDefinition> bindings)
+    {
+        IReadOnlyList<KeybindDefinition> normalized = KeybindCatalog.EnsureWindowsBinding(
+            bindings,
+            _winToggle.Enabled);
+        KeybindDefinition windows = normalized.First(binding => binding.SystemBinding);
+        _keybinds.SetBindings(normalized);
+        _winToggle.SetEnabled(windows.Enabled);
+        UpdateSettings(_settings with { WindowsKeyOverride = windows.Enabled, Keybinds = normalized });
     }
 
     public void SetTrayVisible(bool visible)
@@ -277,6 +299,34 @@ internal sealed class ChronosHostContext : ApplicationContext
     public Task<AetherCommandResult> ToggleMenuAsync() => _commands.ToggleMenuAsync();
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible) => _commands.SetWindowVisibilityAsync(id, visible);
     public void RequestExitFromUi() => RequestExit();
+
+    private async Task DispatchKeybindAsync(KeybindDefinition binding)
+    {
+        KeybindAction action = binding.EffectiveAction;
+        if (action.Kind == KeybindActionKind.AetherCommand)
+        {
+            AetherCommandResult result = await _commands.ExecuteAsync(action.ToRendererCommand()).ConfigureAwait(false);
+            if (!result.Success)
+                Diagnostic(result.Error ?? result.Payload);
+            return;
+        }
+
+        if (_renderer?.Control is not { } control)
+        {
+            Diagnostic($"Keybind '{binding.DisplayName}' failed: renderer is not running.");
+            return;
+        }
+
+        try
+        {
+            foreach (string cueName in action.EffectiveCueNames)
+                await control.SendCueAsync(cueName).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic($"Keybind '{binding.DisplayName}' cue failed: {ex.Message}");
+        }
+    }
 
     private void WaitForRenderer(IReadOnlyList<string> expectedConfig)
     {
@@ -712,14 +762,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         if (_exiting)
             return;
-
-        _winToggle.SetEnabled(false);
-        MessageBox.Show(
-            _shellForm,
-            "Panic Escape triggered. Windows Key Override has been disabled.",
-            "KhaosShell",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Warning);
+        RequestExit();
     }
 
     private void ShowShellForm()
@@ -750,6 +793,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         try { _shellForm?.CloseForShutdown(); } catch { }
         try { _winToggle.Dispose(); } catch { }
         try { _escapePanic.Dispose(); } catch { }
+        try { _keybinds.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
         StopRenderer(requestExit: true);
         _backends.Dispose();

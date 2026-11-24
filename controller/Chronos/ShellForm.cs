@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using KhaosShell.Contracts;
 
 namespace Chronos;
 
@@ -24,7 +25,8 @@ internal enum ShellRenderTarget
     Renderer = 2,
     Themes = 4,
     Options = 8,
-    All = Status | Renderer | Themes | Options
+    Keybinds = 16,
+    All = Status | Renderer | Themes | Options | Keybinds
 }
 
 internal sealed class ShellForm : Form
@@ -33,6 +35,7 @@ internal sealed class ShellForm : Form
     private readonly ListBox _themes = new();
     private readonly ListBox _groups = new();
     private readonly ListBox _windows = new();
+    private readonly CheckedListBox _keybindList = new() { CheckOnClick = true };
     private readonly RichTextBox _themeFiles = new();
     private readonly RichTextBox _activeThemeFiles = new();
     private readonly RichTextBox _statusOutput = new();
@@ -48,13 +51,35 @@ internal sealed class ShellForm : Form
     private readonly CheckBox _restoreState = new();
     private readonly TextBox _rendererPath = new();
     private readonly TextBox _ultralightRoot = new();
+    private readonly TextBox _keybindGesture = new();
+    private readonly CheckedListBox _keybindCueList = new() { CheckOnClick = true };
+    private readonly TextBox _keybindGroup = new();
+    private readonly TextBox _keybindTarget = new();
+    private readonly TextBox _keybindTopic = new();
+    private readonly TextBox _keybindConfigPaths = new();
+    private readonly CheckBox _keybindOverride = new();
+    private readonly CheckBox _keybindAll = new();
+    private readonly ComboBox _keybindActionKind = new();
+    private readonly ComboBox _keybindCommand = new();
+    private readonly ComboBox _keybindTrayAction = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
     private readonly List<RendererWindowCapability> _windowItems = new();
     private readonly List<string> _groupItems = new();
+    private readonly List<KeybindDefinition> _keybindItems = new();
+    private readonly List<KeybindDefinition> _visibleKeybindItems = new();
+    private readonly List<CueOption> _cueOptions = new();
+    private KeybindDefinition? _editingKeybind;
+    private bool _capturingGesture;
+    private bool _keybindEditorDirty;
     private bool _updating;
     private bool _refreshInFlight;
     private bool _allowClose;
+
+    private sealed record CueOption(string Name, bool Current)
+    {
+        public override string ToString() => Current ? Name : $"{Name} (archived)";
+    }
 
     public ShellForm(ChronosHostContext host)
     {
@@ -115,10 +140,18 @@ internal sealed class ShellForm : Form
         root.Controls.Add(status, 0, 0);
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
-        tabs.TabPages.Add(new TabPage("Themes") { Padding = new Padding(6), Controls = { BuildThemesPage() } });
+        var themesTab = new TabPage("Themes") { Padding = new Padding(6), Controls = { BuildThemesPage() } };
+        var keybindsTab = new TabPage("Keybinds") { Padding = new Padding(6), Controls = { BuildKeybindsPage() } };
+        tabs.TabPages.Add(themesTab);
+        tabs.TabPages.Add(keybindsTab);
         tabs.TabPages.Add(new TabPage("Aether commands") { Padding = new Padding(6), Controls = { BuildCommandsPage() } });
         tabs.TabPages.Add(new TabPage("Status") { Padding = new Padding(6), Controls = { BuildStatusPage() } });
         tabs.TabPages.Add(new TabPage("Options") { Padding = new Padding(6), Controls = { BuildOptionsPage() } });
+        tabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (tabs.SelectedTab == keybindsTab)
+                Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        };
         root.Controls.Add(tabs, 0, 1);
     }
 
@@ -143,6 +176,358 @@ internal sealed class ShellForm : Form
         details.Controls.Add(buttons, 0, 1);
         split.Panel2.Controls.Add(details);
         return split;
+    }
+
+    private Control BuildKeybindsPage()
+    {
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, Padding = new Padding(6) };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+
+        _escapePanic.Text = "Panic Escape Enabled";
+        _windowsKeyOverride.Text = "Override Windows Key to Toggle Menu";
+        _windowsKeyOverride.AutoSize = true;
+        _escapePanic.AutoSize = true;
+        _windowsKeyOverride.Dock = DockStyle.Fill;
+        _escapePanic.Dock = DockStyle.Fill;
+        _windowsKeyOverride.Margin = new Padding(4, 2, 4, 2);
+        _escapePanic.Margin = new Padding(4, 2, 4, 2);
+        _windowsKeyOverride.CheckedChanged += (_, _) =>
+        {
+            if (!_updating)
+            {
+                if (RunSync(() => _host.SetCurrentWinToggle(_windowsKeyOverride.Checked)))
+                    Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+            }
+        };
+        _escapePanic.CheckedChanged += (_, _) =>
+        {
+            if (_updating)
+                return;
+            if (!_escapePanic.Checked && MessageBox.Show(
+                    this,
+                    "Disable Panic Escape? Rapid Escape presses will no longer disable Windows Key Override.",
+                    "KhaosShell",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                SetEscapePanicCheckbox(true);
+                return;
+            }
+
+            if (RunSync(() => _host.SetEscapePanicEnabled(_escapePanic.Checked)))
+                Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        };
+        root.Controls.Add(_escapePanic, 0, 0);
+        root.Controls.Add(_windowsKeyOverride, 0, 1);
+
+        _keybindList.Dock = DockStyle.Fill;
+        _keybindList.SelectedIndexChanged += (_, _) => LoadSelectedKeybind();
+        _keybindList.ItemCheck += OnKeybindItemCheck;
+        var listPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 1, ColumnCount = 2 };
+        listPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        listPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        listPanel.Controls.Add(_keybindList, 0, 0);
+        var listButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        listButtons.Controls.Add(Button("Add", (_, _) => AddKeybind()));
+        listButtons.Controls.Add(Button("Remove", (_, _) => RemoveKeybind()));
+        listPanel.Controls.Add(listButtons, 1, 0);
+        root.Controls.Add(listPanel, 0, 2);
+
+        root.Controls.Add(BuildKeybindEditor(), 0, 3);
+        return root;
+    }
+
+    private Control BuildKeybindEditor()
+    {
+        var editor = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+            Padding = new Padding(4)
+        };
+
+        _keybindGesture.ReadOnly = true;
+        _keybindGesture.Width = 180;
+        _keybindGesture.KeyDown += (_, e) =>
+        {
+            if (!_capturingGesture)
+                return;
+            if (_editingKeybind?.SystemBinding == true)
+                return;
+            if (KeybindCatalog.IsModifier(e.KeyCode))
+                return;
+            _editingKeybind = (_editingKeybind ?? NewKeybind(_keybindItems)) with { Gesture = KeybindGesture.FromKeyEvent(e) };
+            _keybindGesture.Text = _editingKeybind.Gesture.DisplayName;
+            _capturingGesture = false;
+            e.SuppressKeyPress = true;
+            e.Handled = true;
+        };
+        _keybindGesture.Height = 28;
+        var gesturePanel = new FlowLayoutPanel { AutoSize = true, MinimumSize = new Size(0, 34), WrapContents = false };
+        gesturePanel.Controls.Add(_keybindGesture);
+        gesturePanel.Controls.Add(Button("Capture", (_, _) =>
+        {
+            if (_editingKeybind?.SystemBinding == true)
+                return;
+            _capturingGesture = true;
+            _keybindGesture.Text = "Press key...";
+            _keybindGesture.Focus();
+        }));
+        editor.Controls.Add(EditorField("Key", gesturePanel));
+
+        _keybindActionKind.DropDownStyle = ComboBoxStyle.DropDownList;
+        _keybindActionKind.Items.AddRange(new object[] { KeybindActionKind.Cue, KeybindActionKind.AetherCommand });
+        _keybindActionKind.SelectedIndexChanged += (_, _) => { UpdateKeybindEditorVisibility(); MarkKeybindDirty(); };
+        _keybindCommand.DropDownStyle = ComboBoxStyle.DropDownList;
+        _keybindCommand.Items.AddRange(Enum.GetValues<RendererCommandKind>().Where(value => value != RendererCommandKind.None).Cast<object>().ToArray());
+        _keybindCommand.SelectedIndexChanged += (_, _) => { UpdateKeybindEditorVisibility(); MarkKeybindDirty(); };
+        _keybindTrayAction.DropDownStyle = ComboBoxStyle.DropDownList;
+        _keybindTrayAction.Items.AddRange(Enum.GetValues<SystemTrayAction>().Cast<object>().ToArray());
+        _keybindGroup.Width = 220;
+        _keybindTarget.Width = 220;
+        _keybindTopic.Width = 220;
+        _keybindConfigPaths.Width = 220;
+        _keybindConfigPaths.Multiline = true;
+        _keybindConfigPaths.Height = 42;
+        _keybindAll.Text = "All groups";
+        _keybindOverride.Text = "Suppress matched key";
+        _keybindOverride.AutoSize = true;
+        _keybindAll.AutoSize = true;
+        _keybindCueList.Height = 82;
+        _keybindCueList.Width = 420;
+        _keybindCueList.ItemCheck += (_, _) => MarkKeybindDirty();
+        _keybindConfigPaths.Width = 420;
+        foreach (Control control in new Control[] { _keybindGroup, _keybindTarget, _keybindTopic, _keybindConfigPaths, _keybindAll, _keybindOverride })
+        {
+            control.TextChanged += (_, _) => MarkKeybindDirty();
+            if (control is CheckBox checkBox)
+                checkBox.CheckedChanged += (_, _) => MarkKeybindDirty();
+        }
+        editor.Controls.Add(EditorField("Action", _keybindActionKind));
+        var options = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Width = 560, Padding = new Padding(0) };
+        _keybindOptionsPanel = options;
+        editor.Controls.Add(options);
+        var flags = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
+        flags.Controls.Add(_keybindOverride);
+        editor.Controls.Add(EditorField("Options", flags));
+        var save = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true };
+        save.Controls.Add(Button("Save binding", (_, _) => SaveKeybind()));
+        save.Controls.Add(new Label { Text = "Cue choices come from current theme plus archived names.", AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
+        editor.Controls.Add(save);
+        UpdateKeybindEditorVisibility();
+        return editor;
+    }
+
+    private FlowLayoutPanel? _keybindOptionsPanel;
+
+    private static FlowLayoutPanel EditorField(string label, Control control)
+    {
+        var field = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
+        field.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 5, 8, 0) });
+        field.Controls.Add(control);
+        return field;
+    }
+
+    private KeybindDefinition NewKeybind(IReadOnlyList<KeybindDefinition> existing)
+    {
+        var candidates = new List<KeybindGesture>();
+        foreach (KeybindModifiers modifiers in new[] { KeybindModifiers.Control | KeybindModifiers.Alt, KeybindModifiers.Control | KeybindModifiers.Alt | KeybindModifiers.Shift })
+        {
+            candidates.AddRange(Enumerable.Range((int)Keys.A, 26).Select(value => new KeybindGesture((Keys)value, modifiers)));
+            candidates.AddRange(Enumerable.Range((int)Keys.F1, 12).Select(value => new KeybindGesture((Keys)value, modifiers)));
+        }
+        KeybindGesture gesture = candidates.First(candidate => existing.All(binding => binding.Gesture != candidate));
+        return new(
+            Guid.NewGuid(),
+            gesture,
+            Action: new KeybindAction(KeybindActionKind.AetherCommand, Command: RendererCommandKind.ToggleMenu));
+    }
+
+    private void AddKeybind()
+    {
+        KeybindDefinition binding = NewKeybind(_keybindItems);
+        List<KeybindDefinition> next = _keybindItems.Concat(new[] { binding }).ToList();
+        if (!RunSync(() => _host.SetKeybinds(next)))
+            return;
+        _editingKeybind = binding;
+        _keybindEditorDirty = false;
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        SelectKeybind(binding.Id);
+    }
+
+    private void RemoveKeybind()
+    {
+        if (_keybindList.SelectedIndex < 0 || _keybindList.SelectedIndex >= _visibleKeybindItems.Count)
+            return;
+        KeybindDefinition selected = _visibleKeybindItems[_keybindList.SelectedIndex];
+        List<KeybindDefinition> next = _keybindItems.Where(item => item.Id != selected.Id).ToList();
+        if (!RunSync(() => _host.SetKeybinds(next)))
+            return;
+        _editingKeybind = null;
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+    }
+
+    private void OnKeybindItemCheck(object? sender, ItemCheckEventArgs e)
+    {
+        if (_updating || e.Index < 0 || e.Index >= _visibleKeybindItems.Count)
+            return;
+        KeybindDefinition binding = _visibleKeybindItems[e.Index];
+        bool enabled = e.NewValue == CheckState.Checked;
+        BeginInvoke((Action)(() =>
+        {
+            List<KeybindDefinition> next = _keybindItems.Select(item => item.Id == binding.Id ? item with { Enabled = enabled } : item).ToList();
+            if (RunSync(() => _host.SetKeybinds(next)))
+                Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        }));
+    }
+
+    private void SelectKeybind(Guid id)
+    {
+        int index = _visibleKeybindItems.FindIndex(binding => binding.Id == id);
+        if (index >= 0)
+            _keybindList.SelectedIndex = index;
+    }
+
+    private void LoadSelectedKeybind()
+    {
+        if (_keybindList.SelectedIndex < 0 || _keybindList.SelectedIndex >= _visibleKeybindItems.Count)
+            return;
+        bool wasUpdating = _updating;
+        _updating = true;
+        try
+        {
+            _editingKeybind = _visibleKeybindItems[_keybindList.SelectedIndex];
+            KeybindAction action = _editingKeybind.EffectiveAction;
+            _keybindGesture.Text = _editingKeybind.Gesture.DisplayName;
+            _keybindOverride.Checked = _editingKeybind.Override;
+            _keybindActionKind.SelectedItem = action.Kind;
+            _keybindCommand.SelectedItem = action.Command == RendererCommandKind.None ? RendererCommandKind.ShowMenu : action.Command;
+            _keybindGroup.Text = action.Group ?? string.Empty;
+            _keybindTarget.Text = action.TargetId ?? string.Empty;
+            _keybindTopic.Text = action.Topic ?? string.Empty;
+            _keybindConfigPaths.Text = action.ConfigPaths == null ? string.Empty : string.Join(Environment.NewLine, action.ConfigPaths);
+            _keybindAll.Checked = action.All;
+            _keybindTrayAction.SelectedItem = action.TrayAction;
+            LoadCueChecks(action.EffectiveCueNames);
+            _keybindEditorDirty = false;
+            UpdateKeybindEditorVisibility();
+        }
+        finally { _updating = wasUpdating; }
+    }
+
+    private void SaveKeybind()
+    {
+        if (_editingKeybind == null)
+        {
+            SetOutput("Select or add a binding first.");
+            return;
+        }
+        if (_editingKeybind.SystemBinding)
+        {
+            SetOutput("Windows Key Override binding is managed above.");
+            return;
+        }
+        KeybindActionKind kind = _keybindActionKind.SelectedItem is KeybindActionKind selectedKind ? selectedKind : KeybindActionKind.Cue;
+        string[] configPaths = _keybindConfigPaths.Text.Split(new[] { '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var action = new KeybindAction(
+            kind,
+            CueNames: _keybindCueList.CheckedItems.Cast<CueOption>().Select(option => option.Name).ToArray(),
+            Command: _keybindCommand.SelectedItem is RendererCommandKind command ? command : RendererCommandKind.ShowMenu,
+            Group: _keybindGroup.Text,
+            All: _keybindAll.Checked,
+            TargetId: _keybindTarget.Text,
+            Topic: _keybindTopic.Text,
+            ConfigPaths: configPaths,
+            TrayAction: _keybindTrayAction.SelectedItem is SystemTrayAction trayAction ? trayAction : SystemTrayAction.Toggle);
+        KeybindDefinition nextBinding = _editingKeybind with
+        {
+            Gesture = ParseGesture(_keybindGesture.Text, _editingKeybind.Gesture),
+            Override = _keybindOverride.Checked,
+            Action = action
+        };
+        List<KeybindDefinition> next = _keybindItems.Select(item => item.Id == nextBinding.Id ? nextBinding : item).ToList();
+        if (!RunSync(() => _host.SetKeybinds(next)))
+            return;
+        _editingKeybind = nextBinding;
+        _keybindEditorDirty = false;
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        SetOutput("Keybind saved.");
+    }
+
+    private static KeybindGesture ParseGesture(string text, KeybindGesture fallback) => fallback;
+
+    private void LoadCueChecks(IReadOnlyList<string> selected)
+    {
+        _keybindCueList.Items.Clear();
+        for (int index = 0; index < _cueOptions.Count; index++)
+        {
+            CueOption option = _cueOptions[index];
+            _keybindCueList.Items.Add(option);
+            if (selected.Contains(option.Name, StringComparer.Ordinal))
+                _keybindCueList.SetItemChecked(index, true);
+        }
+    }
+
+    private void MarkKeybindDirty()
+    {
+        if (!_updating && _editingKeybind?.SystemBinding != true)
+            _keybindEditorDirty = true;
+    }
+
+    private void UpdateKeybindEditorVisibility()
+    {
+        if (_keybindOptionsPanel == null)
+            return;
+        _keybindOptionsPanel.Controls.Clear();
+        bool editable = _editingKeybind?.SystemBinding != true;
+        _keybindActionKind.Enabled = editable;
+        _keybindOverride.Enabled = editable;
+        bool cue = _keybindActionKind.SelectedItem is KeybindActionKind.Cue;
+        if (cue)
+        {
+            _keybindCueList.Enabled = editable;
+            _keybindOptionsPanel.Controls.Add(EditorField("Cues", _keybindCueList));
+        }
+        else
+        {
+            _keybindCommand.Enabled = editable;
+            _keybindOptionsPanel.Controls.Add(EditorField("Command", _keybindCommand));
+            RendererCommandKind command = _keybindCommand.SelectedItem is RendererCommandKind selected ? selected : RendererCommandKind.ToggleMenu;
+            switch (command)
+            {
+                case RendererCommandKind.Show:
+                    _keybindTopic.Enabled = editable;
+                    _keybindOptionsPanel.Controls.Add(EditorField("Topic", _keybindTopic));
+                    break;
+                case RendererCommandKind.HideWindow:
+                case RendererCommandKind.RevealWindow:
+                    _keybindTarget.Enabled = editable;
+                    _keybindOptionsPanel.Controls.Add(EditorField("Target ID", _keybindTarget));
+                    break;
+                case RendererCommandKind.Pause:
+                case RendererCommandKind.Resume:
+                case RendererCommandKind.Status:
+                case RendererCommandKind.Reload:
+                    _keybindGroup.Enabled = editable;
+                    _keybindAll.Enabled = editable;
+                    _keybindOptionsPanel.Controls.Add(EditorField("Group", _keybindGroup));
+                    _keybindOptionsPanel.Controls.Add(_keybindAll);
+                    break;
+                case RendererCommandKind.SystemTray:
+                    _keybindTrayAction.Enabled = editable;
+                    _keybindOptionsPanel.Controls.Add(EditorField("Tray action", _keybindTrayAction));
+                    break;
+                case RendererCommandKind.ApplyConfig:
+                    _keybindConfigPaths.Enabled = editable;
+                    _keybindOptionsPanel.Controls.Add(EditorField("Config paths", _keybindConfigPaths));
+                    break;
+            }
+        }
     }
 
     private Control BuildCommandsPage()
@@ -237,42 +622,15 @@ internal sealed class ShellForm : Form
     {
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(8) };
         _trayEnabled.Text = "Tray enabled";
-        _windowsKeyOverride.Text = "Windows Key Override";
-        _escapePanic.Text = "Panic Escape enabled";
         _statusPollingEnabled.Text = "Status polling enabled";
         _restoreState.Text = "Restore theme state on launch";
         _trayEnabled.AutoSize = true;
-        _windowsKeyOverride.AutoSize = true;
-        _escapePanic.AutoSize = true;
         _statusPollingEnabled.AutoSize = true;
         _restoreState.AutoSize = true;
         _trayEnabled.CheckedChanged += (_, _) =>
         {
             if (!_updating)
                 RunSync(() => _host.SetTrayVisible(_trayEnabled.Checked));
-        };
-        _windowsKeyOverride.CheckedChanged += (_, _) =>
-        {
-            if (!_updating)
-                RunSync(() => _host.SetCurrentWinToggle(_windowsKeyOverride.Checked));
-        };
-        _escapePanic.CheckedChanged += (_, _) =>
-        {
-            if (_updating)
-                return;
-            if (!_escapePanic.Checked && MessageBox.Show(
-                    this,
-                    "Disable Panic Escape? Rapid Escape presses will no longer disable Windows Key Override.",
-                    "KhaosShell",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question) != DialogResult.Yes)
-            {
-                SetEscapePanicCheckbox(true);
-                return;
-            }
-
-            if (!RunSync(() => _host.SetEscapePanicEnabled(_escapePanic.Checked)))
-                Render(_host.GetUiSnapshot(), ShellRenderTarget.Options);
         };
         _statusPollingEnabled.CheckedChanged += (_, _) =>
         {
@@ -300,8 +658,6 @@ internal sealed class ShellForm : Form
         ultralightButtons.Controls.Add(Button("Browse", (_, _) => BrowseUltralightRoot()));
         ultralightButtons.Controls.Add(Button("Save", (_, _) => SaveUltralightRoot()));
         options.Controls.Add(_trayEnabled);
-        options.Controls.Add(_windowsKeyOverride);
-        options.Controls.Add(_escapePanic);
         options.Controls.Add(_statusPollingEnabled);
         options.Controls.Add(_restoreState);
         options.Controls.Add(rendererButtons);
@@ -527,12 +883,51 @@ internal sealed class ShellForm : Form
                 RenderSelectedTheme();
             }
 
+            if (target.HasFlag(ShellRenderTarget.Keybinds))
+            {
+                _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+                SetEscapePanicCheckbox(snapshot.EscapePanicEnabled);
+                IReadOnlyList<string> historicalCues = (snapshot.Settings.Keybinds ?? KeybindCatalog.DefaultBindings)
+                    .Where(binding => binding.EffectiveAction.Kind == KeybindActionKind.Cue)
+                    .SelectMany(binding => binding.EffectiveAction.EffectiveCueNames)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                _cueOptions.Clear();
+                foreach (string cue in snapshot.Capabilities.Cues)
+                    _cueOptions.Add(new CueOption(cue, true));
+                foreach (string cue in historicalCues.Where(cue => !snapshot.Capabilities.Cues.Contains(cue, StringComparer.Ordinal)))
+                    _cueOptions.Add(new CueOption(cue, false));
+                IReadOnlyList<KeybindDefinition> persistedBindings = snapshot.Settings.Keybinds ?? KeybindCatalog.DefaultBindings;
+                KeybindDefinition? persistedWindows = persistedBindings.FirstOrDefault(binding => binding.SystemBinding);
+                int localWindowsIndex = _keybindItems.FindIndex(binding => binding.SystemBinding);
+                if (persistedWindows != null && localWindowsIndex >= 0)
+                    _keybindItems[localWindowsIndex] = persistedWindows;
+                if (!_keybindEditorDirty || _editingKeybind == null)
+                {
+                    Guid? selectedId = _editingKeybind?.Id;
+                    _keybindItems.Clear();
+                    _keybindItems.AddRange(persistedBindings);
+                    _visibleKeybindItems.Clear();
+                    _visibleKeybindItems.AddRange(_keybindItems.Where(binding => !binding.SystemBinding));
+                    _keybindList.Items.Clear();
+                    foreach (KeybindDefinition binding in _visibleKeybindItems)
+                    {
+                        int itemIndex = _keybindList.Items.Add(binding);
+                        _keybindList.SetItemChecked(itemIndex, binding.Enabled);
+                    }
+                    int selectedIndex = selectedId is { } id ? _visibleKeybindItems.FindIndex(binding => binding.Id == id) : -1;
+                    if (selectedIndex >= 0)
+                        _keybindList.SelectedIndex = selectedIndex;
+                    else if (_visibleKeybindItems.Count > 0)
+                        _keybindList.SelectedIndex = 0;
+                    LoadSelectedKeybind();
+                }
+            }
+
             if (target.HasFlag(ShellRenderTarget.Options))
             {
                 _trayEnabled.Enabled = snapshot.TrayEnabled;
                 _trayEnabled.Checked = snapshot.TrayVisible;
-                _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
-                SetEscapePanicCheckbox(snapshot.EscapePanicEnabled);
                 _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
                 _restoreState.Checked = snapshot.Settings.RestoreState;
                 if (!_rendererPath.Focused && !_rendererPath.Modified)

@@ -2,7 +2,8 @@
 
 Chronos is KhaosShell's Windows controller. It launches one Aether renderer,
 owns the inherited control channel, restores accepted theme state, owns the
-system tray, and can turn a bare Windows-key tap into a menu toggle.
+system tray, can turn a bare Windows-key tap into a menu toggle, and maps
+global keybinds to cues or typed Aether commands.
 
 ## Quick start
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text;
+using System.Windows.Forms;
 using Chronos;
 using KhaosShell.Contracts;
 
@@ -26,6 +27,9 @@ internal static class Program
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
             (nameof(PersistenceMigratesLegacySettings), PersistenceMigratesLegacySettings),
+            (nameof(KeybindValidationAndNormalization), KeybindValidationAndNormalization),
+            (nameof(KeybindCommandPayloads), KeybindCommandPayloads),
+            (nameof(KeybindSystemBindingAndMultipleCues), KeybindSystemBindingAndMultipleCues),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
@@ -198,6 +202,7 @@ internal static class Program
             AssertFalse(settings.StatusPollingEnabled);
             AssertEqual(Path.Combine(root, "Aether.exe"), settings.RendererPath);
             AssertEqual(ultralightRoot, settings.UltralightRoot);
+            AssertTrue(settings.Keybinds!.Any(binding => binding.SystemBinding && binding.Enabled));
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
         }
@@ -248,7 +253,7 @@ internal static class Program
             File.WriteAllText(paths.SettingsFile, "{\"schemaVersion\":1,\"trayEnabled\":false,\"restoreState\":false,\"windowsKeyOverride\":true,\"statusPollingEnabled\":false}");
             var persistence = new PersistenceStore(paths);
             PersistentSettings settings = persistence.ReadSettings();
-            AssertEqual(2, settings.SchemaVersion);
+            AssertEqual(3, settings.SchemaVersion);
             AssertFalse(settings.TrayEnabled);
             AssertFalse(settings.RestoreState);
             AssertTrue(settings.WindowsKeyOverride);
@@ -259,6 +264,60 @@ internal static class Program
         {
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
+    }
+
+    private static void KeybindValidationAndNormalization()
+    {
+        Guid id = Guid.NewGuid();
+        var binding = new KeybindDefinition(
+            id,
+            new KeybindGesture(Keys.K, KeybindModifiers.Control),
+            Action: new KeybindAction(KeybindActionKind.Cue, CueNames: new[] { "  menu.toggle  " }));
+        IReadOnlyList<KeybindDefinition> normalized = KeybindCatalog.NormalizeAndValidate(new[] { binding });
+        AssertEqual("menu.toggle", normalized[0].EffectiveAction.EffectiveCueNames[0]);
+        AssertThrows<InvalidOperationException>(() => KeybindCatalog.NormalizeAndValidate(new[]
+        {
+            binding,
+            binding with { Id = Guid.NewGuid() }
+        }));
+        AssertThrows<InvalidOperationException>(() => KeybindCatalog.NormalizeAndValidate(new[]
+        {
+            binding with { Gesture = new KeybindGesture(Keys.Escape) }
+        }));
+    }
+
+    private static void KeybindCommandPayloads()
+    {
+        var action = new KeybindAction(
+            KeybindActionKind.AetherCommand,
+            Command: RendererCommandKind.HideWindow,
+            TargetId: "widget.clock");
+        RendererCommand command = action.ToRendererCommand();
+        AssertEqual(RendererCommandKind.HideWindow, command.Kind);
+        AssertEqual("widget.clock", command.TargetId);
+        AssertThrows<InvalidOperationException>(() => KeybindCatalog.NormalizeAndValidate(new[]
+        {
+            new KeybindDefinition(Guid.NewGuid(), new KeybindGesture(Keys.H), Action: new KeybindAction(KeybindActionKind.AetherCommand))
+        }));
+    }
+
+    private static void KeybindSystemBindingAndMultipleCues()
+    {
+        IReadOnlyList<KeybindDefinition> bindings = KeybindCatalog.EnsureWindowsBinding(new[]
+        {
+            new KeybindDefinition(
+                Guid.NewGuid(),
+                new KeybindGesture(Keys.J),
+                Action: new KeybindAction(KeybindActionKind.Cue, CueNames: new[] { " first ", "second" }))
+        }, fallbackEnabled: true);
+        KeybindDefinition windows = bindings.Single(binding => binding.SystemBinding);
+        AssertTrue(windows.Enabled);
+        AssertEqual(RendererCommandKind.ToggleMenu, windows.EffectiveAction.Command);
+        KeybindDefinition cue = bindings.Single(binding => !binding.SystemBinding);
+        AssertEqual(2, cue.EffectiveAction.EffectiveCueNames.Count);
+        AssertEqual("first", cue.EffectiveAction.EffectiveCueNames[0]);
+        AssertEqual("second", cue.EffectiveAction.EffectiveCueNames[1]);
+        AssertThrows<InvalidOperationException>(() => KeybindCatalog.EnsureWindowsBinding(new[] { windows with { Id = Guid.NewGuid() } }, true));
     }
 
     private static void ThemeRegistryRoundTrips()

@@ -495,6 +495,7 @@ public sealed class RendererHostContext : ApplicationContext
     private object BuildConfigPayload() => new
     {
         files = _configPaths,
+        cues = _configuration.Cues,
         sections = new { wallpaper = _configuration.Wallpapers, widgets = _configuration.Widgets, menu = _configuration.Menu },
         resolvedWindows = _specs,
         themeId = _themeId,

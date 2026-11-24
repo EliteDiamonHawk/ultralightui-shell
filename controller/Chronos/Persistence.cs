@@ -25,19 +25,20 @@ internal sealed record ThemeRegistryState(
 }
 
 internal sealed record PersistentSettings(
-    int SchemaVersion = 2,
+    int SchemaVersion = 3,
     bool TrayEnabled = true,
     bool RestoreState = true,
     bool WindowsKeyOverride = false,
     bool PanicEscapeEnabled = true,
     bool StatusPollingEnabled = true,
     string? RendererPath = null,
-    string? UltralightRoot = null);
+    string? UltralightRoot = null,
+    IReadOnlyList<KeybindDefinition>? Keybinds = null);
 
 internal sealed class PersistenceStore
 {
     private const int CurrentSchemaVersion = 2;
-    private const int CurrentSettingsSchemaVersion = 2;
+    private const int CurrentSettingsSchemaVersion = 3;
     private readonly ChronosPaths _paths;
     private readonly Action<string> _diagnostic;
 
@@ -73,15 +74,35 @@ internal sealed class PersistenceStore
         PersistentSettings? settings = Read<PersistentSettings>(_paths.SettingsFile);
         return settings?.SchemaVersion switch
         {
-            CurrentSettingsSchemaVersion => settings,
-            1 => settings with { SchemaVersion = CurrentSettingsSchemaVersion, PanicEscapeEnabled = true },
-            _ => new PersistentSettings(CurrentSettingsSchemaVersion)
+            CurrentSettingsSchemaVersion => NormalizeSettings(settings),
+            2 => NormalizeSettings(settings with { SchemaVersion = CurrentSettingsSchemaVersion, Keybinds = null }),
+            1 => NormalizeSettings(settings with { SchemaVersion = CurrentSettingsSchemaVersion, PanicEscapeEnabled = true, Keybinds = null }),
+            _ => new PersistentSettings(CurrentSettingsSchemaVersion, Keybinds: KeybindCatalog.EnsureWindowsBinding(null, false))
         };
     }
 
     public void WriteSettings(PersistentSettings settings)
     {
         WriteAtomic(_paths.SettingsFile, settings with { SchemaVersion = CurrentSettingsSchemaVersion });
+    }
+
+    private PersistentSettings NormalizeSettings(PersistentSettings settings)
+    {
+        try
+        {
+            IReadOnlyList<KeybindDefinition> bindings = KeybindCatalog.EnsureWindowsBinding(settings.Keybinds, settings.WindowsKeyOverride);
+            bool windowsOverride = bindings.First(binding => binding.SystemBinding).Enabled;
+            return settings with { Keybinds = bindings, WindowsKeyOverride = windowsOverride };
+        }
+        catch (InvalidOperationException ex)
+        {
+            _diagnostic($"Ignoring invalid persisted keybinds: {ex.Message}");
+            return settings with
+            {
+                Keybinds = KeybindCatalog.EnsureWindowsBinding(null, settings.WindowsKeyOverride),
+                WindowsKeyOverride = settings.WindowsKeyOverride
+            };
+        }
     }
 
     public ThemeRegistryState ReadThemes()

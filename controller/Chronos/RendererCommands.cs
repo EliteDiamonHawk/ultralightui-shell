@@ -80,6 +80,7 @@ internal sealed record RendererCapabilities(
     IReadOnlyList<string> Groups,
     bool HasMenu,
     string PipeState,
+    IReadOnlyList<string> Cues,
     Guid? ThemeId = null,
     Guid? ThemeActivationId = null,
     long? ThemeGeneration = null)
@@ -89,7 +90,8 @@ internal sealed record RendererCapabilities(
         Array.Empty<RendererWindowCapability>(),
         Array.Empty<string>(),
         false,
-        "disconnected");
+        "disconnected",
+        Array.Empty<string>());
 }
 
 internal sealed class RendererCommandService
@@ -190,6 +192,9 @@ internal sealed class RendererCommandService
     public Task<AetherCommandResult> ExitAsync(CancellationToken cancellationToken = default) =>
         SendAsync(new(AetherCommandKind.Exit), cancellationToken);
 
+    public Task<AetherCommandResult> ExecuteAsync(RendererCommand command, CancellationToken cancellationToken = default) =>
+        SendAsync(command, cancellationToken);
+
     public async Task<AetherCommandResult> ToggleMenuAsync(CancellationToken cancellationToken = default)
     {
         RendererCapabilities capabilities = Capabilities;
@@ -259,6 +264,10 @@ internal sealed class RendererCommandService
         if (configRoot.TryGetProperty("files", out JsonElement fileValues) && fileValues.ValueKind == JsonValueKind.Array)
             files.AddRange(fileValues.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).Where(item => item != null));
 
+        var cues = new List<string>();
+        if (configRoot.TryGetProperty("cues", out JsonElement cueValues) && cueValues.ValueKind == JsonValueKind.Array)
+            cues.AddRange(cueValues.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).Where(item => item != null));
+
         var windowValues = new List<RendererWindowCapability>();
         if (windowsRoot.TryGetProperty("windows", out JsonElement windowsArray) && windowsArray.ValueKind == JsonValueKind.Array)
         {
@@ -290,7 +299,7 @@ internal sealed class RendererCommandService
         long? generation = configRoot.TryGetProperty("themeGeneration", out JsonElement generationValue) &&
             generationValue.ValueKind == JsonValueKind.Number &&
             generationValue.TryGetInt64(out long parsedGeneration) ? parsedGeneration : null;
-        return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState, themeId, activationId, generation);
+        return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState, cues, themeId, activationId, generation);
     }
 
     private static Guid? TryGetGuid(JsonElement root, string name) =>
