@@ -52,6 +52,14 @@ internal static class ControlCodec
             error = response.Error
         }, JsonOptions);
 
+    public static string SerializeEvent(string name, object? body = null) =>
+        JsonSerializer.Serialize(new
+        {
+            id = (string?)null,
+            @event = name,
+            body = body == null ? (JsonElement?)null : SerializeBody(body)
+        }, JsonOptions);
+
     public static bool TryParseResponse(string line, out ControlResponse? response)
     {
         response = null;

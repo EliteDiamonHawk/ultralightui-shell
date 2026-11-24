@@ -651,6 +651,20 @@ internal sealed class ChronosHostContext : ApplicationContext
         catch (InvalidOperationException) { }
     }
 
+    public void EmitCue(string name, object? data = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Cue name must not be empty.", nameof(name));
+        RendererSession? renderer = _renderer;
+        if (renderer == null)
+            return;
+        renderer.Control.SendCueAsync(name, data).ContinueWith(
+            _ => { },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
+    }
+
     private void OnRendererExited(RendererSession exitedRenderer)
     {
         if (_rendererStarting)

@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text.Json;
 
 namespace Aether;
 
@@ -27,7 +28,9 @@ public sealed record RendererWindowSpec(
     int MonitorNumber = 0,
     bool AutoHide = true,
     StartMenuHiddenBehavior HiddenBehavior = StartMenuHiddenBehavior.None,
-    BridgePolicy? Bridge = null);
+    BridgePolicy? Bridge = null,
+    IReadOnlyDictionary<string, JsonElement>? Variables = null,
+    IReadOnlyList<string>? Cues = null);
 
 public sealed record WindowSnapshot(
     string Id,

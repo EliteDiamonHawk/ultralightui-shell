@@ -51,6 +51,15 @@ Aether handles `POST /v1/renderer/configure` for managed startup, reload, and
 return-to-idle operations. Aether also emits `renderer.transport.ready` and
 `renderer.ready` events.
 
+Chronos may send unsolicited cue events to Aether:
+
+```json
+{"id":null,"event":"cue","body":{"name":"menu.toggle","data":{}}}
+```
+
+Aether forwards only cue names declared in active configuration to
+bridge-enabled renderer pages.
+
 Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs act as
 idempotency keys for five minutes or 256 entries. Duplicate content replays;
 different content returns `409 request_id_reused`.

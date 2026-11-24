@@ -11,19 +11,26 @@ public sealed class RendererConfiguration
     private RendererConfiguration(
         IReadOnlyList<WallpaperProfile> wallpapers,
         IReadOnlyList<WidgetDefinition> widgets,
-        StartMenuDefinition? startMenu)
+        StartMenuDefinition? startMenu,
+        IReadOnlyDictionary<string, JsonElement> variables,
+        IReadOnlyList<string> cues)
     {
         Wallpapers = wallpapers;
         Widgets = widgets;
         Menu = startMenu;
+        Variables = variables;
+        Cues = cues;
     }
 
     public IReadOnlyList<WallpaperProfile> Wallpapers { get; }
     public IReadOnlyList<WidgetDefinition> Widgets { get; }
     public StartMenuDefinition? Menu { get; }
+    public IReadOnlyDictionary<string, JsonElement> Variables { get; }
+    public IReadOnlyList<string> Cues { get; }
 
     public static RendererConfiguration Empty { get; } =
-        new(Array.Empty<WallpaperProfile>(), Array.Empty<WidgetDefinition>(), null);
+        new(Array.Empty<WallpaperProfile>(), Array.Empty<WidgetDefinition>(), null,
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal), Array.Empty<string>());
 
     public static RendererConfiguration Load(IReadOnlyList<string> paths)
     {
@@ -71,6 +78,8 @@ public sealed class RendererConfiguration
         JsonElement? wallpaper = null;
         JsonElement? widgets = null;
         JsonElement? menu = null;
+        JsonElement? variables = null;
+        JsonElement? cues = null;
         var seenSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach ((JsonElement root, string source) in documents)
@@ -86,7 +95,7 @@ public sealed class RendererConfiguration
                         $"Configuration file '{source}' contains duplicate section '{property.Name}'.");
 
                 string section = property.Name.ToLowerInvariant();
-                if (section is not ("wallpaper" or "widgets" or "menu"))
+                if (section is not ("wallpaper" or "widgets" or "menu" or "variables" or "cues"))
                     throw new RendererConfigurationException(
                         $"Unknown top-level section '{property.Name}' in '{source}'.");
                 if (!seenSections.Add(section))
@@ -98,12 +107,17 @@ public sealed class RendererConfiguration
                     case "wallpaper": wallpaper = property.Value.Clone(); break;
                     case "widgets": widgets = property.Value.Clone(); break;
                     case "menu": menu = property.Value.Clone(); break;
+                    case "variables": variables = property.Value.Clone(); break;
+                    case "cues": cues = property.Value.Clone(); break;
                 }
             }
         }
 
         if (seenSections.Count == 0)
-            throw new RendererConfigurationException("At least one of 'wallpaper', 'widgets', or 'menu' is required.");
+            throw new RendererConfigurationException("At least one configuration section is required.");
+
+        var variableValues = ParseVariables(variables);
+        var cueNames = ParseCues(cues);
 
         var wallpapers = new List<WallpaperProfile>();
         if (wallpaper.HasValue)
@@ -127,7 +141,7 @@ public sealed class RendererConfiguration
             ? ParseStartMenu(menu.Value)
             : null;
 
-        return new RendererConfiguration(wallpapers, widgetDefinitions, startMenuDefinition);
+        return new RendererConfiguration(wallpapers, widgetDefinitions, startMenuDefinition, variableValues, cueNames);
     }
 
     public IReadOnlyList<RendererWindowSpec> ResolveWindowSpecs()
@@ -172,7 +186,9 @@ public sealed class RendererConfiguration
                         WindowKind.Wallpaper,
                         profile.Transparent,
                         monitorIndex + 1,
-                        Bridge: profile.Bridge));
+                        Bridge: profile.Bridge,
+                        Variables: Variables,
+                        Cues: Cues));
                 }
                 continue;
             }
@@ -183,7 +199,7 @@ public sealed class RendererConfiguration
                     Add(new RendererWindowSpec(
                         profile.Id ?? $"wallpaper-{profileIndex + 1}", profile.Url, virtualBounds, virtualBounds,
                         profile.ThreadGroup, WindowKind.Wallpaper, profile.Transparent,
-                        Bridge: profile.Bridge));
+                        Bridge: profile.Bridge, Variables: Variables, Cues: Cues));
                     break;
                 case WallpaperMode.All:
                     for (int monitorIndex = 0; monitorIndex < screens.Length; monitorIndex++)
@@ -204,7 +220,9 @@ public sealed class RendererConfiguration
                             WindowKind.Wallpaper,
                             profile.Transparent,
                             monitorIndex + 1,
-                            Bridge: profile.Bridge));
+                            Bridge: profile.Bridge,
+                            Variables: Variables,
+                            Cues: Cues));
                     }
                     break;
                 case WallpaperMode.Single:
@@ -221,7 +239,9 @@ public sealed class RendererConfiguration
                         WindowKind.Wallpaper,
                         profile.Transparent,
                         profile.Monitor,
-                        Bridge: profile.Bridge));
+                        Bridge: profile.Bridge,
+                        Variables: Variables,
+                        Cues: Cues));
                     break;
                 default:
                     throw new RendererConfigurationException($"Unsupported wallpaper mode: {profile.Mode}");
@@ -241,7 +261,9 @@ public sealed class RendererConfiguration
                 WindowKind.Widget,
                 widget.Transparent,
                 widget.MonitorNumber,
-                Bridge: widget.Bridge));
+                Bridge: widget.Bridge,
+                Variables: Variables,
+                Cues: Cues));
         }
 
         if (Menu != null)
@@ -258,7 +280,9 @@ public sealed class RendererConfiguration
                 Menu.MonitorNumber,
                 Menu.AutoHide,
                 Menu.HiddenBehavior,
-                Menu.Bridge));
+                Menu.Bridge,
+                Variables,
+                Cues));
         }
 
         return specs;
@@ -394,6 +418,40 @@ public sealed class RendererConfiguration
             hiddenBehavior,
             GetGroup(element, "menu"),
             GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
+    }
+
+    private static IReadOnlyDictionary<string, JsonElement> ParseVariables(JsonElement? element)
+    {
+        if (!element.HasValue)
+            return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        RequireKind(element.Value, JsonValueKind.Object, "variables");
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (JsonProperty property in element.Value.EnumerateObject())
+        {
+            ValidateLogicalId(property.Name, $"Variable key '{property.Name}'");
+            if (!values.TryAdd(property.Name, property.Value.Clone()))
+                throw new RendererConfigurationException($"Variables contains duplicate key '{property.Name}'.");
+        }
+        return values;
+    }
+
+    private static IReadOnlyList<string> ParseCues(JsonElement? element)
+    {
+        if (!element.HasValue)
+            return Array.Empty<string>();
+
+        RequireKind(element.Value, JsonValueKind.Array, "cues");
+        var names = new List<string>();
+        foreach (JsonElement item in element.Value.EnumerateArray())
+        {
+            string name = GetString(item, "cues").Trim();
+            ValidateLogicalId(name, "Cue name");
+            if (names.Contains(name, StringComparer.Ordinal))
+                throw new RendererConfigurationException($"Cues contains duplicate name '{name}'.");
+            names.Add(name);
+        }
+        return names;
     }
 
     private static StartMenuHiddenBehavior ParseHiddenBehavior(string? value)

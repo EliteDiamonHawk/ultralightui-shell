@@ -45,6 +45,19 @@ Backend routes use the backend connection. `control(...)` uses the separate
 Chronos control channel. Browser JavaScript may use its own WebSocket directly;
 Aether does not proxy or manage it.
 
+Bridge-enabled pages also receive shared configuration and Chronos cues:
+
+```js
+const refreshMs = window.aether.variables.get("refresh-ms");
+const stop = window.aether.onEvent(event => {
+  if (event.source === "cue") console.log(event.name, event.data);
+});
+```
+
+`window.aether.onCue(callback)` is the cue-only form. Cue names must be declared
+in the top-level `cues` section. `window.renderer.onStream(callback)` remains
+available for the existing stream payload shape.
+
 ## SDK layout
 
 Default local SDK location:

@@ -347,6 +347,9 @@ internal static class UltralightNative
         out IntPtr exception);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSValueUndefined(IntPtr context);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr ulJSValueToJSON(
         IntPtr value,
         uint indent,
@@ -379,6 +382,14 @@ internal static class UltralightNative
         IntPtr args,
         UIntPtr argumentCount,
         out IntPtr exception);
+
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr ulCreateJSFunction(
+        IntPtr context,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        JsFunctionCallback callback,
+        IntPtr userData,
+        UserDataDestroyCallback destroyUserData);
 
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr ulCreateJSError(

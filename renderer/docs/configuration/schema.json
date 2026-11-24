@@ -20,6 +20,21 @@
     "menu": {
       "description": "One menu window.",
       "$ref": "#/$defs/startMenu"
+    },
+    "variables": {
+      "type": "object",
+      "description": "JSON values exposed to bridge-enabled pages.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+      "additionalProperties": true
+    },
+    "cues": {
+      "type": "array",
+      "description": "Chronos cue names accepted by bridge-enabled pages.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      }
     }
   },
   "$defs": {

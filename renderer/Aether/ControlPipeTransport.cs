@@ -227,6 +227,7 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
 
     public string State { get; private set; } = "connected";
     public event Action? Disconnected;
+    public event Action<string, JsonElement?>? EventReceived;
 
     public void Start() => _loop = Task.Run(RunAsync);
 
@@ -302,7 +303,10 @@ internal sealed class ControlPipeChannel : IDisposable, IRendererLogTransport
                 }
 
                 if (ControlPipeCodec.TryParseEvent(line, out ControlEvent? controlEvent))
+                {
+                    EventReceived?.Invoke(controlEvent!.Name, controlEvent.Body);
                     continue;
+                }
 
                 ControlResponse? response = null;
                 if (!ControlPipeCodec.TryParseRequest(line, out ControlRequest? request, out ControlError? parseError))

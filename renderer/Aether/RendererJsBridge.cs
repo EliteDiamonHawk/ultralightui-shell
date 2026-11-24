@@ -19,6 +19,7 @@ internal sealed class RendererJsBridge : IDisposable
     private static readonly UltralightNative.DomDataSyncWalkCallback DomDataWalkCallback = WalkBinding;
     private static readonly UltralightNative.DomDataAcquireCallback DomDataAcquireCallback = AcquireBinding;
     private static readonly UltralightNative.UserDataDestroyCallback DestroyBindingHolderCallback = DestroyBindingHolder;
+    private static readonly UltralightNative.UserDataDestroyCallback DestroySubscriptionStateCallback = DestroySubscriptionState;
     private const int JsErrorTypeError = 1;
     private const uint DomDataBool = 0;
     private const uint DomDataDouble = 2;
@@ -38,7 +39,13 @@ internal sealed class RendererJsBridge : IDisposable
     private readonly UltralightNative.JsAsyncFunctionCallback _createBindingCallback;
     private readonly UltralightNative.JsAsyncFunctionCallback _destroyBindingCallback;
     private readonly UltralightNative.JsFunctionCallback _onStreamCallback;
-    private readonly List<IntPtr> _streamListeners = new();
+    private readonly UltralightNative.JsFunctionCallback _onEventCallback;
+    private readonly UltralightNative.JsFunctionCallback _onCueCallback;
+    private readonly UltralightNative.JsFunctionCallback _unsubscribeCallback;
+    private readonly UltralightNative.JsFunctionCallback _getVariableCallback;
+    private readonly List<NativeEventListener> _streamListeners = new();
+    private readonly List<NativeEventListener> _eventListeners = new();
+    private int _listenerSequence;
     private readonly object _streamLeaseSync = new();
     private readonly Dictionary<(string BackendId, string StreamId), int> _streamLeases = new();
     private readonly object _bindingSync = new();
@@ -64,6 +71,8 @@ internal sealed class RendererJsBridge : IDisposable
         _runtimeCommandExecutor = runtimeCommandExecutor;
         if (_backends != null)
             _backends.StreamEventReceived += OnStreamEvent;
+        if (_control != null)
+            _control.EventReceived += OnControlEvent;
         _openPipeCallback = OpenPipe;
         _requestCallback = Request;
         _openStreamCallback = OpenStream;
@@ -73,6 +82,10 @@ internal sealed class RendererJsBridge : IDisposable
         _createBindingCallback = CreateBinding;
         _destroyBindingCallback = DestroyBinding;
         _onStreamCallback = OnStream;
+        _onEventCallback = OnEvent;
+        _onCueCallback = OnCue;
+        _unsubscribeCallback = Unsubscribe;
+        _getVariableCallback = GetVariable;
     }
 
     public bool IsAttached => _attached;
@@ -152,6 +165,8 @@ internal sealed class RendererJsBridge : IDisposable
                 request = _backends != null && _control != null,
                 streams = _backends != null && _control != null,
                 bindings = _backends != null && _control != null,
+                variables = true,
+                cues = _control != null && (_spec.Cues?.Count ?? 0) > 0,
                 backendIds = _spec.Bridge.BackendIds,
                 controlRoutes = _spec.Bridge.ControlRoutes,
                 runtimeCommands = _spec.Bridge.RuntimeCommands
@@ -159,6 +174,7 @@ internal sealed class RendererJsBridge : IDisposable
             if (!UltralightNative.ulJSAPISetConstantString(api, "windowId", _spec.LogicalId) ||
                 !UltralightNative.ulJSAPISetConstantString(api, "pipeName", $"renderer://backend/{defaultBackend}") ||
                 !UltralightNative.ulJSAPISetConstantJSON(api, "capabilities", capabilities) ||
+                !UltralightNative.ulJSAPIBindFunction(api, "aether.variables.get", _getVariableCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindFunction(api, "openPipe", _openPipeCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "request", _requestCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "openStream", _openStreamCallback, IntPtr.Zero, IntPtr.Zero) ||
@@ -167,7 +183,9 @@ internal sealed class RendererJsBridge : IDisposable
                 (_runtimeCommandExecutor != null && !UltralightNative.ulJSAPIBindAsyncFunction(api, "aether.command", _runtimeCommandCallback, IntPtr.Zero, IntPtr.Zero)) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "createBinding", _createBindingCallback, IntPtr.Zero, IntPtr.Zero) ||
                 !UltralightNative.ulJSAPIBindAsyncFunction(api, "destroyBinding", _destroyBindingCallback, IntPtr.Zero, IntPtr.Zero) ||
-                !UltralightNative.ulJSAPIBindFunction(api, "onStream", _onStreamCallback, IntPtr.Zero, IntPtr.Zero))
+                !UltralightNative.ulJSAPIBindFunction(api, "onStream", _onStreamCallback, IntPtr.Zero, IntPtr.Zero) ||
+                !UltralightNative.ulJSAPIBindFunction(api, "aether.onEvent", _onEventCallback, IntPtr.Zero, IntPtr.Zero) ||
+                !UltralightNative.ulJSAPIBindFunction(api, "aether.onCue", _onCueCallback, IntPtr.Zero, IntPtr.Zero))
             {
                 throw new InvalidOperationException($"JavaScript bridge bindings could not be registered: {_spec.LogicalId}");
             }
@@ -462,20 +480,160 @@ internal sealed class RendererJsBridge : IDisposable
             exception = CreateTypeError(context, "onStream requires a callback function.");
             return IntPtr.Zero;
         }
+        return RegisterListener(context, args, argumentCount, EventSource.Stream, false, out exception);
+    }
+
+    private IntPtr OnEvent(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception) =>
+        RegisterListener(context, args, argumentCount, null, true, out exception);
+
+    private IntPtr OnCue(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception) =>
+        RegisterListener(context, args, argumentCount, EventSource.Cue, true, out exception);
+
+    private IntPtr RegisterListener(
+        IntPtr context,
+        IntPtr args,
+        UIntPtr argumentCount,
+        EventSource? filter,
+        bool returnUnsubscribe,
+        out IntPtr exception)
+    {
+        exception = IntPtr.Zero;
+        if (argumentCount.ToUInt64() < 1 || args == IntPtr.Zero)
+        {
+            exception = CreateTypeError(context, "An event callback function is required.");
+            return IntPtr.Zero;
+        }
+
         IntPtr callback = Marshal.ReadIntPtr(args);
         if (!UltralightNative.ulJSValueIsFunction(callback))
         {
-            exception = CreateTypeError(context, "onStream requires a callback function.");
+            exception = CreateTypeError(context, "An event callback function is required.");
             return IntPtr.Zero;
         }
+
         IntPtr retained = UltralightNative.ulCreateJSValueRef(callback);
         if (retained == IntPtr.Zero)
         {
-            exception = CreateTypeError(context, "The stream callback could not be retained.");
+            exception = CreateTypeError(context, "The event callback could not be retained.");
             return IntPtr.Zero;
         }
-        _streamListeners.Add(retained);
-        return UltralightNative.ulCreateJSValueStringFromCString(context, $"stream-listener-{_streamListeners.Count}");
+
+        string id = $"event-listener-{Interlocked.Increment(ref _listenerSequence)}";
+        var listener = new NativeEventListener(id, retained, filter);
+        if (filter == EventSource.Stream)
+            _streamListeners.Add(listener);
+        else
+            _eventListeners.Add(listener);
+
+        if (!returnUnsubscribe)
+            return UltralightNative.ulCreateJSValueStringFromCString(context, id);
+
+        var state = new SubscriptionState(this, id);
+        GCHandle stateHandle = GCHandle.Alloc(state);
+        IntPtr function = UltralightNative.ulCreateJSFunction(
+            context,
+            "unsubscribe",
+            _unsubscribeCallback,
+            GCHandle.ToIntPtr(stateHandle),
+            DestroySubscriptionStateCallback);
+        if (function == IntPtr.Zero)
+            RemoveEventListener(id);
+        return function;
+    }
+
+    private IntPtr GetVariable(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception)
+    {
+        exception = IntPtr.Zero;
+        if (argumentCount.ToUInt64() < 1 || args == IntPtr.Zero)
+        {
+            exception = CreateTypeError(context, "A variable key string is required.");
+            return IntPtr.Zero;
+        }
+
+        string? key = null;
+        string? json = ReadJson(Marshal.ReadIntPtr(args));
+        if (json != null)
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(json);
+                JsonElement value = document.RootElement;
+                if (value.ValueKind == JsonValueKind.String)
+                    key = value.GetString();
+                else if (value.ValueKind == JsonValueKind.Object &&
+                         value.TryGetProperty("key", out JsonElement keyValue) &&
+                         keyValue.ValueKind == JsonValueKind.String)
+                    key = keyValue.GetString();
+            }
+            catch (JsonException) { }
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            exception = CreateTypeError(context, "A variable key string is required.");
+            return IntPtr.Zero;
+        }
+
+        if (_spec.Variables == null || !_spec.Variables.TryGetValue(key.Trim(), out JsonElement variableValue))
+            return UltralightNative.ulCreateJSValueUndefined(context);
+
+        return CreateJsonValue(context, variableValue.GetRawText(), out exception);
+    }
+
+    private static IntPtr Unsubscribe(
+        IntPtr userData,
+        IntPtr context,
+        IntPtr thisValue,
+        IntPtr args,
+        UIntPtr argumentCount,
+        out IntPtr exception)
+    {
+        exception = IntPtr.Zero;
+        if (userData != IntPtr.Zero && GCHandle.FromIntPtr(userData).Target is SubscriptionState state)
+            state.Bridge.RemoveEventListener(state.ListenerId);
+        return IntPtr.Zero;
+    }
+
+    private static void DestroySubscriptionState(IntPtr userData)
+    {
+        if (userData != IntPtr.Zero)
+        {
+            try { GCHandle.FromIntPtr(userData).Free(); }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    private void RemoveEventListener(string id)
+    {
+        RemoveListener(_eventListeners, id);
+        RemoveListener(_streamListeners, id);
+    }
+
+    private static void RemoveListener(List<NativeEventListener> listeners, string id)
+    {
+        int index = listeners.FindIndex(listener => listener.Id == id);
+        if (index < 0)
+            return;
+        NativeEventListener listener = listeners[index];
+        listeners.RemoveAt(index);
+        UltralightNative.ulDestroyJSValue(listener.Callback);
     }
 
     private void BeginAsync(
@@ -555,38 +713,100 @@ internal sealed class RendererJsBridge : IDisposable
             SyncBindingsOnOwner(backendId, streamId, jsonData);
         string args = JsonSerializer.Serialize(new[] { new { streamId, data, type } }, BridgeJsonOptions);
         UltralightNative.ulJSAPIEmitEventJSON(_api, "stream", args);
-        string listenerPayload = JsonSerializer.Serialize(new { streamId, data, type }, BridgeJsonOptions);
-        foreach (IntPtr listener in _streamListeners.ToArray())
+        EmitUnifiedEventOnOwner(
+            EventSource.Stream,
+            new { source = "stream", backendId, streamId, data, type },
+            new { streamId, data, type });
+    }
+
+    private void OnControlEvent(string name, JsonElement? body)
+    {
+        if (Volatile.Read(ref _disposed) != 0 || !string.Equals(name, "cue", StringComparison.Ordinal) ||
+            body is not { } cueBody || cueBody.ValueKind != JsonValueKind.Object ||
+            !cueBody.TryGetProperty("name", out JsonElement cueNameValue) ||
+            cueNameValue.ValueKind != JsonValueKind.String)
+            return;
+
+        string cueName = cueNameValue.GetString()?.Trim() ?? "";
+        if (cueName.Length == 0 || _spec.Cues?.Contains(cueName, StringComparer.Ordinal) != true)
+            return;
+
+        JsonElement? data = cueBody.TryGetProperty("data", out JsonElement dataValue)
+            ? dataValue.Clone()
+            : null;
+        EmitCueEvent(cueName, data);
+    }
+
+    private void EmitCueEvent(string name, JsonElement? data)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        _ownerPoster(() =>
         {
-            if (!UltralightNative.ulJSValueIsAlive(listener))
+            if (Volatile.Read(ref _disposed) != 0 || !_attached || _api == IntPtr.Zero)
+                return;
+            EmitUnifiedEventOnOwner(EventSource.Cue, new { source = "cue", name, data }, legacyCuePayload: new { name, data });
+        });
+    }
+
+    private void EmitUnifiedEventOnOwner(
+        EventSource source,
+        object payload,
+        object? legacyStreamPayload = null,
+        object? legacyCuePayload = null)
+    {
+        string args = JsonSerializer.Serialize(new[] { payload }, BridgeJsonOptions);
+        UltralightNative.ulJSAPIEmitEventJSON(_api, "event", args);
+        foreach (NativeEventListener listener in _eventListeners
+                     .Where(listener => listener.Filter == null || listener.Filter == source)
+                     .ToArray())
+        {
+            object listenerPayload = listener.Filter switch
             {
-                _streamListeners.Remove(listener);
-                UltralightNative.ulDestroyJSValue(listener);
-                continue;
-            }
-            IntPtr context = UltralightNative.ulJSValueGetContext(listener);
-            if (context == IntPtr.Zero)
-                continue;
-            IntPtr value = CreateJsonValue(context, listenerPayload, out _);
-            if (value == IntPtr.Zero)
-            {
-                UltralightNative.ulDestroyJSContext(context);
-                continue;
-            }
-            IntPtr argumentArray = Marshal.AllocHGlobal(IntPtr.Size);
-            try
-            {
-                Marshal.WriteIntPtr(argumentArray, value);
-                IntPtr result = UltralightNative.ulJSFunctionCall(listener, IntPtr.Zero, argumentArray, new UIntPtr(1), out IntPtr exception);
-                if (result != IntPtr.Zero) UltralightNative.ulDestroyJSValue(result);
-                if (exception != IntPtr.Zero) UltralightNative.ulDestroyJSValue(exception);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(argumentArray);
-                UltralightNative.ulDestroyJSValue(value);
-                UltralightNative.ulDestroyJSContext(context);
-            }
+                EventSource.Stream when legacyStreamPayload != null => legacyStreamPayload,
+                EventSource.Cue when legacyCuePayload != null => legacyCuePayload,
+                _ => payload
+            };
+            InvokeListener(listener, JsonSerializer.Serialize(listenerPayload, BridgeJsonOptions));
+        }
+
+        if (source == EventSource.Stream)
+        {
+            string streamPayload = JsonSerializer.Serialize(legacyStreamPayload ?? payload, BridgeJsonOptions);
+            foreach (NativeEventListener listener in _streamListeners.ToArray())
+                InvokeListener(listener, streamPayload);
+        }
+    }
+
+    private void InvokeListener(NativeEventListener listener, string payload)
+    {
+        if (!UltralightNative.ulJSValueIsAlive(listener.Callback))
+        {
+            RemoveEventListener(listener.Id);
+            return;
+        }
+        IntPtr context = UltralightNative.ulJSValueGetContext(listener.Callback);
+        if (context == IntPtr.Zero)
+            return;
+        IntPtr value = CreateJsonValue(context, payload, out _);
+        if (value == IntPtr.Zero)
+        {
+            UltralightNative.ulDestroyJSContext(context);
+            return;
+        }
+        IntPtr argumentArray = Marshal.AllocHGlobal(IntPtr.Size);
+        try
+        {
+            Marshal.WriteIntPtr(argumentArray, value);
+            IntPtr result = UltralightNative.ulJSFunctionCall(listener.Callback, IntPtr.Zero, argumentArray, new UIntPtr(1), out IntPtr exception);
+            if (result != IntPtr.Zero) UltralightNative.ulDestroyJSValue(result);
+            if (exception != IntPtr.Zero) UltralightNative.ulDestroyJSValue(exception);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(argumentArray);
+            UltralightNative.ulDestroyJSValue(value);
+            UltralightNative.ulDestroyJSContext(context);
         }
     }
 
@@ -596,6 +816,8 @@ internal sealed class RendererJsBridge : IDisposable
             return;
         if (_backends != null)
             _backends.StreamEventReceived -= OnStreamEvent;
+        if (_control != null)
+            _control.EventReceived -= OnControlEvent;
         if (_api != IntPtr.Zero && _view != IntPtr.Zero && _attached)
         {
             try { UltralightNative.ulViewDetachJSAPI(_view, _api); } catch { }
@@ -632,9 +854,12 @@ internal sealed class RendererJsBridge : IDisposable
                 .Select(_ => _backends.CloseStreamAsync(lease.Key.BackendId, lease.Key.StreamId))).ToArray();
             try { Task.WaitAll(closeTasks, TimeSpan.FromSeconds(1)); } catch { }
         }
-        foreach (IntPtr listener in _streamListeners)
-            UltralightNative.ulDestroyJSValue(listener);
+        foreach (NativeEventListener listener in _streamListeners)
+            UltralightNative.ulDestroyJSValue(listener.Callback);
         _streamListeners.Clear();
+        foreach (NativeEventListener listener in _eventListeners)
+            UltralightNative.ulDestroyJSValue(listener.Callback);
+        _eventListeners.Clear();
         _api = IntPtr.Zero;
         _view = IntPtr.Zero;
         _dataContext = IntPtr.Zero;
@@ -1142,6 +1367,38 @@ internal sealed class RendererJsBridge : IDisposable
 
     private static IntPtr CreateTypeError(IntPtr context, string message) =>
         UltralightNative.ulCreateJSError(context, JsErrorTypeError, message);
+
+    private enum EventSource
+    {
+        Stream,
+        Cue
+    }
+
+    private sealed class NativeEventListener
+    {
+        public NativeEventListener(string id, IntPtr callback, EventSource? filter)
+        {
+            Id = id;
+            Callback = callback;
+            Filter = filter;
+        }
+
+        public string Id { get; }
+        public IntPtr Callback { get; }
+        public EventSource? Filter { get; }
+    }
+
+    private sealed class SubscriptionState
+    {
+        public SubscriptionState(RendererJsBridge bridge, string listenerId)
+        {
+            Bridge = bridge;
+            ListenerId = listenerId;
+        }
+
+        public RendererJsBridge Bridge { get; }
+        public string ListenerId { get; }
+    }
 
     private sealed class NativeBinding
     {

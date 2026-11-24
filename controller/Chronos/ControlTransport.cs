@@ -35,6 +35,13 @@ internal sealed class ControlChannel : IDisposable
     public event Action? Disconnected;
     public event Action<string, JsonElement?>? EventReceived;
 
+    public Task SendCueAsync(string name, object? data = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Cue name must not be empty.", nameof(name));
+        return SendEventAsync("cue", new { name = name.Trim(), data }, cancellationToken);
+    }
+
     public void Start() => _loop = Task.Run(RunAsync);
 
     public async Task<ControlResponse> SendAsync(
@@ -204,6 +211,9 @@ internal sealed class ControlChannel : IDisposable
         foreach (TaskCompletionSource<ControlResponse> completion in _pending.Values)
             completion.TrySetException(exception);
     }
+
+    private Task SendEventAsync(string name, object? body = null, CancellationToken cancellationToken = default) =>
+        WriteAsync(ControlCodec.SerializeEvent(name, body), cancellationToken);
 
     private async Task WriteAsync(string line, CancellationToken cancellationToken)
     {

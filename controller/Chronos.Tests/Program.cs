@@ -103,6 +103,11 @@ internal static class Program
         AssertEqual(id, response!.Id);
         AssertEqual(200, response.Status);
         AssertTrue(ControlCodec.IsUnsolicitedEvent("{\"id\":null,\"event\":\"window.changed\"}"));
+
+        string cueJson = ControlCodec.SerializeEvent("cue", new { name = "menu.toggle", data = new { source = "test" } });
+        AssertTrue(ControlCodec.TryParseEvent(cueJson, out ControlEvent? cue));
+        AssertEqual("cue", cue!.Name);
+        AssertEqual("menu.toggle", cue.Body!.Value.GetProperty("name").GetString());
     }
 
     private static void ControlCodecRejectsOversizedFrame()

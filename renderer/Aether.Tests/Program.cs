@@ -26,6 +26,8 @@ internal static class Program
             (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
             (nameof(RendererDataUsesLocalAppData), RendererDataUsesLocalAppData),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
+            (nameof(ConfigurationParsesVariablesAndCues), ConfigurationParsesVariablesAndCues),
+            (nameof(ConfigurationRejectsInvalidCues), ConfigurationRejectsInvalidCues),
             (nameof(ConfigurationLoadsInlineJson), ConfigurationLoadsInlineJson),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
@@ -235,6 +237,26 @@ internal static class Program
         finally { Delete(first); Delete(second); }
     }
 
+    private static void ConfigurationParsesVariablesAndCues()
+    {
+        using JsonDocument document = JsonDocument.Parse("{\"variables\":{\"theme\":\"dark\",\"count\":2,\"nested\":{\"ok\":true}},\"cues\":[\"menu.toggle\",\"next\"]}");
+        RendererConfiguration configuration = RendererConfiguration.LoadJson(document.RootElement);
+        AssertEqual("dark", configuration.Variables["theme"].GetString());
+        AssertEqual(2, configuration.Variables["count"].GetInt32());
+        AssertTrue(configuration.Variables["nested"].GetProperty("ok").GetBoolean());
+        AssertEqual(2, configuration.Cues.Count);
+        AssertEqual("menu.toggle", configuration.Cues[0]);
+        AssertEqual("next", configuration.Cues[1]);
+    }
+
+    private static void ConfigurationRejectsInvalidCues()
+    {
+        using JsonDocument duplicate = JsonDocument.Parse("{\"cues\":[\"next\",\"next\"]}");
+        using JsonDocument invalid = JsonDocument.Parse("{\"cues\":[\"bad cue\"]}");
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(duplicate.RootElement));
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(invalid.RootElement));
+    }
+
     private static void ConfigurationAppliesDefaultGroups()
     {
         string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}}");
@@ -401,6 +423,11 @@ internal static class Program
         string eventJson = ControlPipeCodec.SerializeEvent("window.changed", new { id = "widget-1" });
         AssertTrue(ControlPipeCodec.TryParseEvent(eventJson, out ControlEvent? controlEvent));
         AssertEqual("window.changed", controlEvent!.Name);
+
+        string cueJson = ControlPipeCodec.SerializeEvent("cue", new { name = "menu.toggle", data = new { source = "test" } });
+        AssertTrue(ControlPipeCodec.TryParseEvent(cueJson, out controlEvent));
+        AssertEqual("cue", controlEvent!.Name);
+        AssertEqual("menu.toggle", controlEvent.Body!.Value.GetProperty("name").GetString());
     }
 
     private static void CommandProtocolRejectsOversizedFrame()

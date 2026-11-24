@@ -1,4 +1,9 @@
 {
+  "variables": {
+    "theme": "dark",
+    "refresh-ms": 1000
+  },
+  "cues": ["menu.toggle", "next"],
   "wallpaper": [
     {
       "url": "https://example.com/wallpaper",

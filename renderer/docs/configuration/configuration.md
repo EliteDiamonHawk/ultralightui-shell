@@ -7,6 +7,8 @@ Use one top-level section per file. The loader combines sections across files; i
 - `wallpaper`: an array of wallpaper profiles.
 - `widgets`: an array of widget definitions.
 - `menu`: one menu definition.
+- `variables`: an object of JSON values shared with bridge-enabled pages.
+- `cues`: an array of Chronos cue names accepted by bridge-enabled pages.
 
 Add at least one section. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
 
@@ -130,6 +132,36 @@ await window.aether.command({ command: "pause", group: "desktop" });
 ```
 
 Menu commands accept no target fields. Window commands require `targetId`. Group commands accept optional `group` or `all`, but not both. The Promise resolves to `{ command, message }`; invalid, unauthorized, or failed commands reject. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
+
+## Variables and events
+
+Top-level variables accept any JSON value:
+
+```json
+"variables": {
+  "theme": "dark",
+  "refresh-ms": 1000
+}
+```
+
+Bridge-enabled pages query them with `window.aether.variables.get("theme")`. Unknown keys return `undefined`.
+
+Declare Chronos cues with names:
+
+```json
+"cues": ["menu.toggle", "next"]
+```
+
+Streams and cues share one event bus:
+
+```js
+const unsubscribe = window.aether.onEvent(event => {
+  if (event.source === "stream") console.log(event.streamId, event.data);
+  if (event.source === "cue") console.log(event.name, event.data);
+});
+```
+
+Cue-only subscriptions use `window.aether.onCue(callback)` and receive `{ name, data }`. Existing `window.renderer.onStream(callback)` remains available for stream payloads. Cue payloads originate from Chronos and are reserved for future keybind producers.
 
 ## Thread groups and reload
 
