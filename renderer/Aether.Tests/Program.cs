@@ -179,6 +179,10 @@ internal static class Program
         AssertEqual(RendererCommandKind.Show, list.Command.Kind);
         AssertEqual("windows", list.Command.Topic);
 
+        HostOptions menu = HostOptions.Parse(new[] { "--list", "menu" });
+        AssertEqual(RendererCommandKind.Show, menu.Command.Kind);
+        AssertEqual("menu", menu.Command.Topic);
+
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show" }));
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--list" }));
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--reveal", "widget-1" }));

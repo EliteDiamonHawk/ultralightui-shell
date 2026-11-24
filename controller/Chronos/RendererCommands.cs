@@ -74,6 +74,8 @@ internal sealed class AetherCommandClient
 
 internal sealed record RendererWindowCapability(string Id, string? Group, string? Kind, bool? Visible);
 
+internal sealed record RendererMenuVisibility(string Id, bool Visible);
+
 internal sealed record RendererCapabilities(
     IReadOnlyList<string> ConfigFiles,
     IReadOnlyList<RendererWindowCapability> Windows,

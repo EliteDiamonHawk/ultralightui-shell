@@ -63,7 +63,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         bool trayEnabled = options.Tray ?? _settings.TrayEnabled;
         bool winToggleEnabled = options.WindowsKeyOverride ?? _settings.WindowsKeyOverride;
         _commands = new RendererCommandService(new AetherCommandClient());
-        _winToggle = new WinMenuToggleController(_commands, winToggleEnabled, Diagnostic);
+        _winToggle = new WinMenuToggleController(ExecuteWindowsKeyMenuToggleAsync, winToggleEnabled, Diagnostic);
         _winToggle.StateChanged += OnWinToggleChanged;
         _escapePanic = new EscapePanicController(_settings.PanicEscapeEnabled, QueuePanicTrigger, Diagnostic);
         _escapePanic.StateChanged += OnEscapePanicChanged;
@@ -254,6 +254,23 @@ internal sealed class ChronosHostContext : ApplicationContext
         UpdateSettings(_settings with { WindowsKeyOverride = windows.Enabled, Keybinds = normalized });
     }
 
+    public void SetWindowsKeyMenuPolicy(
+        WindowsKeyMenuHideMode hideMode,
+        string? hideCue,
+        bool showCueEnabled,
+        string? showCue)
+    {
+        UpdateSettings(_settings with
+        {
+            WindowsKeyMenuHideMode = hideMode is WindowsKeyMenuHideMode.Cue
+                ? WindowsKeyMenuHideMode.Cue
+                : WindowsKeyMenuHideMode.Direct,
+            WindowsKeyMenuHideCue = NormalizeCue(hideCue, "hide-menu"),
+            WindowsKeyMenuShowCueEnabled = showCueEnabled,
+            WindowsKeyMenuShowCue = NormalizeCue(showCue, "show-menu")
+        });
+    }
+
     public void SetTrayVisible(bool visible)
     {
         _tray?.SetVisible(visible);
@@ -327,6 +344,97 @@ internal sealed class ChronosHostContext : ApplicationContext
             Diagnostic($"Keybind '{binding.DisplayName}' cue failed: {ex.Message}");
         }
     }
+
+    private async Task<AetherCommandResult> ExecuteWindowsKeyMenuToggleAsync()
+    {
+        (AetherCommandResult queryResult, RendererMenuVisibility? visibility) =
+            await QueryManagedMenuVisibilityAsync().ConfigureAwait(false);
+        if (!queryResult.Success || visibility == null)
+            return queryResult;
+
+        if (visibility.Visible)
+        {
+            if (_settings.WindowsKeyMenuHideMode == WindowsKeyMenuHideMode.Cue)
+                return await SendWindowsKeyCueAsync(_settings.WindowsKeyMenuHideCue).ConfigureAwait(false);
+            return await SetManagedMenuVisibilityAsync(false).ConfigureAwait(false);
+        }
+
+        AetherCommandResult showResult = await SetManagedMenuVisibilityAsync(true).ConfigureAwait(false);
+        if (!showResult.Success || !_settings.WindowsKeyMenuShowCueEnabled)
+            return showResult;
+        return await SendWindowsKeyCueAsync(_settings.WindowsKeyMenuShowCue).ConfigureAwait(false);
+    }
+
+    private async Task<(AetherCommandResult Result, RendererMenuVisibility? Visibility)> QueryManagedMenuVisibilityAsync()
+    {
+        RendererSession? renderer = _renderer;
+        if (renderer?.Control is not { State: "connected" } control)
+            return (AetherCommandResult.Failure("Renderer is not running."), null);
+        try
+        {
+            ControlResponse response = await control.SendAsync(
+                "GET", "/v1/renderer/menu", null, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (response.Status is < 200 or >= 300)
+                return (AetherCommandResult.Failure(response.Error?.Message ?? "Aether menu query failed."), null);
+            if (response.Body is not { } body || body.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !body.TryGetProperty("configured", out System.Text.Json.JsonElement configured) ||
+                configured.ValueKind != System.Text.Json.JsonValueKind.True ||
+                !body.TryGetProperty("id", out System.Text.Json.JsonElement idValue) ||
+                idValue.ValueKind != System.Text.Json.JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(idValue.GetString()))
+            {
+                return (AetherCommandResult.Failure("No menu window is configured."), null);
+            }
+
+            bool visible = body.TryGetProperty("visible", out System.Text.Json.JsonElement visibleValue) &&
+                visibleValue.ValueKind == System.Text.Json.JsonValueKind.True;
+            return (new AetherCommandResult(true, "OK menu state queried"), new RendererMenuVisibility(idValue.GetString()!, visible));
+        }
+        catch (Exception ex)
+        {
+            return (AetherCommandResult.Failure(ex.Message), null);
+        }
+    }
+
+    private async Task<AetherCommandResult> SetManagedMenuVisibilityAsync(bool visible)
+    {
+        RendererSession? renderer = _renderer;
+        if (renderer?.Control is not { State: "connected" } control)
+            return AetherCommandResult.Failure("Renderer is not running.");
+        try
+        {
+            ControlResponse response = await control.SendAsync(
+                "POST",
+                "/v1/renderer/menu",
+                new { action = visible ? "show" : "hide" },
+                TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (response.Status is < 200 or >= 300)
+                return AetherCommandResult.Failure(response.Error?.Message ?? "Aether menu command failed.");
+            return new AetherCommandResult(true, $"OK {(visible ? "showed" : "hid")} menu");
+        }
+        catch (Exception ex)
+        {
+            return AetherCommandResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task<AetherCommandResult> SendWindowsKeyCueAsync(string cueName)
+    {
+        if (_renderer?.Control is not { } control)
+            return AetherCommandResult.Failure("Renderer is not running.");
+        try
+        {
+            await control.SendCueAsync(cueName).ConfigureAwait(false);
+            return new AetherCommandResult(true, "OK cue sent");
+        }
+        catch (Exception ex)
+        {
+            return AetherCommandResult.Failure(ex.Message);
+        }
+    }
+
+    private static string NormalizeCue(string? cue, string fallback) =>
+        string.IsNullOrWhiteSpace(cue) ? fallback : cue.Trim();
 
     private void WaitForRenderer(IReadOnlyList<string> expectedConfig)
     {

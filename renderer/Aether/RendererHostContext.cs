@@ -442,6 +442,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             "config" => ControlPipeCodec.SerializeJson(BuildConfigPayload()),
             "windows" => ControlPipeCodec.SerializeJson(new { windows = GetWindowSnapshots() }),
+            "menu" => GetMenuVisibility(),
             "paths" => ControlPipeCodec.SerializeJson(RendererPaths.Resolve(_options.UltralightRoot)),
             "pipes" => ControlPipeCodec.SerializeJson(new
             {
@@ -451,8 +452,23 @@ public sealed class RendererHostContext : ApplicationContext
                 themeActivationId = ActiveThemeActivationId,
                 themeGeneration = ActiveThemeGeneration
             }),
-            _ => "ERR Show topic must be pipes, config, windows, or paths."
+            _ => "ERR Show topic must be pipes, config, windows, menu, or paths."
         };
+    }
+
+    private string GetMenuVisibility()
+    {
+        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
+        if (spec == null)
+            return ControlPipeCodec.SerializeJson(new { configured = false, id = (string?)null, visible = false });
+        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
+            return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
+        return ControlPipeCodec.SerializeJson(new
+        {
+            configured = true,
+            id = spec.LogicalId,
+            visible = host.GetStartMenuVisibility()
+        });
     }
 
     private string RequestExit()
@@ -473,6 +489,8 @@ public sealed class RendererHostContext : ApplicationContext
     {
         if (request.Method == "POST" && request.Path == "/v1/renderer/configure")
             return ConfigureManagedRenderer(request);
+        if (request.Path == "/v1/renderer/menu")
+            return HandleManagedMenuRequest(request);
         if (request.Method == "GET" && request.Path == "/v1/pipes")
             return new ControlResponse(request.Id, 200, new
             {
@@ -490,6 +508,54 @@ public sealed class RendererHostContext : ApplicationContext
                 Error: new ControlError(status >= 500 ? "logging_policy_apply_failed" : "logging_policy_invalid", error));
         }
         return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown control route."));
+    }
+
+    private ControlResponse HandleManagedMenuRequest(ControlRequest request)
+    {
+        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
+        if (request.Method == "GET")
+        {
+            if (spec == null)
+                return new ControlResponse(request.Id, 200, new { configured = false, id = (string?)null, visible = false });
+            if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? queryHost))
+                return new ControlResponse(request.Id, 503,
+                    Error: new ControlError("menu_unavailable", $"Menu group '{spec.ThreadGroup}' is not running."));
+            return new ControlResponse(request.Id, 200, new
+            {
+                configured = true,
+                id = spec.LogicalId,
+                visible = queryHost.GetStartMenuVisibility()
+            });
+        }
+
+        if (request.Method != "POST")
+            return new ControlResponse(request.Id, 405,
+                Error: new ControlError("method_not_allowed", "Menu route supports GET and POST."));
+        if (request.Body is not { } body || body.ValueKind != JsonValueKind.Object ||
+            !body.TryGetProperty("action", out JsonElement actionValue) ||
+            actionValue.ValueKind != JsonValueKind.String)
+        {
+            return new ControlResponse(request.Id, 400,
+                Error: new ControlError("menu_action_invalid", "Menu action must be show or hide."));
+        }
+
+        string action = actionValue.GetString()?.Trim().ToLowerInvariant() ?? "";
+        if (action is not ("show" or "hide"))
+            return new ControlResponse(request.Id, 400,
+                Error: new ControlError("menu_action_invalid", "Menu action must be show or hide."));
+        if (spec == null)
+            return new ControlResponse(request.Id, 404,
+                Error: new ControlError("menu_not_configured", "No menu window is configured."));
+        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
+            return new ControlResponse(request.Id, 503,
+                Error: new ControlError("menu_unavailable", $"Menu group '{spec.ThreadGroup}' is not running."));
+
+        bool visible = action == "show";
+        if (visible)
+            host.InvokeShowMenu();
+        else
+            host.InvokeHideMenu();
+        return new ControlResponse(request.Id, 200, new { configured = true, id = spec.LogicalId, visible });
     }
 
     private object BuildConfigPayload() => new

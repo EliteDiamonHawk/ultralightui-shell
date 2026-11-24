@@ -24,8 +24,14 @@ internal sealed record ThemeRegistryState(
     public IReadOnlyList<ThemeDefinition> Themes => Entries ?? Array.Empty<ThemeDefinition>();
 }
 
+internal enum WindowsKeyMenuHideMode
+{
+    Direct = 0,
+    Cue = 1
+}
+
 internal sealed record PersistentSettings(
-    int SchemaVersion = 3,
+    int SchemaVersion = 4,
     bool TrayEnabled = true,
     bool RestoreState = true,
     bool WindowsKeyOverride = false,
@@ -33,12 +39,16 @@ internal sealed record PersistentSettings(
     bool StatusPollingEnabled = true,
     string? RendererPath = null,
     string? UltralightRoot = null,
-    IReadOnlyList<KeybindDefinition>? Keybinds = null);
+    IReadOnlyList<KeybindDefinition>? Keybinds = null,
+    WindowsKeyMenuHideMode WindowsKeyMenuHideMode = WindowsKeyMenuHideMode.Direct,
+    string WindowsKeyMenuHideCue = "hide-menu",
+    bool WindowsKeyMenuShowCueEnabled = false,
+    string WindowsKeyMenuShowCue = "show-menu");
 
 internal sealed class PersistenceStore
 {
     private const int CurrentSchemaVersion = 2;
-    private const int CurrentSettingsSchemaVersion = 3;
+    private const int CurrentSettingsSchemaVersion = 4;
     private readonly ChronosPaths _paths;
     private readonly Action<string> _diagnostic;
 
@@ -75,6 +85,7 @@ internal sealed class PersistenceStore
         return settings?.SchemaVersion switch
         {
             CurrentSettingsSchemaVersion => NormalizeSettings(settings),
+            3 => NormalizeSettings(settings with { SchemaVersion = CurrentSettingsSchemaVersion }),
             2 => NormalizeSettings(settings with { SchemaVersion = CurrentSettingsSchemaVersion, Keybinds = null }),
             1 => NormalizeSettings(settings with { SchemaVersion = CurrentSettingsSchemaVersion, PanicEscapeEnabled = true, Keybinds = null }),
             _ => new PersistentSettings(CurrentSettingsSchemaVersion, Keybinds: KeybindCatalog.EnsureWindowsBinding(null, false))
@@ -92,7 +103,17 @@ internal sealed class PersistenceStore
         {
             IReadOnlyList<KeybindDefinition> bindings = KeybindCatalog.EnsureWindowsBinding(settings.Keybinds, settings.WindowsKeyOverride);
             bool windowsOverride = bindings.First(binding => binding.SystemBinding).Enabled;
-            return settings with { Keybinds = bindings, WindowsKeyOverride = windowsOverride };
+            WindowsKeyMenuHideMode hideMode = settings.WindowsKeyMenuHideMode is WindowsKeyMenuHideMode.Cue
+                ? WindowsKeyMenuHideMode.Cue
+                : WindowsKeyMenuHideMode.Direct;
+            return settings with
+            {
+                Keybinds = bindings,
+                WindowsKeyOverride = windowsOverride,
+                WindowsKeyMenuHideMode = hideMode,
+                WindowsKeyMenuHideCue = NormalizeCue(settings.WindowsKeyMenuHideCue, "hide-menu"),
+                WindowsKeyMenuShowCue = NormalizeCue(settings.WindowsKeyMenuShowCue, "show-menu")
+            };
         }
         catch (InvalidOperationException ex)
         {
@@ -100,10 +121,16 @@ internal sealed class PersistenceStore
             return settings with
             {
                 Keybinds = KeybindCatalog.EnsureWindowsBinding(null, settings.WindowsKeyOverride),
-                WindowsKeyOverride = settings.WindowsKeyOverride
+                WindowsKeyOverride = settings.WindowsKeyOverride,
+                WindowsKeyMenuHideMode = WindowsKeyMenuHideMode.Direct,
+                WindowsKeyMenuHideCue = NormalizeCue(settings.WindowsKeyMenuHideCue, "hide-menu"),
+                WindowsKeyMenuShowCue = NormalizeCue(settings.WindowsKeyMenuShowCue, "show-menu")
             };
         }
     }
+
+    private static string NormalizeCue(string? cue, string fallback) =>
+        string.IsNullOrWhiteSpace(cue) ? fallback : cue.Trim();
 
     public ThemeRegistryState ReadThemes()
     {

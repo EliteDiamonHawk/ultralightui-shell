@@ -30,6 +30,7 @@ internal static class Program
             (nameof(KeybindValidationAndNormalization), KeybindValidationAndNormalization),
             (nameof(KeybindCommandPayloads), KeybindCommandPayloads),
             (nameof(KeybindSystemBindingAndMultipleCues), KeybindSystemBindingAndMultipleCues),
+            (nameof(WindowsKeyMenuPolicyNormalizes), WindowsKeyMenuPolicyNormalizes),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
@@ -253,12 +254,16 @@ internal static class Program
             File.WriteAllText(paths.SettingsFile, "{\"schemaVersion\":1,\"trayEnabled\":false,\"restoreState\":false,\"windowsKeyOverride\":true,\"statusPollingEnabled\":false}");
             var persistence = new PersistenceStore(paths);
             PersistentSettings settings = persistence.ReadSettings();
-            AssertEqual(3, settings.SchemaVersion);
+            AssertEqual(4, settings.SchemaVersion);
             AssertFalse(settings.TrayEnabled);
             AssertFalse(settings.RestoreState);
             AssertTrue(settings.WindowsKeyOverride);
             AssertTrue(settings.PanicEscapeEnabled);
             AssertFalse(settings.StatusPollingEnabled);
+            AssertEqual(WindowsKeyMenuHideMode.Direct, settings.WindowsKeyMenuHideMode);
+            AssertEqual("hide-menu", settings.WindowsKeyMenuHideCue);
+            AssertFalse(settings.WindowsKeyMenuShowCueEnabled);
+            AssertEqual("show-menu", settings.WindowsKeyMenuShowCue);
         }
         finally
         {
@@ -318,6 +323,30 @@ internal static class Program
         AssertEqual("first", cue.EffectiveAction.EffectiveCueNames[0]);
         AssertEqual("second", cue.EffectiveAction.EffectiveCueNames[1]);
         AssertThrows<InvalidOperationException>(() => KeybindCatalog.EnsureWindowsBinding(new[] { windows with { Id = Guid.NewGuid() } }, true));
+    }
+
+    private static void WindowsKeyMenuPolicyNormalizes()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-win-policy-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var persistence = new PersistenceStore(paths);
+            persistence.WriteSettings(new PersistentSettings(
+                WindowsKeyMenuHideMode: WindowsKeyMenuHideMode.Cue,
+                WindowsKeyMenuHideCue: "  ",
+                WindowsKeyMenuShowCueEnabled: true,
+                WindowsKeyMenuShowCue: " show-menu "));
+            PersistentSettings settings = persistence.ReadSettings();
+            AssertEqual(WindowsKeyMenuHideMode.Cue, settings.WindowsKeyMenuHideMode);
+            AssertEqual("hide-menu", settings.WindowsKeyMenuHideCue);
+            AssertTrue(settings.WindowsKeyMenuShowCueEnabled);
+            AssertEqual("show-menu", settings.WindowsKeyMenuShowCue);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static void ThemeRegistryRoundTrips()

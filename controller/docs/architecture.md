@@ -41,9 +41,10 @@ stale configuration events and requests without replacing transport handles.
 ## Command service
 
 Chronos has no public command pipe. Tray, keybind, and WinForms code use one
-typed internal service. Keybind cues use the inherited control channel; typed
-Aether commands use the existing named command pipe. Config inspection also
-returns active-theme cue names for Chronos keybind editing. That service obtains valid renderer IDs, groups, menu
+typed internal service. Keybind cues and Win-key menu policy use the inherited
+control channel; typed Aether commands use the existing named command pipe.
+Config inspection also returns active-theme cue names for Chronos keybind
+editing. That service obtains valid renderer IDs, groups, menu
 presence, and connection state from Aether inspection output before it creates
 an action. WinForms status uses inherited events plus optional timer polling;
 `--status-poll false` disables only timer polling.

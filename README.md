@@ -107,6 +107,7 @@ Commands communicate with the running user-scoped instance and do not load confi
 
 ```powershell
 Aether.exe --list windows
+Aether.exe --list menu
 Aether.exe --show <id>
 Aether.exe --hide <id>
 Aether.exe --toggle-menu

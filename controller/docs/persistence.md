@@ -22,8 +22,10 @@ active theme. Missing or removed active theme IDs are not restored. Legacy
 root-level state and theme files are not read.
 
 Settings contain tray visibility, restore-state behavior, Windows Key Override,
-Panic Escape, keybind rows, status polling, optional renderer path, and optional
-Ultralight install root. Panic Escape defaults enabled. Keybind rows support
+Win-key menu hide/show policy, Panic Escape, keybind rows, status polling,
+optional renderer path, and optional Ultralight install root. Panic Escape
+defaults enabled. Win-key menu policy defaults to direct hide, no show cue, and
+cue names `hide-menu` and `show-menu`. Keybind rows support
 single-key chords mapped to ordered cue lists or typed Aether commands. Cue
 names remain persisted with keybinds even when absent from current theme.
 Matched keystrokes are suppressed by default per row; Escape remains reserved

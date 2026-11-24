@@ -64,6 +64,7 @@ public sealed class RuntimeGroupHost : IDisposable
     public void InvokeReload() => Invoke(context => context.Reload());
     public void InvokeReload(IReadOnlyList<RendererWindowSpec> specs) => Invoke(context => context.Reload(specs));
     public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => Invoke(context => context.GetWindowSnapshots());
+    public bool GetStartMenuVisibility() => Invoke(context => context.GetStartMenuVisibility());
 
     public void Stop()
     {
@@ -262,6 +263,8 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             window.IsVisible,
             window.RendererSuspended,
             window.State)).ToArray();
+
+    public bool GetStartMenuVisibility() => _desiredStartMenuVisible;
 
     public void SetWindowVisible(string? id, bool visible)
     {

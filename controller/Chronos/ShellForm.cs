@@ -46,6 +46,10 @@ internal sealed class ShellForm : Form
     private readonly Label _themeOrigin = new();
     private readonly CheckBox _trayEnabled = new();
     private readonly CheckBox _windowsKeyOverride = new();
+    private readonly ComboBox _windowsKeyHideMode = new();
+    private readonly TextBox _windowsKeyHideCue = new();
+    private readonly CheckBox _windowsKeyShowCueEnabled = new();
+    private readonly TextBox _windowsKeyShowCue = new();
     private readonly CheckBox _escapePanic = new();
     private readonly CheckBox _statusPollingEnabled = new();
     private readonly CheckBox _restoreState = new();
@@ -180,9 +184,10 @@ internal sealed class ShellForm : Form
 
     private Control BuildKeybindsPage()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, Padding = new Padding(6) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, ColumnCount = 1, Padding = new Padding(6) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
 
@@ -222,6 +227,7 @@ internal sealed class ShellForm : Form
         };
         root.Controls.Add(_escapePanic, 0, 0);
         root.Controls.Add(_windowsKeyOverride, 0, 1);
+        root.Controls.Add(BuildWindowsKeyPolicyEditor(), 0, 2);
 
         _keybindList.Dock = DockStyle.Fill;
         _keybindList.SelectedIndexChanged += (_, _) => LoadSelectedKeybind();
@@ -234,10 +240,70 @@ internal sealed class ShellForm : Form
         listButtons.Controls.Add(Button("Add", (_, _) => AddKeybind()));
         listButtons.Controls.Add(Button("Remove", (_, _) => RemoveKeybind()));
         listPanel.Controls.Add(listButtons, 1, 0);
-        root.Controls.Add(listPanel, 0, 2);
+        root.Controls.Add(listPanel, 0, 3);
 
-        root.Controls.Add(BuildKeybindEditor(), 0, 3);
+        root.Controls.Add(BuildKeybindEditor(), 0, 4);
         return root;
+    }
+
+    private Control BuildWindowsKeyPolicyEditor()
+    {
+        var box = new GroupBox { Text = "Windows Key Override menu behavior", Dock = DockStyle.Fill };
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            WrapContents = true,
+            AutoScroll = true,
+            Padding = new Padding(4)
+        };
+
+        _windowsKeyHideMode.DropDownStyle = ComboBoxStyle.DropDownList;
+        _windowsKeyHideMode.Items.AddRange(new object[] { WindowsKeyMenuHideMode.Direct, WindowsKeyMenuHideMode.Cue });
+        _windowsKeyHideMode.Width = 100;
+        _windowsKeyHideCue.Width = 120;
+        _windowsKeyShowCue.Width = 120;
+        _windowsKeyShowCueEnabled.Text = "Send cue after showing";
+        _windowsKeyShowCueEnabled.AutoSize = true;
+        _windowsKeyHideMode.SelectedIndexChanged += (_, _) => UpdateWindowsKeyPolicyEditor();
+        _windowsKeyShowCueEnabled.CheckedChanged += (_, _) => UpdateWindowsKeyPolicyEditor();
+        panel.Controls.Add(new Label { Text = "Hide:", AutoSize = true, Padding = new Padding(0, 5, 4, 0) });
+        panel.Controls.Add(_windowsKeyHideMode);
+        panel.Controls.Add(new Label { Text = "Cue", AutoSize = true, Padding = new Padding(8, 5, 4, 0) });
+        panel.Controls.Add(_windowsKeyHideCue);
+        panel.Controls.Add(_windowsKeyShowCueEnabled);
+        panel.Controls.Add(new Label { Text = "Cue", AutoSize = true, Padding = new Padding(8, 5, 4, 0) });
+        panel.Controls.Add(_windowsKeyShowCue);
+        panel.Controls.Add(Button("Save", (_, _) => SaveWindowsKeyPolicy()));
+        box.Controls.Add(panel);
+        return box;
+    }
+
+    private void UpdateWindowsKeyPolicyEditor()
+    {
+        if (_windowsKeyHideMode.SelectedItem is not WindowsKeyMenuHideMode hideMode)
+            hideMode = WindowsKeyMenuHideMode.Direct;
+        if (!_updating && hideMode == WindowsKeyMenuHideMode.Cue && string.IsNullOrWhiteSpace(_windowsKeyHideCue.Text))
+            _windowsKeyHideCue.Text = "hide-menu";
+        if (!_updating && _windowsKeyShowCueEnabled.Checked && string.IsNullOrWhiteSpace(_windowsKeyShowCue.Text))
+            _windowsKeyShowCue.Text = "show-menu";
+        _windowsKeyHideCue.Enabled = hideMode == WindowsKeyMenuHideMode.Cue;
+        _windowsKeyShowCue.Enabled = _windowsKeyShowCueEnabled.Checked;
+    }
+
+    private void SaveWindowsKeyPolicy()
+    {
+        WindowsKeyMenuHideMode hideMode = _windowsKeyHideMode.SelectedItem is WindowsKeyMenuHideMode selected
+            ? selected
+            : WindowsKeyMenuHideMode.Direct;
+        string hideCue = string.IsNullOrWhiteSpace(_windowsKeyHideCue.Text) ? "hide-menu" : _windowsKeyHideCue.Text.Trim();
+        string showCue = string.IsNullOrWhiteSpace(_windowsKeyShowCue.Text) ? "show-menu" : _windowsKeyShowCue.Text.Trim();
+        if (RunSync(() => _host.SetWindowsKeyMenuPolicy(hideMode, hideCue, _windowsKeyShowCueEnabled.Checked, showCue)))
+        {
+            _windowsKeyHideCue.Text = hideCue;
+            _windowsKeyShowCue.Text = showCue;
+            SetOutput("Windows Key Override menu policy saved.");
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+        }
     }
 
     private Control BuildKeybindEditor()
@@ -886,6 +952,11 @@ internal sealed class ShellForm : Form
             if (target.HasFlag(ShellRenderTarget.Keybinds))
             {
                 _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+                _windowsKeyHideMode.SelectedItem = snapshot.Settings.WindowsKeyMenuHideMode;
+                _windowsKeyHideCue.Text = snapshot.Settings.WindowsKeyMenuHideCue;
+                _windowsKeyShowCueEnabled.Checked = snapshot.Settings.WindowsKeyMenuShowCueEnabled;
+                _windowsKeyShowCue.Text = snapshot.Settings.WindowsKeyMenuShowCue;
+                UpdateWindowsKeyPolicyEditor();
                 SetEscapePanicCheckbox(snapshot.EscapePanicEnabled);
                 IReadOnlyList<string> historicalCues = (snapshot.Settings.Keybinds ?? KeybindCatalog.DefaultBindings)
                     .Where(binding => binding.EffectiveAction.Kind == KeybindActionKind.Cue)

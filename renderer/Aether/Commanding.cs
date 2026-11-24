@@ -174,7 +174,7 @@ public sealed class HostOptions
           Aether.exe [--config <path> ...] [options]
           Aether.exe --toggle-menu [show|hide]
           Aether.exe --hide <id> | --show <id>
-          Aether.exe --list pipes|config|windows|paths
+          Aether.exe --list pipes|config|windows|menu|paths
           Aether.exe --system-tray [show|hide]
           Aether.exe --pause [group] | --pause-all
           Aether.exe --resume [group] | --resume-all
@@ -196,7 +196,7 @@ public sealed class HostOptions
         Runtime commands:
           --toggle-menu [show|hide]      Toggle, show, or hide configured menu.
           --hide <id>, --show <id>       Hide or show one window.
-          --list <topic>                 List pipes, config, windows, or paths as JSON.
+          --list <topic>                 List pipes, config, windows, menu, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.
           --resume [group], --resume-all Resume one group or all groups.
           --status [group], --status-all Print one group or all groups.
@@ -229,8 +229,8 @@ public sealed class HostOptions
     private static string NextRequiredTopic(string[] args, ref int index, string? inlineValue, string option)
     {
         string value = NextValue(args, ref index, option, inlineValue).Trim().ToLowerInvariant();
-        if (value is not ("pipes" or "config" or "windows" or "paths"))
-            throw new OptionException($"{option} topic must be pipes, config, windows, or paths.");
+        if (value is not ("pipes" or "config" or "windows" or "menu" or "paths"))
+            throw new OptionException($"{option} topic must be pipes, config, windows, menu, or paths.");
         return value;
     }
 

@@ -89,7 +89,7 @@ internal sealed class WinGestureTracker
 
 internal sealed class WinMenuToggleController : IDisposable
 {
-    private readonly RendererCommandService _commands;
+    private readonly Func<Task<AetherCommandResult>> _toggle;
     private readonly Action<string> _diagnostic;
     private readonly NativeMethods.LowLevelKeyboardProc _callback;
     private readonly WinGestureTracker _tracker = new();
@@ -97,9 +97,9 @@ internal sealed class WinMenuToggleController : IDisposable
     private bool _disposed;
     private bool _enabled;
 
-    public WinMenuToggleController(RendererCommandService commands, bool enabled, Action<string> diagnostic)
+    public WinMenuToggleController(Func<Task<AetherCommandResult>> toggle, bool enabled, Action<string> diagnostic)
     {
-        _commands = commands;
+        _toggle = toggle;
         _diagnostic = diagnostic;
         _callback = HookCallback;
         SetEnabled(enabled);
@@ -194,17 +194,11 @@ internal sealed class WinMenuToggleController : IDisposable
 
     private void TriggerToggle()
     {
-        if (!_commands.IsConnected)
-        {
-            SendWinTap(NativeMethods.VK_LWIN);
-            return;
-        }
-
         _ = Task.Run(async () =>
         {
             try
             {
-                AetherCommandResult result = await _commands.ToggleMenuAsync().ConfigureAwait(false);
+                AetherCommandResult result = await _toggle().ConfigureAwait(false);
                 if (!result.Success)
                     SendWinTap(NativeMethods.VK_LWIN);
             }
