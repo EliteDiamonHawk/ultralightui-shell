@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
+using KhaosShell.Contracts;
 
 namespace KhaosShell.MinimalBackend;
 
@@ -327,7 +328,7 @@ internal sealed class BackendServer : IAsyncDisposable
         }
     }
 
-    private static BackendResponse Success(string id, object? body) => new(id, 200, body);
+    private static BackendResponse Success(string id, object? body) => BackendResponse.FromObject(id, 200, body);
 
     private static BackendResponse Failure(string id, int status, string code, string message) =>
         new(id, status, Error: new BackendError(code, message));
@@ -405,7 +406,7 @@ internal sealed class BackendServer : IAsyncDisposable
         public void AddSubscription(StreamSubscription subscription) => _subscriptions[subscription.StreamId] = subscription;
         public void RemoveSubscription(string streamId) => _subscriptions.TryRemove(streamId, out _);
 
-        public async Task SendEventAsync(BackendEvent value, CancellationToken cancellationToken = default)
+        public async Task SendEventAsync(BackendEventFrame value, CancellationToken cancellationToken = default)
         {
             if (Volatile.Read(ref _disposed) != 0)
                 return;
@@ -608,7 +609,7 @@ internal sealed class BackendServer : IAsyncDisposable
                         _pending = null;
                     }
                     if (data != null)
-                        await Owner.SendEventAsync(new BackendEvent(StreamId, "json", data), _shutdown.Token).ConfigureAwait(false);
+                        await Owner.SendEventAsync(BackendEventFrame.FromObject("stream.data", StreamId, "json", data), _shutdown.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }

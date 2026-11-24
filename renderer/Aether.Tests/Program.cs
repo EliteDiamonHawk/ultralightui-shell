@@ -44,6 +44,9 @@ internal static class Program
             ,(nameof(CommandProtocolRejectsOversizedFrame), CommandProtocolRejectsOversizedFrame)
             ,(nameof(ControlProtocolRoundTrips), ControlProtocolRoundTrips)
             ,(nameof(ControlProtocolAcceptsUnmatchedError), ControlProtocolAcceptsUnmatchedError)
+            ,(nameof(BackendProtocolRoundTrips), BackendProtocolRoundTrips)
+            ,(nameof(BackendProtocolRejectsInvalidFrames), BackendProtocolRejectsInvalidFrames)
+            ,(nameof(BackendSchemaValidatesPayloads), BackendSchemaValidatesPayloads)
             ,(nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames)
             ,(nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame)
             ,(nameof(BackendQueueReportsOverflowPerBurst), BackendQueueReportsOverflowPerBurst)
@@ -443,6 +446,54 @@ internal static class Program
         AssertTrue(ControlPipeCodec.TryParseResponse(error, out ControlResponse? response));
         AssertEqual<string?>(null, response!.Id);
         AssertFalse(ControlPipeCodec.TryParseResponse("{\"id\":null,\"status\":200}", out _));
+    }
+
+    private static void BackendProtocolRoundTrips()
+    {
+        string id = Guid.NewGuid().ToString("D");
+        BackendRequest request = new(id, "POST", "/v1/request", BackendCodec.SerializeBody(new { value = 3 }));
+        AssertTrue(BackendCodec.TryParseRequest(BackendCodec.SerializeRequest(request), out BackendRequest? parsedRequest, out BackendError? requestError));
+        AssertTrue(requestError == null);
+        AssertEqual(id, parsedRequest!.Id);
+        AssertEqual("POST", parsedRequest.Method);
+        AssertEqual(3, parsedRequest.Body!.Value.GetProperty("value").GetInt32());
+
+        BackendResponse response = BackendResponse.FromObject(id, 200, new { ok = true });
+        AssertTrue(BackendCodec.TryParseResponse(BackendCodec.SerializeResponse(response), out BackendResponse? parsedResponse));
+        AssertEqual(id, parsedResponse!.Id);
+        AssertTrue(parsedResponse.Body!.Value.GetProperty("ok").GetBoolean());
+
+        BackendEventFrame value = BackendEventFrame.FromObject("stream.data", "stream-1", "json", new { value = 4.5 });
+        AssertTrue(BackendCodec.TryParseEvent(BackendCodec.SerializeEvent(value), out BackendEventFrame? parsedEvent));
+        AssertEqual("stream.data", parsedEvent!.Name);
+        AssertEqual("stream-1", parsedEvent.StreamId);
+        AssertEqual(4.5, parsedEvent.Data!.Value.GetProperty("value").GetDouble());
+    }
+
+    private static void BackendProtocolRejectsInvalidFrames()
+    {
+        AssertFalse(BackendCodec.TryParseRequest("not-json", out _, out _));
+        AssertFalse(BackendCodec.TryParseRequest(
+            "{\"id\":\"not-a-uuid\",\"method\":\"GET\",\"path\":\"/v1/test\"}",
+            out _,
+            out BackendError? error));
+        AssertEqual("request_id_invalid", error!.Code);
+        AssertFalse(BackendCodec.TryParseResponse("{\"id\":null,\"status\":200}", out _));
+        AssertFalse(BackendCodec.TryParseResponse(
+            $"{{\"id\":\"{Guid.NewGuid():D}\",\"status\":400,\"body\":{{}},\"error\":{{\"code\":\"bad\",\"message\":\"bad\"}}}}",
+            out _));
+        AssertFalse(BackendCodec.TryParseEvent("{\"id\":\"not-null\",\"event\":\"stream.data\",\"streamId\":\"s\",\"type\":\"json\"}", out _));
+        AssertFalse(BackendCodec.TryParseRequest(new string('x', BackendCodec.MaxFrameBytes + 1), out _, out _));
+    }
+
+    private static void BackendSchemaValidatesPayloads()
+    {
+        using JsonDocument document = JsonDocument.Parse("{\"kind\":\"object\",\"fields\":{\"value\":{\"kind\":\"number\"}}}");
+        JsonSchemaDescriptor schema = JsonSchemaDescriptor.Parse(document.RootElement);
+        AssertTrue(schema.Matches(BackendCodec.SerializeBody(new { value = 1.5 })));
+        AssertFalse(schema.Matches(BackendCodec.SerializeBody(new { value = "wrong" })));
+        AssertFalse(schema.Matches(BackendCodec.SerializeBody(new { value = 1.5, extra = true })));
+        AssertThrows<InvalidOperationException>(() => JsonSchemaDescriptor.Parse(JsonDocument.Parse("{\"kind\":\"number\",\"extra\":true}").RootElement));
     }
 
     private static void MultipleBackendsResolveIndependentLogicalPipes()

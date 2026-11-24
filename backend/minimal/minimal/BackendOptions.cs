@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Principal;
+using KhaosShell.Contracts;
 
 namespace KhaosShell.MinimalBackend;
 
@@ -45,7 +46,7 @@ internal sealed record BackendOptions(string PipeName, string BackendId, int Pro
 
         if (string.IsNullOrWhiteSpace(pipeName) || string.IsNullOrWhiteSpace(backendId) || protocol == null || string.IsNullOrWhiteSpace(sid))
             throw new BackendOptionException("Required options: --chronos-pipe, --backend-id, --protocol, and --sid.");
-        if (protocol != 1)
+        if (protocol != BackendCodec.ProtocolVersion)
             throw new BackendOptionException($"Unsupported backend protocol: {protocol}.");
 
         string normalizedPipeName = NormalizePipeName(pipeName);

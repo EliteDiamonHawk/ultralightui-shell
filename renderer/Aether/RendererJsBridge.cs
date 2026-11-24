@@ -114,7 +114,7 @@ internal sealed class RendererJsBridge : IDisposable
             _backends == null || _control?.State != "connected" ? "unavailable" : "available");
     }
 
-    public Task<ControlResponse> RequestAsync(string backendId, string method, string path, object? body, CancellationToken cancellationToken = default)
+    public Task<BackendResponse> RequestAsync(string backendId, string method, string path, object? body, CancellationToken cancellationToken = default)
     {
         if (!CanUseBackend(backendId) || _backends == null || _control == null)
             throw new InvalidOperationException("Backend is not allowed for this renderer view.");
@@ -282,7 +282,7 @@ internal sealed class RendererJsBridge : IDisposable
             object? body = input.TryGetProperty("body", out JsonElement bodyValue) && bodyValue.ValueKind != JsonValueKind.Null ? bodyValue.Clone() : null;
             try
             {
-                ControlResponse response = await _backends.RequestAsync(backendId, method, path, body).ConfigureAwait(false);
+                BackendResponse response = await _backends.RequestAsync(backendId, method, path, body).ConfigureAwait(false);
                 return PromiseResult.Success(new { status = response.Status, body = response.Body, error = response.Error });
             }
             catch (Exception ex) { return PromiseResult.Failure(ex.Message); }
