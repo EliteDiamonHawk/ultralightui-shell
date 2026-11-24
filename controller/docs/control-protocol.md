@@ -40,6 +40,11 @@ Chronos theme source and does not cause Aether to read that file. A successful
 configuration returns `2xx` and emits `renderer.ready`. Invalid or failed
 startup configuration returns a structured error.
 
+Chronos-managed themes use `mode: "json"` with sanitized inline JSON. Chronos
+removes its `before` and `after` hook sections first, and sends original theme
+paths only as `sourcePaths` metadata. This keeps Chronos-only sections out of
+Aether's configuration parser while preserving theme-file identity.
+
 Chronos handles:
 
 - `GET /v1/pipes`: control state and secret-free backend snapshots.

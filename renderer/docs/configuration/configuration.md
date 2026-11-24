@@ -10,6 +10,10 @@ Use one top-level section per file. The loader combines sections across files; i
 - `variables`: an object of JSON values shared with bridge-enabled pages.
 - `cues`: an array of Chronos cue names accepted by bridge-enabled pages.
 
+Chronos-managed themes may contain Chronos-only `before` and `after` sections.
+Chronos removes those sections and sends Aether one sanitized inline document;
+direct Aether configuration does not accept them.
+
 Add at least one section. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
 
 See [`README.md`](README.md) for the files in this directory and [`schema.json`](schema.json) for editor validation.

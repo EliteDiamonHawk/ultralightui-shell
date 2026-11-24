@@ -10,9 +10,9 @@ when no theme is selected.
 Chronos creates two anonymous pipes and launches Aether with inherited handle
 arguments only. Aether establishes that channel before resolving Ultralight or
 loading configuration, then emits `renderer.transport.ready`. Chronos sends
-root, tray policy, theme identity, and either config paths or extracted inline
-JSON through `POST /v1/renderer/configure`. Aether reports `renderer.ready`
-only after runtime initialization succeeds.
+root, tray policy, theme identity, and sanitized inline JSON through
+`POST /v1/renderer/configure`. Aether reports `renderer.ready` only after
+runtime initialization succeeds.
 
 Chronos owns the product tray. Chronos tray creation is controlled by its own
 `--tray <true|false>` option. Chronos persists paths only after Aether reports
@@ -20,8 +20,9 @@ the matching active configuration.
 
 Theme changes do not restart Aether or either Chronos-to-Aether transport.
 Aether swaps its disposable theme runtime while keeping its process, inherited
-control channel, and command server alive. Unloading returns Aether to its
-idle state.
+control channel, and command server alive. Chronos completes incoming `before`
+hooks and Aether activation before running outgoing `after` hooks. Unloading
+returns Aether to its idle state.
 
 If Aether exits, Chronos ignores late exit events from older sessions. A theme applied after renderer loss starts Aether with its new theme ID and generation.
 

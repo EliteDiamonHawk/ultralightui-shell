@@ -22,6 +22,7 @@ public sealed class RendererHostContext : ApplicationContext
     private readonly Dictionary<string, RuntimeGroupHost> _groups = new(StringComparer.Ordinal);
     private ControlPipeChannel? _controlChannel;
     private IReadOnlyList<string> _configPaths;
+    private string? _configJson;
     private bool _exiting;
     private readonly bool _managedStartup;
     private bool _startupConfigured;
@@ -38,6 +39,7 @@ public sealed class RendererHostContext : ApplicationContext
         _managedStartup = options.HasInheritedControlChannel;
         _logger = new RendererLogger();
         _configPaths = Array.Empty<string>();
+        _configJson = null;
         _configuration = RendererConfiguration.Empty;
         _specs = Array.Empty<RendererWindowSpec>();
         _dispatcher.CreateControl();
@@ -286,6 +288,7 @@ public sealed class RendererHostContext : ApplicationContext
         IReadOnlyList<RendererWindowSpec> oldSpecs;
         RendererConfiguration oldConfiguration;
         IReadOnlyList<string> oldPaths;
+        string? oldConfigJson;
         Guid? oldThemeId;
         Guid oldActivationId;
         long oldGeneration;
@@ -294,6 +297,7 @@ public sealed class RendererHostContext : ApplicationContext
             oldSpecs = _specs.ToArray();
             oldConfiguration = _configuration;
             oldPaths = _configPaths;
+            oldConfigJson = _configJson;
             oldThemeId = _themeId;
             oldActivationId = _themeActivationId;
             oldGeneration = _themeGeneration;
@@ -320,6 +324,7 @@ public sealed class RendererHostContext : ApplicationContext
                     _configuration = oldConfiguration;
                     _specs = oldSpecs;
                     _configPaths = oldPaths;
+                    _configJson = oldConfigJson;
                     _themeId = oldThemeId;
                     _themeActivationId = oldActivationId;
                     _themeGeneration = oldGeneration;
@@ -339,6 +344,7 @@ public sealed class RendererHostContext : ApplicationContext
             _configuration = candidate;
             _specs = candidateSpecs;
             _configPaths = paths.ToArray();
+            _configJson = string.IsNullOrWhiteSpace(configJson) ? null : configJson;
             _themeId = themeId;
             _themeActivationId = activationId ?? Guid.NewGuid();
             _themeGeneration = candidateGeneration;
@@ -362,10 +368,16 @@ public sealed class RendererHostContext : ApplicationContext
     {
         lock (_configurationSync)
         {
-            if (_configPaths.Count == 0)
+            if (_configPaths.Count == 0 && string.IsNullOrWhiteSpace(_configJson))
                 return "ERR No active configuration.";
             if (command.All)
-                return ApplyConfigurationCore(_configPaths, _themeId, _themeActivationId, _themeGeneration);
+                return ApplyConfigurationCore(
+                    string.IsNullOrWhiteSpace(_configJson) ? _configPaths : Array.Empty<string>(),
+                    _themeId,
+                    _themeActivationId,
+                    _themeGeneration,
+                    _configJson,
+                    _configPaths);
 
             IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
             foreach (RuntimeGroupHost group in targets)
@@ -708,6 +720,7 @@ public sealed class RendererHostContext : ApplicationContext
                 _configuration = RendererConfiguration.Empty;
                 _specs = Array.Empty<RendererWindowSpec>();
                 _configPaths = Array.Empty<string>();
+                _configJson = null;
                 _themeId = themeId;
                 _themeGeneration = themeGeneration ?? 0;
             }
@@ -742,6 +755,7 @@ public sealed class RendererHostContext : ApplicationContext
             _configuration = candidate;
             _specs = candidateSpecs;
             _configPaths = (sourcePaths.Count == 0 ? configPaths : sourcePaths).ToArray();
+            _configJson = configDocument?.GetRawText();
             _themeId = themeId;
             _themeGeneration = themeGeneration ?? 0;
         }

@@ -32,6 +32,8 @@ internal static class Program
             (nameof(KeybindSystemBindingAndMultipleCues), KeybindSystemBindingAndMultipleCues),
             (nameof(WindowsKeyMenuPolicyNormalizes), WindowsKeyMenuPolicyNormalizes),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
+            (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
+            (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
             (nameof(BackendRegistryLoadsDefinitions), BackendRegistryLoadsDefinitions),
@@ -373,6 +375,112 @@ internal static class Program
         {
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
+    }
+
+    private static void ThemeConfigurationExtractsHooks()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-hook-config-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string first = Path.Combine(root, "first.json");
+            string second = Path.Combine(root, "second.json");
+            File.WriteAllText(first, """
+                {
+                  "wallpaper": [],
+                  "before": [
+                    { "executable": "loader.exe", "arguments": ["--load"], "stall": true, "exitAfter": true },
+                    "echo ready"
+                  ],
+                  "after": [{ "executable": "cleanup.exe", "waitForExit": true }]
+                }
+                """);
+            File.WriteAllText(second, "{\"widgets\":[]}");
+
+            PreparedTheme prepared = ThemeConfigurationLoader.Load(new[] { first, second });
+            AssertEqual(2, prepared.Before.Count);
+            AssertEqual(1, prepared.After.Count);
+            AssertEqual("loader.exe", prepared.Before[0].Executable);
+            AssertTrue(prepared.Before[0].Stall);
+            AssertTrue(prepared.Before[0].ExitAfter);
+            AssertTrue(prepared.Before[1].IsShellCommand);
+            AssertTrue(prepared.After[0].WaitForExit);
+            AssertFalse(prepared.AetherJson.Contains("before", StringComparison.OrdinalIgnoreCase));
+            AssertFalse(prepared.AetherJson.Contains("after", StringComparison.OrdinalIgnoreCase));
+            AssertTrue(prepared.AetherJson.Contains("wallpaper", StringComparison.Ordinal));
+            AssertTrue(prepared.AetherJson.Contains("widgets", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeHookRunnerTracksAndStalls()
+    {
+        var events = new List<string>();
+        var launcher = new FakeHookLauncher(events);
+        var runner = new ThemeHookRunner(events.Add, launcher);
+        ThemeHook stalled = new(null, "one.exe", Array.Empty<string>(), false, true, true);
+        ThemeHook next = new(null, "two.exe", Array.Empty<string>(), false, false, false);
+
+        Task run = runner.RunBeforeAsync(new[] { stalled, next });
+        AssertEqual(1, launcher.Processes.Count);
+        AssertEqual("launch:one.exe", events[0]);
+        launcher.Processes[0].Release();
+        run.GetAwaiter().GetResult();
+        AssertEqual("launch:two.exe", events.First(item => item == "launch:two.exe"));
+
+        var trackedLauncher = new FakeHookLauncher(new List<string>());
+        var trackedRunner = new ThemeHookRunner(_ => { }, trackedLauncher);
+        trackedRunner.RunBeforeAsync(new[]
+        {
+            new ThemeHook(null, "tracked.exe", Array.Empty<string>(), false, false, true)
+        }).GetAwaiter().GetResult();
+        trackedRunner.TerminateTrackedBefore();
+        AssertTrue(trackedLauncher.Processes[0].WasForced);
+    }
+
+    private sealed class FakeHookLauncher : IThemeHookLauncher
+    {
+        private readonly List<string> _events;
+
+        public FakeHookLauncher(List<string> events) => _events = events;
+
+        public List<FakeHookProcess> Processes { get; } = new();
+
+        public IThemeHookProcess Launch(ThemeHook hook)
+        {
+            _events.Add($"launch:{hook.Executable}");
+            var process = new FakeHookProcess(hook.Executable ?? "shell", _events);
+            Processes.Add(process);
+            return process;
+        }
+    }
+
+    private sealed class FakeHookProcess : IThemeHookProcess
+    {
+        private readonly TaskCompletionSource<bool> _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<string> _events;
+
+        public FakeHookProcess(string name, List<string> events)
+        {
+            Name = name;
+            _events = events;
+        }
+
+        public string Name { get; }
+        public bool WasForced { get; private set; }
+        public bool HasExited => _exit.Task.IsCompleted;
+        public Task WaitForExitAsync() => _exit.Task;
+        public void Release() => _exit.TrySetResult(true);
+        public void ForceExit()
+        {
+            WasForced = true;
+            _events.Add($"kill:{Name}");
+            Release();
+        }
+        public void Dispose() => _events.Add($"dispose:{Name}");
     }
 
     private static void BackendRegistryTreatsMissingAsEmpty()

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Chronos;
@@ -11,6 +12,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly PersistenceStore _persistence;
     private readonly LogStore _logs;
     private readonly BackendManager _backends;
+    private readonly ThemeHookRunner _themeHooks;
     private readonly Control _dispatcher = new();
     private readonly RendererCommandService _commands;
     private RendererSession? _renderer;
@@ -23,6 +25,7 @@ internal sealed class ChronosHostContext : ApplicationContext
     private ThemeRegistryState _themes;
     private string _themeOrigin;
     private Guid? _activeThemeId;
+    private PreparedTheme? _activeTheme;
     private long _activeThemeGeneration;
     private Guid? _pendingThemeId;
     private long? _pendingThemeGeneration;
@@ -44,6 +47,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _statusPollingEnabled = options.StatusPolling ?? _settings.StatusPollingEnabled;
         BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, Diagnostic);
         _backends = new BackendManager(registry);
+        _themeHooks = new ThemeHookRunner(Diagnostic);
         _dispatcher.CreateControl();
 
         PersistentState state = _persistence.ReadState();
@@ -70,7 +74,8 @@ internal sealed class ChronosHostContext : ApplicationContext
         _keybinds = new KeybindController(_settings.Keybinds ?? KeybindCatalog.DefaultBindings, DispatchKeybindAsync, Diagnostic);
         _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
-        StartRenderer(configPaths, options.RendererPath, _settings.RendererPath);
+        PreparedTheme? preparedTheme = configPaths.Count == 0 ? null : ThemeConfigurationLoader.Load(configPaths);
+        StartRenderer(configPaths, options.RendererPath, _settings.RendererPath, preparedTheme: preparedTheme);
     }
 
     public RendererCapabilities Capabilities => _commands.Capabilities;
@@ -147,13 +152,29 @@ internal sealed class ChronosHostContext : ApplicationContext
     public async Task<AetherCommandResult> ApplyThemeAsync(ThemeDefinition theme)
     {
         string[] files = NormalizeThemeFiles(theme.Files);
+        PreparedTheme preparedTheme = ThemeConfigurationLoader.Load(files);
+        PreparedTheme? outgoingTheme = _activeTheme;
+        _themeHooks.TerminateTrackedBefore();
+
         if (!_commands.IsTransportAvailable)
         {
             if (_renderer != null)
                 StopRenderer(requestExit: false);
             long restartGeneration = checked(_activeThemeGeneration + 1);
-            if (!StartRenderer(files, _options.RendererPath, _settings.RendererPath, theme.Id, restartGeneration))
+            bool started = StartRenderer(
+                files,
+                _options.RendererPath,
+                _settings.RendererPath,
+                theme.Id,
+                restartGeneration,
+                preparedTheme);
+            if (outgoingTheme != null)
+                await RunAfterAsync(outgoingTheme).ConfigureAwait(true);
+            if (!started)
+            {
+                _activeTheme = null;
                 return AetherCommandResult.Failure("Renderer is unavailable; theme was not applied.");
+            }
 
             _activeThemeId = theme.Id;
             _activeThemeGeneration = restartGeneration;
@@ -168,19 +189,30 @@ internal sealed class ChronosHostContext : ApplicationContext
         _pendingThemeGeneration = generation;
         try
         {
-            AetherCommandResult result = await _commands.ApplyConfigAsync(files, theme.Id, generation).ConfigureAwait(true);
+            await _themeHooks.RunBeforeAsync(preparedTheme.Before).ConfigureAwait(true);
+            AetherCommandResult result = await _commands.ApplyConfigAsync(
+                Array.Empty<string>(),
+                theme.Id,
+                generation,
+                preparedTheme.AetherJson,
+                files).ConfigureAwait(true);
             if (result.Success)
             {
                 RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
                 if (PathsEqual(files, capabilities.ConfigFiles))
                 {
+                    _activeTheme = preparedTheme;
                     _activeThemeId = theme.Id;
                     _activeThemeGeneration = capabilities.ThemeGeneration ?? generation;
                     PersistAcceptedConfig(capabilities.ConfigFiles, _activeThemeId);
                     _themeOrigin = "UI-applied";
                 }
                 NotifyUiStateChanged();
+                if (outgoingTheme != null)
+                    await RunAfterAsync(outgoingTheme).ConfigureAwait(true);
             }
+            else
+                _themeHooks.TerminateTrackedBefore();
             return result;
         }
         finally
@@ -192,6 +224,7 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     public async Task<AetherCommandResult> UnloadThemeAsync()
     {
+        PreparedTheme? outgoingTheme = _activeTheme;
         if (_renderer != null && _commands.IsTransportAvailable)
         {
             try
@@ -217,7 +250,9 @@ internal sealed class ChronosHostContext : ApplicationContext
                 return AetherCommandResult.Failure(ex.Message);
             }
         }
+        _themeHooks.TerminateTrackedBefore();
         _activeThemeId = null;
+        _activeTheme = null;
         _activeThemeGeneration = 0;
         _pendingThemeId = null;
         _pendingThemeGeneration = null;
@@ -225,6 +260,8 @@ internal sealed class ChronosHostContext : ApplicationContext
         _rendererFailure = null;
         PersistAcceptedConfig(Array.Empty<string>(), null);
         NotifyUiStateChanged();
+        if (outgoingTheme != null)
+            await RunAfterAsync(outgoingTheme).ConfigureAwait(true);
         return new AetherCommandResult(true, "OK theme unloaded");
     }
 
@@ -458,12 +495,14 @@ internal sealed class ChronosHostContext : ApplicationContext
         string? explicitRendererPath,
         string? persistedRendererPath,
         Guid? startupThemeId = null,
-        long? startupThemeGeneration = null)
+        long? startupThemeGeneration = null,
+        PreparedTheme? preparedTheme = null)
     {
         if (_renderer != null)
             return _commands.IsTransportAvailable;
 
         RendererSession? startedRenderer = null;
+        JsonDocument? inlineDocument = null;
         var stderr = new List<string>();
         var transportReady = new ManualResetEventSlim(false);
         Action<string, System.Text.Json.JsonElement?>? startupEvent = null;
@@ -499,13 +538,19 @@ internal sealed class ChronosHostContext : ApplicationContext
             if (!transportReady.IsSet)
                 throw new InvalidOperationException(DescribeRendererProcessFailure(startedRenderer.Process, stderr, "Aether control channel did not become ready."));
 
-            object? config = configPaths.Count == 0
+            if (preparedTheme != null)
+                _themeHooks.RunBeforeAsync(preparedTheme.Before).GetAwaiter().GetResult();
+
+            inlineDocument = preparedTheme == null
+                ? null
+                : JsonDocument.Parse(preparedTheme.AetherJson);
+            object? config = preparedTheme == null
                 ? null
                 : new
                 {
-                    mode = "paths",
-                    paths = configPaths,
-                    sourcePaths = configPaths
+                    mode = "json",
+                    document = inlineDocument!.RootElement,
+                    sourcePaths = preparedTheme.SourcePaths
                 };
             ControlResponse startup = startedRenderer.Control.SendAsync(
                     "POST",
@@ -531,12 +576,14 @@ internal sealed class ChronosHostContext : ApplicationContext
                 PersistAcceptedConfig(configPaths);
 
             ConfigureRendererLogging();
+            _activeTheme = preparedTheme;
             _rendererFailure = null;
             NotifyUiStateChanged();
             return true;
         }
         catch (Exception ex)
         {
+            _themeHooks.TerminateTrackedBefore();
             string message = ex.Message;
             if (startedRenderer != null)
                 message = DescribeRendererProcessFailure(startedRenderer.Process, stderr, message);
@@ -557,6 +604,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         }
         finally
         {
+            inlineDocument?.Dispose();
             _rendererStarting = false;
             if (startedRenderer != null && startupEvent != null)
                 startedRenderer.Control.EventReceived -= startupEvent;
@@ -838,7 +886,12 @@ internal sealed class ChronosHostContext : ApplicationContext
         {
             _dispatcher.BeginInvoke((Action)(() =>
             {
+                PreparedTheme? outgoingTheme = _activeTheme;
                 StopRenderer(requestExit: false);
+                _themeHooks.TerminateTrackedBefore();
+                _activeTheme = null;
+                if (outgoingTheme != null)
+                    RunAfterAsync(outgoingTheme).GetAwaiter().GetResult();
                 _rendererFailure = message;
                 NotifyUiStateChanged();
                 Diagnostic(message);
@@ -893,20 +946,33 @@ internal sealed class ChronosHostContext : ApplicationContext
         catch (Exception ex) { Diagnostic($"UI state update failed: {ex.Message}"); }
     }
 
+    private Task RunAfterAsync(PreparedTheme theme) => _themeHooks.RunAfterAsync(theme.After);
+
     private void RequestExit()
     {
         if (_exiting)
             return;
         _exiting = true;
-        try { _shellForm?.CloseForShutdown(); } catch { }
-        try { _winToggle.Dispose(); } catch { }
-        try { _escapePanic.Dispose(); } catch { }
-        try { _keybinds.Dispose(); } catch { }
-        try { _tray?.Dispose(); } catch { }
-        StopRenderer(requestExit: true);
-        _backends.Dispose();
-        _dispatcher.Dispose();
-        Application.ExitThread();
+        PreparedTheme? outgoingTheme = _activeTheme;
+        try
+        {
+            try { _shellForm?.CloseForShutdown(); } catch { }
+            try { _winToggle.Dispose(); } catch { }
+            try { _escapePanic.Dispose(); } catch { }
+            try { _keybinds.Dispose(); } catch { }
+            try { _tray?.Dispose(); } catch { }
+            try { StopRenderer(requestExit: true); } catch (Exception ex) { Diagnostic($"Renderer shutdown failed: {ex.Message}"); }
+            try { _backends.Dispose(); } catch (Exception ex) { Diagnostic($"Backend shutdown failed: {ex.Message}"); }
+        }
+        finally
+        {
+            _themeHooks.TerminateTrackedBefore();
+            _activeTheme = null;
+            if (outgoingTheme != null)
+                RunAfterAsync(outgoingTheme).GetAwaiter().GetResult();
+            _dispatcher.Dispose();
+            Application.ExitThread();
+        }
     }
 
     private void Diagnostic(string message)
