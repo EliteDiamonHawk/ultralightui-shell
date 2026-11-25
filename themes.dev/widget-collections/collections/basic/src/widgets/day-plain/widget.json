@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "day-plain",
+  "title": "Plain day calendar",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "formatted current date and single current date",
+  "legacyId": "day-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

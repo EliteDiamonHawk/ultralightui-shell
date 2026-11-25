@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "gpu-thermal-fan-plain",
+  "title": "Plain GPU thermal and fan",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "GPU thermal and fan",
+  "legacyId": "gpu-thermal-fan-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "collection": "basic",
+  "id": "shutdown-plain",
+  "title": "Plain shutdown control",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "shutdown system action",
+  "legacyId": "shutdown",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

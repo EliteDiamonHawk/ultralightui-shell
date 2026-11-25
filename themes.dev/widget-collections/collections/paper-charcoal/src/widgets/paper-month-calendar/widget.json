@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "paper-month-calendar",
+  "title": "Paper month calendar",
+  "source": "current",
+  "appearance": "paper card",
+  "function": "month calendar",
+  "legacyId": "month-calendar",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

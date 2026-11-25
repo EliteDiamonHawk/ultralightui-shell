@@ -1,0 +1,19 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "restart",
+  "title": "Restart",
+  "source": "webskin",
+  "appearance": "plain control button",
+  "function": "restart system action",
+  "legacyId": "restart",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

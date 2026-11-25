@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "mono-cpu-meter",
+  "title": "Mono CPU meter",
+  "source": "current",
+  "appearance": "monochrome meter",
+  "function": "CPU utilization",
+  "legacyId": "cpu-utilization",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

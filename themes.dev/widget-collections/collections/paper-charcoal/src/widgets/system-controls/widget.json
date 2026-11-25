@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "system-controls",
+  "title": "System controls",
+  "source": "current",
+  "appearance": "charcoal control card",
+  "function": "system controls",
+  "legacyId": "system-controls",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

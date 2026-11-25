@@ -1,0 +1,19 @@
+{
+  "collection": "basic",
+  "id": "sleep-plain",
+  "title": "Plain sleep control",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "sleep system action",
+  "legacyId": "sleep",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

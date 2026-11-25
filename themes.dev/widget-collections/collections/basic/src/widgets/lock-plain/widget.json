@@ -1,0 +1,19 @@
+{
+  "collection": "basic",
+  "id": "lock-plain",
+  "title": "Plain lock control",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "lock system action",
+  "legacyId": "lock",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

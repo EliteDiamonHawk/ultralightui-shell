@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "sculpted-numeral-clock",
+  "title": "Sculpted numeral clock",
+  "source": "webskin",
+  "appearance": "freeform SVG numerals",
+  "function": "digital clock",
+  "legacyId": "digital-prestyled2",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

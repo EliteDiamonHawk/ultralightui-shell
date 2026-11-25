@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analog clock</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="clock" aria-label="Analog clock">
+      <img class="clock__icon" src="./assets/icon.svg" alt="" />
+      <div class="clock__face" aria-hidden="true">
+        <span class="clock__tick clock__tick--12"></span>
+        <span class="clock__tick clock__tick--3"></span>
+        <span class="clock__tick clock__tick--6"></span>
+        <span class="clock__tick clock__tick--9"></span>
+        <span class="clock__hand clock__hand--hour" data-hour-hand></span>
+        <span class="clock__hand clock__hand--minute" data-minute-hand></span>
+        <span class="clock__hand clock__hand--second" data-second-hand></span>
+        <span class="clock__pin"></span>
+      </div>
+      <time class="clock__label" data-label aria-live="polite">00:00:00</time>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

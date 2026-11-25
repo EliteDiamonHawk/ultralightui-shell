@@ -1,0 +1,19 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "sleep",
+  "title": "Sleep",
+  "source": "webskin",
+  "appearance": "plain control button",
+  "function": "sleep system action",
+  "legacyId": "sleep",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

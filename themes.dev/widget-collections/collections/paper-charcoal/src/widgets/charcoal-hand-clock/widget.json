@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "charcoal-hand-clock",
+  "title": "Charcoal hand clock",
+  "source": "current",
+  "appearance": "charcoal analog face",
+  "function": "analog clock",
+  "legacyId": "analog-clock",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "flower-cpu-meter",
+  "title": "1x1 CPU utilization",
+  "source": "webskin",
+  "appearance": "flower system card",
+  "function": "CPU utilization",
+  "legacyId": "cpu-utilization-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

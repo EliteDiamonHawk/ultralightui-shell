@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "network-telemetry-plain",
+  "title": "Plain network telemetry",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "network telemetry",
+  "legacyId": "network-telemetry-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

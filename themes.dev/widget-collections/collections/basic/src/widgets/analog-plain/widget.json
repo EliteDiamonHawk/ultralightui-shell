@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "analog-plain",
+  "title": "Plain analog clock",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "analog clock",
+  "legacyId": "analog-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

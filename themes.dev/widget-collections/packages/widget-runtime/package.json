@@ -1,0 +1,11 @@
+{
+  "name": "@khaosshell/widget-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bridge.js": "./src/bridge.js",
+    "./format.js": "./src/format.js",
+    "./lifecycle.js": "./src/lifecycle.js"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "collection": "basic",
+  "id": "countdown-plain",
+  "title": "Plain countdown timer",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "countdown timer",
+  "legacyId": "countdown-plain",
+  "bridge": {
+    "enabled": false,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

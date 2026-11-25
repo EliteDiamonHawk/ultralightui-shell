@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Battery</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="battery" aria-label="Battery status">
+      <header class="battery__header"><img src="./assets/icon.svg" alt="" /><span>Battery</span></header>
+      <strong class="battery__value" data-value>--</strong>
+      <div class="battery__bar" aria-hidden="true"><span data-bar></span></div>
+      <span class="battery__detail" data-detail>waiting for Nyx</span>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

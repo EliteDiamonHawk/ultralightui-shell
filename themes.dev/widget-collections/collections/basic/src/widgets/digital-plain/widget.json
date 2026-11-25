@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "digital-plain",
+  "title": "Plain digital clock",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "digital clock",
+  "legacyId": "digital-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

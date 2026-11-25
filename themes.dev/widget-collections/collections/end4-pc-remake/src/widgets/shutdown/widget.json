@@ -1,0 +1,19 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "shutdown",
+  "title": "Shutdown",
+  "source": "webskin",
+  "appearance": "plain control button",
+  "function": "shutdown system action",
+  "legacyId": "shutdown",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

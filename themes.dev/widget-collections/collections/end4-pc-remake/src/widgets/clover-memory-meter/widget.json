@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "clover-memory-meter",
+  "title": "1x1 memory utilization",
+  "source": "webskin",
+  "appearance": "clover-4-leaf system card",
+  "function": "memory utilization",
+  "legacyId": "memory-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

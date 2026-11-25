@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "network-transfer",
+  "title": "Network transfer",
+  "source": "current",
+  "appearance": "charcoal card",
+  "function": "network transfer rate",
+  "legacyId": "network-transfer",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

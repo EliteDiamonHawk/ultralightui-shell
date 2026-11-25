@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "charcoal-digital-clock",
+  "title": "Charcoal digital clock",
+  "source": "current",
+  "appearance": "charcoal card",
+  "function": "digital clock",
+  "legacyId": "digital-clock",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

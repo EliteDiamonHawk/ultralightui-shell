@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stopwatch</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="timer" aria-label="Stopwatch">
+      <header class="timer__header"><img src="./assets/icon.svg" alt="" /><span>Stopwatch</span></header>
+      <time class="timer__value" data-value aria-live="polite">00:00:00</time>
+      <div class="timer__actions" aria-label="Stopwatch controls">
+        <button type="button" data-start>Start</button>
+        <button type="button" data-pause>Pause</button>
+        <button type="button" data-reset>Reset</button>
+      </div>
+      <span class="timer__status" data-status>ready</span>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

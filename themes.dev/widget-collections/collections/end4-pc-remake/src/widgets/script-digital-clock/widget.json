@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "script-digital-clock",
+  "title": "Script digital clock",
+  "source": "webskin",
+  "appearance": "charcoal script card",
+  "function": "digital clock",
+  "legacyId": "digital-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

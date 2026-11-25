@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "cpu-core-counts-plain",
+  "title": "Plain CPU core counts",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "CPU core count",
+  "legacyId": "cpu-core-counts-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

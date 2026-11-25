@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "disk-partitions-plain",
+  "title": "Plain disk partitions",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "disk partitions",
+  "legacyId": "disk-partitions-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

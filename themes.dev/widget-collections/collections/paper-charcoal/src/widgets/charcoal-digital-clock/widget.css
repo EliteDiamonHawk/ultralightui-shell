@@ -1,0 +1,64 @@
+:root {
+  --widget-scale: 1;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#widget {
+  transform: scale(var(--widget-scale));
+  transform-origin: top left;
+}
+
+.clock {
+  display: grid;
+  grid-template-columns: 1.4rem auto;
+  align-items: center;
+  gap: .8rem;
+  min-width: 17rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid #2c2c2c;
+  border-radius: 1.25rem;
+  background: #111;
+  color: #f4f4f4;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .18);
+}
+
+.clock__icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  filter: invert(1);
+  opacity: .7;
+}
+
+.clock__time {
+  display: flex;
+  align-items: baseline;
+  gap: .12em;
+  font: 700 2rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: -.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock__separator {
+  opacity: .4;
+}
+
+.clock__period {
+  margin-left: .4rem;
+  color: #aaa;
+  font: 700 .7rem/1 Arial, sans-serif;
+  letter-spacing: .05em;
+}
+
+.clock__status {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0 0 0 0);
+}

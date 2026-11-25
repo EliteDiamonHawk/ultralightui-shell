@@ -1,0 +1,17 @@
+{
+  "collection": "other",
+  "id": "rainmeter-mond-clock",
+  "title": "Rainmeter-mond-clock",
+  "source": "webskin",
+  "appearance": "black typography stack",
+  "function": "date and time display",
+  "legacyId": "rainmeter-mond-clock-remake",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

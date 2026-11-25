@@ -1,0 +1,19 @@
+{
+  "collection": "basic",
+  "id": "logout-plain",
+  "title": "Plain logout control",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "log out system action",
+  "legacyId": "logout",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

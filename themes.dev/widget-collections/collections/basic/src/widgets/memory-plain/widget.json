@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "memory-plain",
+  "title": "Plain memory",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "memory utilization",
+  "legacyId": "memory-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

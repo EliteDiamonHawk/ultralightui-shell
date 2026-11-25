@@ -1,0 +1,15 @@
+{
+  "collection": "basic",
+  "id": "stopwatch-plain",
+  "title": "Plain stopwatch timer",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "stopwatch timer",
+  "legacyId": "stopwatch-plain",
+  "bridge": {
+    "enabled": false,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

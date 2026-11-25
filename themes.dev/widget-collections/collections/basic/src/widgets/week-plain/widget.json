@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "week-plain",
+  "title": "Plain week calendar",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "week calendar",
+  "legacyId": "week-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

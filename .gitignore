@@ -1,3 +1,172 @@
+# ==========================================
+# 1. SECURITY & SENSITIVE DATA (CRITICAL)
+# ==========================================
+# Never commit credentials, secrets, or local configs
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+*.cert
+*.secret
+*.pkcs12
+*.pfx
+credentials.json
+secrets.json
+
+# ==========================================
+# 2. OPERATING SYSTEM SPECIFIC
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==========================================
+# 3. IDEs & TEXT EDITORS
+# ==========================================
+# VS Code
+.vscode/
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Emacs
+*~
+*.swp
+*.swo
+.\#*
+\#*\#
+
+# ==========================================
+# 4. UNIVERSAL LANGUAGES & RUNTIMES
+# ==========================================
+# Node.js (JavaScript / TypeScript)
+node_modules/
+/jspm_packages/
+.npm/
+.eslintcache
+.stylelintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+.yarn/cache/
+.yarn/unplugged/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.mypy_cache/
+.pytest_cache/
+
+# Java / Kotlin / Gradle / Maven
+.gradle/
+/build/
+!/src/**/build/
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# C / C++ / Rust
+*.o
+*.obj
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+debug/
+Release/
+target/
+.cargo-lock
+
+# Go
+/bin/
+/pkg/
+.exe
+
+# Docker
+.dockerignore
+# Optional: block heavy local volumes if you map them
+# data/
+
+# ==========================================
+# 5. DIAGNOSTICS & SYSTEM LOGS
+# ==========================================
+*.log
+logs/
+*.gz
+*.pid
+*.seed
+
+# ==========================================
+# 6. LOCAL GRAPHICS / DESIGN ASSETS (OPTIONAL)
+# ==========================================
+# Ignore raw bulky design files if stored inside repo
+*.psd
+*.ai
+*.sketch
+
+# Local package manager store
+.pnpm-store/
+
+# Local development settings
+/localdata/settings.json
+/localdata/settings/
+/localdata/common/
+/localdata/dashboard/
+/localdata/themes/dev/
+/.uv-cache/
+/.uv-cache-local/
+/.uv-cache-task/
+/dev/themes/dev/
+/dev/themes/.vite/
+/dev/temp/
+/reslink.toml
+
 bin/
 obj/
 .vs/
@@ -34,6 +203,10 @@ Thumbs.db
 
 .agents/skills/
 experimental/
+
+# The widget workspace owns versioned shared packages under this path.
+!/themes.dev/widget-collections/packages/
+!/themes.dev/widget-collections/packages/**
 
 
 # User-specific local script wrappers.
