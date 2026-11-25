@@ -1,0 +1,65 @@
+import { hasAetherBridge, readNyxTime } from "@khaosshell/widget-runtime/bridge.js";
+import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
+
+export function mount(root = globalThis.document, options = {}) {
+  if (!root) throw new Error("KhaosShell widget mount requires a root element or document.");
+  const pageDocument = root.ownerDocument ?? root;
+  const queryRoot = root.querySelector ? root : pageDocument;
+  const document = new Proxy(pageDocument, {
+    get(target, property, receiver) {
+      if (property === "querySelector") return queryRoot.querySelector.bind(queryRoot);
+      if (property === "querySelectorAll") return queryRoot.querySelectorAll.bind(queryRoot);
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const window = options.window ?? pageDocument.defaultView ?? globalThis.window;
+
+const WIDGET_ID = "day-plain";
+const SCALE = 1;
+document.documentElement.style.setProperty("--widget-scale", String(SCALE));
+
+const formattedMonthNode = document.querySelector('[data-basic-part="formatted-month"]');
+const formattedDayNode = document.querySelector('[data-basic-part="formatted-day"]');
+const formattedYearNode = document.querySelector('[data-basic-part="formatted-year"]');
+const weekdayNode = document.querySelector('[data-basic-part="single-weekday"]');
+const dayNode = document.querySelector('[data-basic-part="single-day"]');
+const monthNode = document.querySelector('[data-basic-part="single-month"]');
+const yearNode = document.querySelector('[data-basic-part="single-year"]');
+let epochOffset = 0;
+
+const render = () => {
+  const now = new Date(Date.now() + epochOffset);
+  const dateParts = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).formatToParts(now);
+  formattedMonthNode.textContent = dateParts.find((value) => value.type === "month")?.value ?? "";
+  formattedDayNode.textContent = dateParts.find((value) => value.type === "day")?.value ?? "";
+  formattedYearNode.textContent = dateParts.find((value) => value.type === "year")?.value ?? "";
+  weekdayNode.textContent = new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(now);
+  dayNode.textContent = String(now.getDate());
+  monthNode.textContent = new Intl.DateTimeFormat("en-US", { month: "long" }).format(now);
+  yearNode.textContent = String(now.getFullYear());
+};
+
+const syncTime = async () => {
+  if (!hasAetherBridge()) return;
+  try {
+    const epoch = await readNyxTime();
+    if (Number.isFinite(epoch)) epochOffset = epoch - Date.now();
+  } catch {}
+};
+
+render();
+void syncTime();
+const renderTimer = window.setInterval(render, 60_000);
+const syncTimer = window.setInterval(syncTime, 60_000);
+onPageCleanup(root, () => {
+  window.clearInterval(renderTimer);
+  window.clearInterval(syncTimer);
+});
+
+void WIDGET_ID;
+
+  return { destroy: () => destroyWidget(root) };
+}
+
+if (globalThis.__KHAOSSHELL_WIDGET_AUTOSTART__) mount(globalThis.document);

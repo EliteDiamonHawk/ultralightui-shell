@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "cpu-utilization-plain",
+  "title": "Plain CPU utilization",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "CPU utilization",
+  "legacyId": "cpu-utilization-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

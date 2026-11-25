@@ -1,0 +1,19 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "lock",
+  "title": "Lock",
+  "source": "webskin",
+  "appearance": "plain control button",
+  "function": "lock system action",
+  "legacyId": "lock",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,8 @@
+@import "@khaosshell/widget-style-primitives/end4-small-widget.css";
+
+.webskin-frame--small-widget {
+  --webskin-small-widget-icon-frame: url("./assets/flower.svg");
+  --webskin-small-widget-icon: url("./assets/icon.svg");
+}
+
+.webskin-timer--prestyled [data-webskin-frame-part="value"] { --webskin-prestyled-timer-value-scale: .8; font-size: calc(20cqw * var(--webskin-prestyled-timer-value-scale)); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,74 @@
+:root {
+  --widget-scale: 1;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#widget {
+  transform: scale(var(--widget-scale));
+  transform-origin: top left;
+}
+
+.timer {
+  display: grid;
+  gap: 1rem;
+  width: 18rem;
+  padding: 1.25rem;
+  border: 1px solid #252525;
+  border-radius: 1.25rem;
+  background: #202020;
+  color: #f4f4f4;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .18);
+}
+
+.timer__header {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  color: #aaa;
+  font: 700 .75rem/1 Arial, sans-serif;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.timer__header img {
+  width: 1.2rem;
+  filter: invert(1);
+  opacity: .7;
+}
+
+.timer__value {
+  font: 700 2.7rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.08em;
+}
+
+.timer__actions {
+  display: flex;
+  gap: .45rem;
+}
+
+.timer__actions button {
+  border: 1px solid #555;
+  border-radius: 999px;
+  padding: .45rem .7rem;
+  background: #303030;
+  color: #eee;
+  font: 700 .7rem/1 Arial, sans-serif;
+}
+
+.timer__actions button:hover,
+.timer__actions button:focus-visible {
+  background: #f4f4f4;
+  color: #111;
+}
+
+.timer__status {
+  color: #999;
+  font: .7rem/1 Arial, sans-serif;
+}

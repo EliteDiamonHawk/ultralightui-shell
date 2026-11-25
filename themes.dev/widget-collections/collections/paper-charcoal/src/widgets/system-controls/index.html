@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>System controls</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="controls" aria-label="System controls">
+      <header class="controls__header"><img src="./assets/icon.svg" alt="" /><span>System controls</span></header>
+      <div class="controls__grid">
+        <button type="button" data-control="lock">Lock</button>
+        <button type="button" data-control="sleep">Sleep</button>
+        <button type="button" data-control="logout">Log out</button>
+        <button type="button" data-control="restart">Restart</button>
+        <button type="button" data-control="shutdown">Shutdown</button>
+      </div>
+      <span class="controls__status" data-status>ready</span>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

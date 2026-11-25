@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "network-telemetry-transfer-plain",
+  "title": "Plain network transfer",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "network transfer",
+  "legacyId": "network-telemetry-transfer-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "paper-battery-meter",
+  "title": "Paper battery meter",
+  "source": "current",
+  "appearance": "paper card with meter",
+  "function": "battery percentage",
+  "legacyId": "battery",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

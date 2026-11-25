@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "disk-usage",
+  "title": "Disk usage",
+  "source": "webskin",
+  "appearance": "soft-burst system card",
+  "function": "disk usage",
+  "legacyId": "disk-usage-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

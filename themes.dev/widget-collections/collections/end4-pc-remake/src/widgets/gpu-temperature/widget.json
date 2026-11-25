@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "gpu-temperature",
+  "title": "GPU temperature",
+  "source": "webskin",
+  "appearance": "puffy-diamond system card",
+  "function": "GPU temperature",
+  "legacyId": "gpu-temperature-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "battery-plain",
+  "title": "Plain battery",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "battery percentage",
+  "legacyId": "battery-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

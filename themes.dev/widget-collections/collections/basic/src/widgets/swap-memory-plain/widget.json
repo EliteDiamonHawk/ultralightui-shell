@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "swap-memory-plain",
+  "title": "Plain swap memory",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "swap utilization",
+  "legacyId": "swap-memory-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

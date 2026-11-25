@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Digital clock</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="clock" aria-label="Digital clock">
+      <img class="clock__icon" src="./assets/icon.svg" alt="" />
+      <time class="clock__time" aria-live="polite">
+        <span data-hours>00</span><span class="clock__separator">:</span><span data-minutes>00</span><span class="clock__separator">:</span><span data-seconds>00</span>
+        <span class="clock__period" data-period hidden>AM</span>
+      </time>
+      <span class="clock__status" data-status hidden>preview</span>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

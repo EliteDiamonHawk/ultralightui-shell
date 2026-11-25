@@ -1,0 +1,22 @@
+{
+  "name": "khaosshell-widget-collections",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "verify": "node tooling/widget-cli.mjs verify",
+    "build": "node tooling/widget-cli.mjs build-all",
+    "widget:list": "node tooling/widget-cli.mjs list",
+    "widget:verify": "node tooling/widget-cli.mjs verify",
+    "widget:build": "node tooling/widget-cli.mjs build",
+    "widget:export": "node tooling/widget-cli.mjs export",
+    "collection:build": "node tooling/widget-cli.mjs collection-build",
+    "catalog": "node tooling/widget-cli.mjs catalog"
+  },
+  "devDependencies": {
+    "vite": "^8.3.1",
+    "@khaosshell/widget-assets": "workspace:*",
+    "@khaosshell/widget-runtime": "workspace:*",
+    "@khaosshell/widget-style-primitives": "workspace:*"
+  }
+}

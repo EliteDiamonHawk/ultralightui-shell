@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "formatted-date",
+  "title": "Formatted date",
+  "source": "webskin",
+  "appearance": "charcoal script date strip",
+  "function": "formatted current date",
+  "legacyId": "day-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

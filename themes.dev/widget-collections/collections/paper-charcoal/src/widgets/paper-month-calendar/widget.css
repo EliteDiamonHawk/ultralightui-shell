@@ -1,0 +1,69 @@
+:root {
+  --widget-scale: 1;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#widget {
+  transform: scale(var(--widget-scale));
+  transform-origin: top left;
+}
+
+.calendar {
+  width: 20rem;
+  padding: 1.1rem;
+  border: 1px solid #252525;
+  border-radius: 1.25rem;
+  background: #f7f7f7;
+  color: #161616;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .14);
+}
+
+.calendar__header {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin-bottom: .8rem;
+  font: 700 1.05rem/1 Arial, sans-serif;
+}
+
+.calendar__header img {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.calendar__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: .2rem;
+  table-layout: fixed;
+  font: 600 .8rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.calendar__table th {
+  padding: .35rem 0 .5rem;
+  color: #777;
+  font-size: .65rem;
+}
+
+.calendar__table td {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: .55rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.calendar__table td.is-adjacent {
+  color: #aaa;
+}
+
+.calendar__table td.is-today {
+  background: #111;
+  color: #fff;
+}

@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "swap-utilization",
+  "title": "Swap utilization",
+  "source": "webskin",
+  "appearance": "cookie-6-sided system card",
+  "function": "swap utilization",
+  "legacyId": "swap-memory-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

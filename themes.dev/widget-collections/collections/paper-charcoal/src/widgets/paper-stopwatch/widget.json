@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "paper-stopwatch",
+  "title": "Paper stopwatch",
+  "source": "current",
+  "appearance": "paper card",
+  "function": "stopwatch timer",
+  "legacyId": "stopwatch",
+  "bridge": {
+    "enabled": false,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

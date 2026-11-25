@@ -1,0 +1,19 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "logout",
+  "title": "Logout",
+  "source": "webskin",
+  "appearance": "plain control button",
+  "function": "log out system action",
+  "legacyId": "logout",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [
+      "/v1/nyx/system/controls/:name"
+    ],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "network-received",
+  "title": "Network received",
+  "source": "webskin",
+  "appearance": "arrow system card",
+  "function": "network received",
+  "legacyId": "network-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

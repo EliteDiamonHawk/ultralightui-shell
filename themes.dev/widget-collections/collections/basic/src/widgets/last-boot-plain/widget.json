@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "last-boot-plain",
+  "title": "Plain last boot",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "last boot time",
+  "legacyId": "last-boot-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

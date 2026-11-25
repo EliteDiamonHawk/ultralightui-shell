@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "week-calendar",
+  "title": "Week calendar",
+  "source": "webskin",
+  "appearance": "charcoal seven-day strip",
+  "function": "week calendar",
+  "legacyId": "week-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

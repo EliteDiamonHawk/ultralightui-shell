@@ -1,0 +1,9 @@
+{
+  "name": "@khaosshell/widget-style-primitives",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./plain-widget.css": "./plain-widget.css",
+    "./end4-small-widget.css": "./end4-small-widget.css"
+  }
+}

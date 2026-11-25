@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "cpu-core-count",
+  "title": "CPU core count",
+  "source": "webskin",
+  "appearance": "clover-8-leaf system card",
+  "function": "CPU core count",
+  "legacyId": "cpu-core-counts-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

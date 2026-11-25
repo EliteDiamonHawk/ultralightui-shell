@@ -1,0 +1,1037 @@
+{
+  "version": 1,
+  "collections": [
+    {
+      "id": "basic",
+      "title": "Basic",
+      "source": "webskin",
+      "description": "Minimal WebSkin plain-widget implementation references.",
+      "widgets": [
+        {
+          "id": "analog-plain",
+          "title": "Plain analog clock",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "analog clock",
+          "legacyId": "analog-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "battery-plain",
+          "title": "Plain battery",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "battery percentage",
+          "legacyId": "battery-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "countdown-plain",
+          "title": "Plain countdown timer",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "countdown timer",
+          "legacyId": "countdown-plain",
+          "bridge": {
+            "enabled": false,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-core-counts-plain",
+          "title": "Plain CPU core counts",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "CPU core count",
+          "legacyId": "cpu-core-counts-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-frequency-plain",
+          "title": "Plain CPU frequency",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "CPU frequency",
+          "legacyId": "cpu-frequency-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-utilization-list-plain",
+          "title": "Plain CPU utilization list",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "CPU utilization list",
+          "legacyId": "cpu-utilization-list-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-utilization-plain",
+          "title": "Plain CPU utilization",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "CPU utilization",
+          "legacyId": "cpu-utilization-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "day-plain",
+          "title": "Plain day calendar",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "formatted current date and single current date",
+          "legacyId": "day-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "digital-plain",
+          "title": "Plain digital clock",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "digital clock",
+          "legacyId": "digital-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "disk-io-plain",
+          "title": "Plain disk I/O",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "disk I/O",
+          "legacyId": "disk-io-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "disk-partitions-plain",
+          "title": "Plain disk partitions",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "disk partitions",
+          "legacyId": "disk-partitions-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "gpu-thermal-fan-plain",
+          "title": "Plain GPU thermal and fan",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "GPU thermal and fan",
+          "legacyId": "gpu-thermal-fan-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "last-boot-plain",
+          "title": "Plain last boot",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "last boot time",
+          "legacyId": "last-boot-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "lock-plain",
+          "title": "Plain lock control",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "lock system action",
+          "legacyId": "lock",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "logout-plain",
+          "title": "Plain logout control",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "log out system action",
+          "legacyId": "logout",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "memory-plain",
+          "title": "Plain memory",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "memory utilization",
+          "legacyId": "memory-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "month-plain",
+          "title": "Plain month calendar",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "month calendar",
+          "legacyId": "month-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "network-telemetry-plain",
+          "title": "Plain network telemetry",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "network telemetry",
+          "legacyId": "network-telemetry-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "network-telemetry-transfer-plain",
+          "title": "Plain network transfer",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "network transfer",
+          "legacyId": "network-telemetry-transfer-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "restart-plain",
+          "title": "Plain restart control",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "restart system action",
+          "legacyId": "restart",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "shutdown-plain",
+          "title": "Plain shutdown control",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "shutdown system action",
+          "legacyId": "shutdown",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "sleep-plain",
+          "title": "Plain sleep control",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "sleep system action",
+          "legacyId": "sleep",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "stopwatch-plain",
+          "title": "Plain stopwatch timer",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "stopwatch timer",
+          "legacyId": "stopwatch-plain",
+          "bridge": {
+            "enabled": false,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "swap-memory-plain",
+          "title": "Plain swap memory",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "swap utilization",
+          "legacyId": "swap-memory-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "week-plain",
+          "title": "Plain week calendar",
+          "source": "webskin",
+          "appearance": "plain",
+          "function": "week calendar",
+          "legacyId": "week-plain",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "end4-pc-remake",
+      "title": "end4-pc-remake",
+      "source": "webskin",
+      "description": "end4-pc-remake WebSkin implementation references.",
+      "widgets": [
+        {
+          "id": "charcoal-month-grid",
+          "title": "Charcoal month grid",
+          "source": "webskin",
+          "appearance": "charcoal rounded month grid",
+          "function": "month calendar",
+          "legacyId": "month-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "charcoal-tick-analog-clock",
+          "title": "Charcoal tick analog clock",
+          "source": "webskin",
+          "appearance": "charcoal analog face",
+          "function": "analog clock",
+          "legacyId": "analog-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "clover-memory-meter",
+          "title": "1x1 memory utilization",
+          "source": "webskin",
+          "appearance": "clover-4-leaf system card",
+          "function": "memory utilization",
+          "legacyId": "memory-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-core-count",
+          "title": "CPU core count",
+          "source": "webskin",
+          "appearance": "clover-8-leaf system card",
+          "function": "CPU core count",
+          "legacyId": "cpu-core-counts-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "cpu-frequency",
+          "title": "CPU frequency",
+          "source": "webskin",
+          "appearance": "cookie-4-sided system card",
+          "function": "CPU frequency",
+          "legacyId": "cpu-frequency-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "current-date",
+          "title": "Current date",
+          "source": "webskin",
+          "appearance": "charcoal square date card",
+          "function": "single current date",
+          "legacyId": "day-prestyled2",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "digital-analog-clock",
+          "title": "Digital and analog clock",
+          "source": "webskin",
+          "appearance": "charcoal analog and script split card",
+          "function": "combined analog and digital clock",
+          "legacyId": "digital-analog-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "disk-usage",
+          "title": "Disk usage",
+          "source": "webskin",
+          "appearance": "soft-burst system card",
+          "function": "disk usage",
+          "legacyId": "disk-usage-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "flower-cpu-meter",
+          "title": "1x1 CPU utilization",
+          "source": "webskin",
+          "appearance": "flower system card",
+          "function": "CPU utilization",
+          "legacyId": "cpu-utilization-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "flower-stopwatch",
+          "title": "1x1 stopwatch timer",
+          "source": "webskin",
+          "appearance": "charcoal flower timer card",
+          "function": "stopwatch timer",
+          "legacyId": "stopwatch-prestyled",
+          "bridge": {
+            "enabled": false,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "formatted-date",
+          "title": "Formatted date",
+          "source": "webskin",
+          "appearance": "charcoal script date strip",
+          "function": "formatted current date",
+          "legacyId": "day-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "gpu-temperature",
+          "title": "GPU temperature",
+          "source": "webskin",
+          "appearance": "puffy-diamond system card",
+          "function": "GPU temperature",
+          "legacyId": "gpu-temperature-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "last-boot",
+          "title": "Last boot",
+          "source": "webskin",
+          "appearance": "circle system card",
+          "function": "last boot time",
+          "legacyId": "last-boot-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "lock",
+          "title": "Lock",
+          "source": "webskin",
+          "appearance": "plain control button",
+          "function": "lock system action",
+          "legacyId": "lock",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "logout",
+          "title": "Logout",
+          "source": "webskin",
+          "appearance": "plain control button",
+          "function": "log out system action",
+          "legacyId": "logout",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "network-received",
+          "title": "Network received",
+          "source": "webskin",
+          "appearance": "arrow system card",
+          "function": "network received",
+          "legacyId": "network-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "puffy-battery-meter",
+          "title": "1x1 battery percentage",
+          "source": "webskin",
+          "appearance": "puffy system card",
+          "function": "battery percentage",
+          "legacyId": "battery-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "radial-analog-clock",
+          "title": "Radial analog clock",
+          "source": "webskin",
+          "appearance": "charcoal inset analog face",
+          "function": "analog clock",
+          "legacyId": "analog-prestyled2",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "restart",
+          "title": "Restart",
+          "source": "webskin",
+          "appearance": "plain control button",
+          "function": "restart system action",
+          "legacyId": "restart",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "script-digital-clock",
+          "title": "Script digital clock",
+          "source": "webskin",
+          "appearance": "charcoal script card",
+          "function": "digital clock",
+          "legacyId": "digital-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "sculpted-numeral-clock",
+          "title": "Sculpted numeral clock",
+          "source": "webskin",
+          "appearance": "freeform SVG numerals",
+          "function": "digital clock",
+          "legacyId": "digital-prestyled2",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "shutdown",
+          "title": "Shutdown",
+          "source": "webskin",
+          "appearance": "plain control button",
+          "function": "shutdown system action",
+          "legacyId": "shutdown",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "sleep",
+          "title": "Sleep",
+          "source": "webskin",
+          "appearance": "plain control button",
+          "function": "sleep system action",
+          "legacyId": "sleep",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [
+              "/v1/nyx/system/controls/:name"
+            ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "softburst-countdown",
+          "title": "1x1 countdown timer",
+          "source": "webskin",
+          "appearance": "charcoal softburst timer card",
+          "function": "countdown timer",
+          "legacyId": "countdown-prestyled",
+          "bridge": {
+            "enabled": false,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "swap-utilization",
+          "title": "Swap utilization",
+          "source": "webskin",
+          "appearance": "cookie-6-sided system card",
+          "function": "swap utilization",
+          "legacyId": "swap-memory-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "week-calendar",
+          "title": "Week calendar",
+          "source": "webskin",
+          "appearance": "charcoal seven-day strip",
+          "function": "week calendar",
+          "legacyId": "week-prestyled",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "title": "Other",
+      "source": "webskin",
+      "description": "Widgets outside the named visual collections.",
+      "widgets": [
+        {
+          "id": "rainmeter-mond-clock",
+          "title": "Rainmeter-mond-clock",
+          "source": "webskin",
+          "appearance": "black typography stack",
+          "function": "date and time display",
+          "legacyId": "rainmeter-mond-clock-remake",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "paper-charcoal",
+      "title": "Paper-Charcoal",
+      "source": "current",
+      "description": "Current Paper-Charcoal widget references.",
+      "widgets": [
+        {
+          "id": "charcoal-countdown",
+          "title": "Charcoal countdown",
+          "source": "current",
+          "appearance": "charcoal card",
+          "function": "countdown timer",
+          "legacyId": "countdown",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "charcoal-digital-clock",
+          "title": "Charcoal digital clock",
+          "source": "current",
+          "appearance": "charcoal card",
+          "function": "digital clock",
+          "legacyId": "digital-clock",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "charcoal-hand-clock",
+          "title": "Charcoal hand clock",
+          "source": "current",
+          "appearance": "charcoal analog face",
+          "function": "analog clock",
+          "legacyId": "analog-clock",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "lime-memory-meter",
+          "title": "Lime memory meter",
+          "source": "current",
+          "appearance": "charcoal card with lime meter",
+          "function": "memory utilization",
+          "legacyId": "memory",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "mono-cpu-meter",
+          "title": "Mono CPU meter",
+          "source": "current",
+          "appearance": "monochrome meter",
+          "function": "CPU utilization",
+          "legacyId": "cpu-utilization",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "network-transfer",
+          "title": "Network transfer",
+          "source": "current",
+          "appearance": "charcoal card",
+          "function": "network transfer rate",
+          "legacyId": "network-transfer",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "paper-battery-meter",
+          "title": "Paper battery meter",
+          "source": "current",
+          "appearance": "paper card with meter",
+          "function": "battery percentage",
+          "legacyId": "battery",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "paper-month-calendar",
+          "title": "Paper month calendar",
+          "source": "current",
+          "appearance": "paper card",
+          "function": "month calendar",
+          "legacyId": "month-calendar",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "paper-stopwatch",
+          "title": "Paper stopwatch",
+          "source": "current",
+          "appearance": "paper card",
+          "function": "stopwatch timer",
+          "legacyId": "stopwatch",
+          "bridge": {
+            "enabled": false,
+            "backend-ids": [],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "system-controls",
+          "title": "System controls",
+          "source": "current",
+          "appearance": "charcoal control card",
+          "function": "system controls",
+          "legacyId": "system-controls",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        }
+      ]
+    }
+  ]
+}

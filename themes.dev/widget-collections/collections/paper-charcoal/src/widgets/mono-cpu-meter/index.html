@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CPU utilization</title>
+    <link rel="icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./widget.css" />
+  </head>
+  <body>
+    <main id="widget" class="metric" aria-label="CPU utilization">
+      <header class="metric__header"><img src="./assets/icon.svg" alt="" /><span>CPU utilization</span></header>
+      <strong class="metric__value" data-value>--</strong>
+      <div class="metric__meter" aria-hidden="true"><span data-meter></span></div>
+      <span class="metric__detail" data-detail>waiting for Nyx</span>
+    </main>
+    <script type="module" src="./widget.js"></script>
+  </body>
+</html>

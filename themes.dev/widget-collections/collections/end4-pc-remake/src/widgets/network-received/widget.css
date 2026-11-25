@@ -1,0 +1,6 @@
+@import "@khaosshell/widget-style-primitives/end4-small-widget.css";
+
+.webskin-frame--small-widget {
+  --webskin-small-widget-icon-frame: url("./assets/arrow.svg");
+  --webskin-small-widget-icon: url("./assets/icon.svg");
+}

@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "charcoal-countdown",
+  "title": "Charcoal countdown",
+  "source": "current",
+  "appearance": "charcoal card",
+  "function": "countdown timer",
+  "legacyId": "countdown",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

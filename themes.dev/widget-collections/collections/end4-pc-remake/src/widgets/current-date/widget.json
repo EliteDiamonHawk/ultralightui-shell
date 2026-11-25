@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "current-date",
+  "title": "Current date",
+  "source": "webskin",
+  "appearance": "charcoal square date card",
+  "function": "single current date",
+  "legacyId": "day-prestyled2",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

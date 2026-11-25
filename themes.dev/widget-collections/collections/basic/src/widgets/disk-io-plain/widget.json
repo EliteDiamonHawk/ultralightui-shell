@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "disk-io-plain",
+  "title": "Plain disk I/O",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "disk I/O",
+  "legacyId": "disk-io-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "cpu-frequency",
+  "title": "CPU frequency",
+  "source": "webskin",
+  "appearance": "cookie-4-sided system card",
+  "function": "CPU frequency",
+  "legacyId": "cpu-frequency-prestyled",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

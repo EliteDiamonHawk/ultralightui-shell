@@ -1,0 +1,27 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 1rem; color: CanvasText; background: Canvas; }
+.basic-widget { display: grid; gap: .75rem; min-width: 12rem; font-size: 1rem; }
+.basic-widget time, .basic-widget output { font-variant-numeric: tabular-nums; }
+.basic-analog { display: block; width: 10rem; height: 10rem; }
+.basic-analog circle:first-child { fill: transparent; stroke: currentColor; stroke-width: 2; }
+.basic-analog [data-basic-part="tick"], .basic-analog [data-basic-part$="hand"] { stroke: currentColor; stroke-linecap: round; }
+.basic-analog [data-basic-part="tick"] { stroke-width: 1.5; }
+.basic-analog [data-basic-part="hour-hand"] { stroke-width: 4; }
+.basic-analog [data-basic-part="minute-hand"] { stroke-width: 2.5; }
+.basic-analog [data-basic-part="second-hand"] { stroke-width: 1.2; }
+.basic-week, .basic-month-grid, .basic-weekdays { display: grid; gap: .35rem; }
+.basic-week { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.basic-week time, .basic-month-grid time { padding: .35rem; border: 1px solid currentColor; }
+.basic-week time[data-basic-today="true"], .basic-month-grid time[data-basic-today="true"] { font-weight: 700; }
+.basic-month { min-width: 18rem; }
+.basic-month header, .basic-weekdays, .basic-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; }
+.basic-month header { display: flex; justify-content: space-between; margin-bottom: .5rem; }
+.basic-month-grid { grid-template-rows: repeat(6, minmax(0, 1fr)); }
+.basic-month-grid time[data-basic-in-month="false"] { opacity: .45; }
+.basic-timer { font-size: 2rem; }
+.basic-timer div { display: flex; gap: .5rem; }
+.basic-control { justify-items: start; }
+.basic-control output, .basic-metric pre { white-space: pre-wrap; }
+.basic-metric h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+.basic-metric output { font-size: 1.5rem; }

@@ -1,0 +1,17 @@
+{
+  "collection": "basic",
+  "id": "cpu-frequency-plain",
+  "title": "Plain CPU frequency",
+  "source": "webskin",
+  "appearance": "plain",
+  "function": "CPU frequency",
+  "legacyId": "cpu-frequency-plain",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

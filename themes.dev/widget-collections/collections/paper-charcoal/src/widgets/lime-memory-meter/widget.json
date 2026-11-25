@@ -1,0 +1,15 @@
+{
+  "collection": "paper-charcoal",
+  "id": "lime-memory-meter",
+  "title": "Lime memory meter",
+  "source": "current",
+  "appearance": "charcoal card with lime meter",
+  "function": "memory utilization",
+  "legacyId": "memory",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": ["nyx"],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}
