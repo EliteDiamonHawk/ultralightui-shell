@@ -9,7 +9,7 @@ process handle, backend grant, or raw protocol frame.
 
 ## 1. Enable the bridge
 
-Add a bridge policy to each wallpaper, widget, or menu page that needs native
+Add a bridge policy to each generic window, wallpaper, or widget page that needs native
 communication:
 
 ```json
@@ -354,7 +354,6 @@ theme should request only routes it needs.
 exact command in `runtime-commands`:
 
 ```js
-await window.renderer.aether.command({ command: "toggleMenu" });
 await window.renderer.aether.command({
   command: "hideWindow",
   targetId: "weather"
@@ -369,7 +368,6 @@ Supported commands:
 
 | Command | Arguments |
 | --- | --- |
-| `showMenu`, `hideMenu`, `toggleMenu` | No target fields. |
 | `showWindow`, `hideWindow` | Required `targetId`. |
 | `pause`, `resume`, `status`, `reload` | Optional `group` or `all: true`, never both. |
 

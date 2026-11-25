@@ -39,14 +39,10 @@ not read from managed-process command-line flags.
 Commands connect to the already-running user-scoped instance. They do not load config files.
 
 ```powershell
-Aether.exe --toggle-menu
-Aether.exe --toggle-menu show
-Aether.exe --toggle-menu hide
 Aether.exe --system-tray hide
 Aether.exe --system-tray show
 Aether.exe --system-tray
 Aether.exe --list windows
-Aether.exe --list menu
 Aether.exe --list config
 Aether.exe --list paths
 Aether.exe --show widget-1
@@ -62,16 +58,17 @@ Aether.exe --reload-all
 Aether.exe --exit
 ```
 
-`--toggle-menu` toggles the configured menu. Add `show` or `hide` to force visibility. `--hide <id>` and `--show <id>` target one window. `--list` accepts `pipes`, `config`, `windows`, `menu`, or `paths`; `menu` returns configured menu ID and current native visibility. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group.
+`--hide <id>` and `--show <id>` target one generic window. `--list` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group. Menu commands and policy belong to Chronos, which uses the inherited generic window routes.
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 
 Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection. `show` commands return a JSON object; other successful commands return `OK ...`, and failures return `ERR ...`.
 
 The inherited controller channel supports `POST /v1/renderer/configure`,
-`GET|POST /v1/renderer/menu`, `GET /v1/pipes`, and
-`PUT /v1/logging/batch-limits`. The menu route reports configured ID and native
-visibility; its POST body is `{ "action": "show" }` or `{ "action": "hide" }`.
+`GET|POST|PUT|DELETE /v1/renderer/windows`,
+`POST /v1/renderer/windows/{id}/actions`, `GET /v1/pipes`, and
+`PUT /v1/logging/batch-limits`. Aether has no menu-specific route; Chronos
+uses the generic window response for its menu.
 Managed Aether emits
 `renderer.transport.ready` before configuration and `renderer.ready` after
 successful configuration. Other `/v1/*` routes return `404` from Aether.

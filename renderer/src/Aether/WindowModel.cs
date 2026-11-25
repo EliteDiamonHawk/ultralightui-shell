@@ -3,19 +3,69 @@ using System.Text.Json;
 
 namespace Aether;
 
+// WindowKind identifies the compatibility adapter which produced a window. The
+// runtime never uses it to select native behavior; placement and input policy
+// do that instead.
 public enum WindowKind
 {
+    Generic,
     Wallpaper,
-    Widget,
-    StartMenu
+    Widget
 }
 
-public enum StartMenuHiddenBehavior
+public enum WindowPlacement
 {
-    None,
+    Desktop,
+    TopLevel
+}
+
+public enum WindowZOrder
+{
+    Bottom,
+    Normal,
+    Top,
+    Topmost,
+    TopmostWhenFocused
+}
+
+public enum WindowHiddenBehavior
+{
+    Retain,
     Pause,
     Unload
 }
+
+public enum WindowInputMode
+{
+    None,
+    Native,
+    Forwarded
+}
+
+public enum WindowFocusMode
+{
+    Never,
+    OnShow,
+    OnReveal,
+    OnClick
+}
+
+public sealed record WindowInputPolicy(
+    WindowInputMode Mouse = WindowInputMode.Native,
+    WindowInputMode Keyboard = WindowInputMode.Native,
+    WindowFocusMode Focus = WindowFocusMode.Never,
+    bool ClickThrough = false);
+
+public sealed record WindowNotificationPolicy(
+    bool Focus = false,
+    bool Visibility = false,
+    bool Geometry = false,
+    bool Lifecycle = false);
+
+public sealed record WorkAreaReservation(
+    bool Enabled = false,
+    string Edge = "bottom",
+    int Thickness = 0);
 
 public sealed record RendererWindowSpec(
     string LogicalId,
@@ -26,11 +76,28 @@ public sealed record RendererWindowSpec(
     WindowKind Kind,
     bool Transparent = true,
     int MonitorNumber = 0,
-    bool AutoHide = true,
-    StartMenuHiddenBehavior HiddenBehavior = StartMenuHiddenBehavior.None,
+    WindowHiddenBehavior HiddenBehavior = WindowHiddenBehavior.Retain,
     BridgePolicy? Bridge = null,
     IReadOnlyDictionary<string, JsonElement>? Variables = null,
-    IReadOnlyList<string>? Cues = null);
+    IReadOnlyList<string>? Cues = null,
+    WindowPlacement Placement = WindowPlacement.TopLevel,
+    WindowZOrder ZOrder = WindowZOrder.Normal,
+    bool Framed = false,
+    bool Resizable = false,
+    bool ShowInTaskbar = false,
+    bool ActivateOnShow = false,
+    bool SuspendOnFullscreen = true,
+    string? Title = null,
+    WindowInputPolicy? Input = null,
+    WindowNotificationPolicy? Notifications = null,
+    WorkAreaReservation? WorkArea = null,
+    bool InitialVisible = true)
+{
+    public WindowInputPolicy EffectiveInput => Input ?? new();
+    public WindowNotificationPolicy EffectiveNotifications => Notifications ?? new();
+    public WorkAreaReservation EffectiveWorkArea => WorkArea ?? new();
+    public string EffectiveTitle => string.IsNullOrWhiteSpace(Title) ? $"Aether - {LogicalId}" : Title!;
+}
 
 public sealed record WindowSnapshot(
     string Id,
@@ -41,8 +108,11 @@ public sealed record WindowSnapshot(
     Rectangle CurrentBounds,
     int Monitor,
     bool Visible,
+    bool Focused,
     bool Suspended,
-    AppWindowState State);
+    AppWindowState State,
+    WindowPlacement Placement = WindowPlacement.TopLevel,
+    WindowZOrder ZOrder = WindowZOrder.Normal);
 
 public sealed record BridgePolicy(
     bool? Enabled,

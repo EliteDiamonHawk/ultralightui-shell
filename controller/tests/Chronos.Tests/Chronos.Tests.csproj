@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Chronos\Chronos.csproj" />
+    <ProjectReference Include="..\..\src\Chronos\Chronos.csproj" />
   </ItemGroup>
 
 </Project>

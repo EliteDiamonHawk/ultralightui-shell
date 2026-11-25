@@ -1,6 +1,6 @@
 # Aether renderer
 
-Aether hosts Ultralight pages as Windows wallpapers, widgets, and a menu. The project targets Windows x64, .NET 9, and WinForms.
+Aether hosts Ultralight pages as generic Windows surfaces, with wallpaper and widget adapters. The project targets Windows x64, .NET 9, and WinForms. Chronos owns menu policy and creates its menu through Aether's generic window API.
 
 ## Quick start
 
@@ -13,7 +13,7 @@ Aether hosts Ultralight pages as Windows wallpapers, widgets, and a menu. The pr
    .\scripts\run.ps1 -Arguments @('--config', '.\docs\configuration\example.json')
    ```
 
-The host can run without a menu. A config file must contain at least one of `wallpaper`, `widgets`, or `menu`.
+The host can run standalone with wallpaper, widgets, or generic `windows`. Aether does not accept a `menu` section.
 
 Use [`docs/runtime-control.md`](docs/runtime-control.md) to show, hide, pause, reload, inspect, or stop the running host.
 

@@ -112,6 +112,6 @@ Before submitting changes:
 1. Run the test script.
 2. Run a release build with the SDK available.
 3. If native behavior changed, test one and multiple monitors, including mixed DPI where available.
-4. Exercise menu show/hide, ID-based hide/show, pause/resume, status, reload, and exit commands.
+4. Exercise generic window show/hide, focus, ID-based actions, pause/resume, status, reload, and exit commands. Chronos-specific menu behavior is tested from the controller.
 
 Pipe changes also require oversized-frame, peer-EOF, pending-request, and reconnect checks in the executable test harness.

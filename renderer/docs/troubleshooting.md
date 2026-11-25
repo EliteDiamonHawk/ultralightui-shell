@@ -13,7 +13,7 @@ Configuration errors identify the section, item, or field. Check:
 - the root is an object;
 - the file set contains at least one known top-level section;
 - each section appears in only one config file;
-- widgets and menus contain all required geometry fields;
+- widgets and generic windows contain all required geometry fields;
 - monitor numbers fit the connected monitor count;
 - URLs use HTTP, HTTPS, or `file:`;
 - fields and logical IDs are unique.
@@ -36,12 +36,15 @@ Use `--verbose` and inspect `[EmbedCheck]` / `[Window]` output. Confirm:
 
 The host periodically reconciles native geometry. A repeated geometry error usually indicates a Windows desktop-host or DPI interaction, not a URL problem.
 
-## Menu does not remain visible
+## Top-level window does not remain visible
 
-`auto-hide` hides it when another non-owned foreground window activates. `hidden-behavior: pause` suspends its view; `unload` destroys it until `--toggle-menu show` recreates it. Test with:
+Check the generic window's `initial-visible`, `hidden-behavior`, focus policy,
+and z-order. `pause` suspends a retained view and `unload` destroys it; the
+caller must recreate an unloaded window through the generic window API. When
+Chronos owns a menu, its controller handles auto-hide and recreation.
 
 ```powershell
-Aether.exe --toggle-menu show
+Aether.exe --show <window-id>
 Aether.exe --status-all
 ```
 

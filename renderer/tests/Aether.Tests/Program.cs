@@ -22,7 +22,7 @@ internal static class Program
             (nameof(OptionsRejectMixedCommands), OptionsRejectMixedCommands),
             (nameof(OptionsAllowNoConfig), OptionsAllowNoConfig),
             (nameof(OptionsParseWindowAndInspectionCommands), OptionsParseWindowAndInspectionCommands),
-            (nameof(OptionsParseMenuCommands), OptionsParseMenuCommands),
+            (nameof(OptionsRejectMenuCommands), OptionsRejectMenuCommands),
             (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
             (nameof(RendererDataUsesLocalAppData), RendererDataUsesLocalAppData),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
@@ -31,9 +31,10 @@ internal static class Program
             (nameof(ConfigurationLoadsInlineJson), ConfigurationLoadsInlineJson),
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
+            (nameof(ConfigurationParsesGenericWindowPolicies), ConfigurationParsesGenericWindowPolicies),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
-            (nameof(ConfigurationParsesMenuIdsAndBridge), ConfigurationParsesMenuIdsAndBridge),
+            (nameof(ConfigurationRejectsMenuSection), ConfigurationRejectsMenuSection),
             (nameof(ConfigurationRejectsInvalidRuntimeCommands), ConfigurationRejectsInvalidRuntimeCommands),
             (nameof(RuntimeCommandPayloadsMapAndValidate), RuntimeCommandPayloadsMapAndValidate),
             (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
@@ -115,7 +116,7 @@ internal static class Program
         RendererConfiguration configuration = RendererConfiguration.LoadJson(document.RootElement, "theme-source.json");
         AssertEqual(0, configuration.Wallpapers.Count);
         AssertEqual(0, configuration.Widgets.Count);
-        AssertEqual<StartMenuDefinition?>(null, configuration.Menu);
+        AssertEqual(0, configuration.Windows.Count);
     }
 
     private static void OptionsParseNamedCommands()
@@ -179,32 +180,15 @@ internal static class Program
         AssertEqual(RendererCommandKind.Show, list.Command.Kind);
         AssertEqual("windows", list.Command.Topic);
 
-        HostOptions menu = HostOptions.Parse(new[] { "--list", "menu" });
-        AssertEqual(RendererCommandKind.Show, menu.Command.Kind);
-        AssertEqual("menu", menu.Command.Topic);
-
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show" }));
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--list" }));
         AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--reveal", "widget-1" }));
     }
 
-    private static void OptionsParseMenuCommands()
+    private static void OptionsRejectMenuCommands()
     {
-        HostOptions toggle = HostOptions.Parse(new[] { "--toggle-menu" });
-        AssertEqual(RendererCommandKind.ToggleMenu, toggle.Command.Kind);
-
-        HostOptions emptyInline = HostOptions.Parse(new[] { "--toggle-menu=" });
-        AssertEqual(RendererCommandKind.ToggleMenu, emptyInline.Command.Kind);
-
-        HostOptions show = HostOptions.Parse(new[] { "--toggle-menu", "show" });
-        AssertEqual(RendererCommandKind.ShowMenu, show.Command.Kind);
-
-        HostOptions hide = HostOptions.Parse(new[] { "--toggle-menu=HIDE" });
-        AssertEqual(RendererCommandKind.HideMenu, hide.Command.Kind);
-
-        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--toggle-menu", "empty" }));
-        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--show-menu" }));
-        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--hide-menu" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--toggle-menu" }));
+        AssertThrows<OptionException>(() => HostOptions.Parse(new[] { "--list", "menu" }));
     }
 
     private static void OptionsParseSystemTrayCommands()
@@ -266,12 +250,12 @@ internal static class Program
 
     private static void ConfigurationAppliesDefaultGroups()
     {
-        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}}");
+        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"windows\":[{\"id\":\"generic\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}]}");
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
             AssertEqual("widgets", configuration.Widgets[0].ThreadGroup);
-            AssertEqual("menu", configuration.Menu!.ThreadGroup);
+            AssertEqual("windows", configuration.Windows[0].ThreadGroup);
         }
         finally { Delete(path); }
     }
@@ -287,6 +271,29 @@ internal static class Program
         finally { Delete(path); }
     }
 
+    private static void ConfigurationParsesGenericWindowPolicies()
+    {
+        using JsonDocument document = JsonDocument.Parse("""
+            {"windows":[{"id":"panel","url":"file:///panel.html","x":10,"y":20,"width":40,"height":50,
+              "x-unit":"percent","y-unit":"percent","width-unit":"percent","height-unit":"percent",
+              "placement":"top-level","z-order":"topmost-when-focused","framed":true,"resizable":true,
+              "show-in-taskbar":true,"hidden-behavior":"pause","input":{"mouse":"native","keyboard":"none","focus":"on-show"},
+              "notifications":{"focus":true,"visibility":true},"work-area":{"enabled":true,"edge":"top","thickness":32}}]}
+            """);
+        GenericWindowDefinition window = RendererConfiguration.LoadJson(document.RootElement).Windows.Single();
+        AssertEqual("panel", window.Id);
+        AssertEqual(WindowPlacement.TopLevel, window.Placement);
+        AssertEqual(WindowZOrder.TopmostWhenFocused, window.ZOrder);
+        AssertTrue(window.Framed);
+        AssertTrue(window.Resizable);
+        AssertEqual(WindowHiddenBehavior.Pause, window.HiddenBehavior);
+        AssertEqual(WindowInputMode.None, window.Input.Keyboard);
+        AssertEqual(WindowFocusMode.OnShow, window.Input.Focus);
+        AssertTrue(window.Notifications.Focus);
+        AssertTrue(window.WorkArea.Enabled);
+        AssertEqual(32, window.WorkArea.Thickness);
+    }
+
     private static void ConfigurationRejectsUnknownFields()
     {
         string path = WriteTemp("{\"widgets\":[],\"unknown\":[]}");
@@ -294,25 +301,17 @@ internal static class Program
         finally { Delete(path); }
     }
 
-    private static void ConfigurationParsesMenuIdsAndBridge()
+    private static void ConfigurationRejectsMenuSection()
     {
-        string path = WriteTemp("{\"menu\":{\"id\":\"main.menu\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"enabled\":true,\"backend-ids\":[\"cpu\"],\"control-routes\":[\"/v1/windows/{id}/reveal\"],\"runtime-commands\":[\"toggleMenu\",\"hideWindow\"]}}}");
-        try
-        {
-            RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
-            AssertEqual("main.menu", configuration.Menu!.Id);
-            AssertTrue(configuration.Menu.Bridge!.Enabled == true);
-            AssertEqual("cpu", configuration.Menu.Bridge.BackendIds.Single());
-            AssertEqual("toggleMenu", configuration.Menu.Bridge.RuntimeCommands[0]);
-            AssertEqual("hideWindow", configuration.Menu.Bridge.RuntimeCommands[1]);
-        }
+        string path = WriteTemp("{\"menu\":{\"id\":\"main.menu\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"url\":\"file:///menu.html\"}}");
+        try { AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { path })); }
         finally { Delete(path); }
     }
 
     private static void ConfigurationRejectsInvalidRuntimeCommands()
     {
-        string unknown = WriteTemp("{\"widgets\":[],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"runtime-commands\":[\"exit\"]}}}");
-        string duplicate = WriteTemp("{\"widgets\":[],\"menu\":{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"file:///menu.html\",\"bridge\":{\"runtime-commands\":[\"reload\",\"reload\"]}}}");
+        string unknown = WriteTemp("{\"windows\":[{\"id\":\"one\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"url\":\"file:///one.html\",\"bridge\":{\"runtime-commands\":[\"exit\"]}}]}");
+        string duplicate = WriteTemp("{\"windows\":[{\"id\":\"one\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"url\":\"file:///one.html\",\"bridge\":{\"runtime-commands\":[\"reload\",\"reload\"]}}]}");
         try
         {
             AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { unknown }));
@@ -324,8 +323,7 @@ internal static class Program
     private static void RuntimeCommandPayloadsMapAndValidate()
     {
         using JsonDocument menu = JsonDocument.Parse("{\"command\":\"toggleMenu\"}");
-        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(menu.RootElement, out _, out RendererCommand toggle, out _));
-        AssertEqual(RendererCommandKind.ToggleMenu, toggle.Kind);
+        AssertFalse(RendererJsBridge.TryParseRuntimeCommand(menu.RootElement, out _, out _, out _));
 
         using JsonDocument window = JsonDocument.Parse("{\"command\":\"hideWindow\",\"targetId\":\"widget-1\"}");
         AssertTrue(RendererJsBridge.TryParseRuntimeCommand(window.RootElement, out _, out RendererCommand hide, out _));
@@ -389,9 +387,9 @@ internal static class Program
         AssertEqual(RendererCommandKind.SystemTray, parsed!.Kind);
         AssertEqual(SystemTrayAction.Hide, parsed.TrayAction);
 
-        json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.ToggleMenu));
+        json = RendererCommandProtocol.Serialize(new RendererCommand(RendererCommandKind.HideWindow, TargetId: "clock"));
         AssertTrue(RendererCommandProtocol.TryParse(json, out parsed));
-        AssertEqual(RendererCommandKind.ToggleMenu, parsed!.Kind);
+        AssertEqual(RendererCommandKind.HideWindow, parsed!.Kind);
 
         Guid themeId = Guid.NewGuid();
         Guid activationId = Guid.NewGuid();

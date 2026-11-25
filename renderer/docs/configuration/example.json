@@ -31,23 +31,22 @@
       "thread-group": "desktop"
     }
   ],
-  "menu": {
-    "x": 50,
-    "y": 50,
-    "pos-scaled": true,
-    "size-scaled": false,
-    "anchor": "center",
-    "width": 820,
-    "height": 620,
-    "monitor": 1,
-    "url": "https://example.com/menu",
-    "transparent": true,
-    "auto-hide": true,
-    "hidden-behavior": "pause",
-    "thread-group": "menu",
-    "bridge": {
-      "enabled": true,
-      "runtime-commands": ["toggleMenu", "hideMenu", "showMenu"]
+  "windows": [
+    {
+      "id": "clock",
+      "x": 50,
+      "y": 8,
+      "x-unit": "percent",
+      "y-unit": "percent",
+      "anchor": "top",
+      "width": 520,
+      "height": 180,
+      "monitor": 1,
+      "url": "https://example.com/window",
+      "placement": "top-level",
+      "z-order": "normal",
+      "input": { "mouse": "native", "keyboard": "native", "focus": "on-click" },
+      "notifications": { "focus": true }
     }
-  }
+  ]
 }

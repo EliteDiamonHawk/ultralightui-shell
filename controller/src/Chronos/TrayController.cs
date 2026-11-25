@@ -5,6 +5,8 @@ namespace Chronos;
 internal sealed class TrayController : IDisposable
 {
     private readonly RendererCommandService _commands;
+    private readonly Func<Task<AetherCommandResult>> _showMenu;
+    private readonly Func<Task<AetherCommandResult>> _hideMenu;
     private readonly WinMenuToggleController _winToggle;
     private readonly Action _openShell;
     private readonly Action _exit;
@@ -15,12 +17,16 @@ internal sealed class TrayController : IDisposable
 
     public TrayController(
         RendererCommandService commands,
+        Func<Task<AetherCommandResult>> showMenu,
+        Func<Task<AetherCommandResult>> hideMenu,
         WinMenuToggleController winToggle,
         Action openShell,
         Action exit,
         Action<string> diagnostic)
     {
         _commands = commands;
+        _showMenu = showMenu;
+        _hideMenu = hideMenu;
         _winToggle = winToggle;
         _openShell = openShell;
         _exit = exit;
@@ -63,8 +69,8 @@ internal sealed class TrayController : IDisposable
         _menu.Items.Add(open);
         _menu.Items.Add(new ToolStripSeparator());
         RendererCapabilities capabilities = _commands.Capabilities;
-        AddAction("Show menu", () => _commands.ShowMenuAsync(), !capabilities.HasMenu);
-        AddAction("Hide menu", () => _commands.HideMenuAsync(), !capabilities.HasMenu);
+        AddAction("Show menu", _showMenu, !capabilities.HasMenu);
+        AddAction("Hide menu", _hideMenu, !capabilities.HasMenu);
         _menu.Items.Add(new ToolStripSeparator());
 
         if (capabilities.Windows.Count == 0)

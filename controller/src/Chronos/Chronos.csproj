@@ -18,7 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\contracts\RendererContracts.csproj" />
+    <ProjectReference Include="..\..\..\contracts\src\RendererContracts\RendererContracts.csproj" />
   </ItemGroup>
 
 </Project>

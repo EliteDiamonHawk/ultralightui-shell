@@ -53,11 +53,12 @@ Chronos handles:
 - `POST /v1/logs`: durable, redacted renderer event batches.
 
 Aether handles `POST /v1/renderer/configure` for managed startup, reload, and
-return-to-idle operations. Managed Chronos may query menu state with
-`GET /v1/renderer/menu` and set native menu visibility with
-`POST /v1/renderer/menu` using `{ "action": "show" }` or
-`{ "action": "hide" }`. Aether also emits `renderer.transport.ready` and
-`renderer.ready` events.
+return-to-idle operations. Managed Chronos creates and controls its menu as a
+generic Aether window with `POST /v1/renderer/windows`,
+`GET|PUT|DELETE /v1/renderer/windows/{id}`, and
+`POST /v1/renderer/windows/{id}/actions`. Aether also emits
+`renderer.transport.ready`, `renderer.ready`, and generic window lifecycle,
+visibility, change, and focus events.
 
 Chronos may send unsolicited cue events to Aether:
 

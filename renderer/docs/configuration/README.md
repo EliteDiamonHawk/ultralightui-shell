@@ -6,7 +6,7 @@ Files:
 
 - [`configuration.md`](configuration.md) documents sections, fields, defaults, geometry, bridge policy, and reload behavior.
 - [`schema.json`](schema.json) describes the canonical JSON shape for editor validation.
-- [`example.json`](example.json) shows wallpaper, widget, and menu sections together.
+- [`example.json`](example.json) shows wallpaper, widget, and generic window sections together. Chronos menu definitions are controller-owned.
 
 Start the renderer from `renderer/`:
 

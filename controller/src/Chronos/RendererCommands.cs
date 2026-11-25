@@ -101,6 +101,7 @@ internal sealed class RendererCommandService
     private readonly AetherCommandClient _client;
     private readonly object _sync = new();
     private RendererCapabilities _capabilities = RendererCapabilities.Empty;
+    private RendererWindowCapability? _managedMenu;
     private bool _connected;
     private bool _transportAvailable;
 
@@ -137,20 +138,50 @@ internal sealed class RendererCommandService
         RendererCapabilities next = ParseCapabilities(config.Payload, windows.Payload, pipes.Payload);
         lock (_sync)
         {
+            if (_managedMenu is { } menu)
+            {
+                next = next with
+                {
+                    Windows = next.Windows.Append(menu).ToArray(),
+                    HasMenu = true
+                };
+            }
             _capabilities = next;
             _connected = true;
         }
         return next;
     }
 
-    public Task<AetherCommandResult> ShowMenuAsync(CancellationToken cancellationToken = default) =>
-        SendAsync(new(AetherCommandKind.ShowMenu), cancellationToken);
-
-    public Task<AetherCommandResult> HideMenuAsync(CancellationToken cancellationToken = default) =>
-        SendAsync(new(AetherCommandKind.HideMenu), cancellationToken);
-
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible, CancellationToken cancellationToken = default) =>
         SendAsync(new(visible ? AetherCommandKind.RevealWindow : AetherCommandKind.HideWindow, TargetId: id), cancellationToken);
+
+    public void SetManagedMenu(string id, bool visible)
+    {
+        lock (_sync)
+        {
+            _managedMenu = new RendererWindowCapability(id, "chronos-menu", "menu", visible);
+            _capabilities = _capabilities with
+            {
+                Windows = _capabilities.Windows.Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase))
+                    .Append(_managedMenu)
+                    .ToArray(),
+                HasMenu = true
+            };
+        }
+    }
+
+    public void ClearManagedMenu()
+    {
+        lock (_sync)
+        {
+            _managedMenu = null;
+            _capabilities = _capabilities with
+            {
+                Windows = _capabilities.Windows.Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase)).ToArray(),
+                HasMenu = false
+            };
+        }
+    }
 
     public async Task<AetherCommandResult> ApplyConfigAsync(
         IReadOnlyList<string> paths,
@@ -197,32 +228,13 @@ internal sealed class RendererCommandService
     public Task<AetherCommandResult> ExecuteAsync(RendererCommand command, CancellationToken cancellationToken = default) =>
         SendAsync(command, cancellationToken);
 
-    public async Task<AetherCommandResult> ToggleMenuAsync(CancellationToken cancellationToken = default)
-    {
-        RendererCapabilities capabilities = Capabilities;
-        RendererWindowCapability? menu = capabilities.Windows.FirstOrDefault(item =>
-            string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase));
-        bool show = menu?.Visible != true;
-        AetherCommandResult result = capabilities.HasMenu
-            ? await SendAsync(new(show ? AetherCommandKind.ShowMenu : AetherCommandKind.HideMenu), cancellationToken).ConfigureAwait(false)
-            : new AetherCommandResult(false, "ERR No menu window is configured.", "No menu window is configured.");
-        if (result.Success && menu != null)
-        {
-            lock (_sync)
-                _capabilities = _capabilities with
-                {
-                    Windows = _capabilities.Windows.Select(item => item.Id == menu.Id ? item with { Visible = show } : item).ToArray()
-                };
-        }
-        return result;
-    }
-
     public void MarkDisconnected()
     {
         lock (_sync)
         {
             _transportAvailable = false;
             _connected = false;
+            _managedMenu = null;
             _capabilities = RendererCapabilities.Empty;
         }
     }
@@ -282,7 +294,7 @@ internal sealed class RendererCommandService
                     ? kindElement.ValueKind == JsonValueKind.String
                         ? kindElement.GetString()
                         : kindElement.ValueKind == JsonValueKind.Number && kindElement.TryGetInt32(out int kindNumber)
-                            ? kindNumber switch { 0 => "wallpaper", 1 => "widget", 2 => "menu", _ => null }
+                            ? kindNumber switch { 0 => "generic", 1 => "wallpaper", 2 => "widget", _ => null }
                             : null
                     : null;
                 windowValues.Add(new RendererWindowCapability(
@@ -294,7 +306,7 @@ internal sealed class RendererCommandService
         }
 
         var groups = windowValues.Select(item => item.Group).Where(item => item != null).Distinct(StringComparer.Ordinal).Cast<string>().ToArray();
-        bool hasMenu = windowValues.Any(item => string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase));
+        bool hasMenu = false;
         string pipeState = ControlCodec.GetString(pipesRoot, "control") ?? "unknown";
         Guid? themeId = TryGetGuid(configRoot, "themeId");
         Guid? activationId = TryGetGuid(configRoot, "themeActivationId");

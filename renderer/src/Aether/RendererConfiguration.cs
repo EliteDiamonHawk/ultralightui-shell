@@ -1,7 +1,6 @@
 using System.Drawing;
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Windows.Forms;
 
 namespace Aether;
@@ -9,28 +8,31 @@ namespace Aether;
 public sealed class RendererConfiguration
 {
     private RendererConfiguration(
+        IReadOnlyList<GenericWindowDefinition> windows,
         IReadOnlyList<WallpaperProfile> wallpapers,
         IReadOnlyList<WidgetDefinition> widgets,
-        StartMenuDefinition? startMenu,
         IReadOnlyDictionary<string, JsonElement> variables,
         IReadOnlyList<string> cues)
     {
+        Windows = windows;
         Wallpapers = wallpapers;
         Widgets = widgets;
-        Menu = startMenu;
         Variables = variables;
         Cues = cues;
     }
 
+    public IReadOnlyList<GenericWindowDefinition> Windows { get; }
     public IReadOnlyList<WallpaperProfile> Wallpapers { get; }
     public IReadOnlyList<WidgetDefinition> Widgets { get; }
-    public StartMenuDefinition? Menu { get; }
     public IReadOnlyDictionary<string, JsonElement> Variables { get; }
     public IReadOnlyList<string> Cues { get; }
 
-    public static RendererConfiguration Empty { get; } =
-        new(Array.Empty<WallpaperProfile>(), Array.Empty<WidgetDefinition>(), null,
-            new Dictionary<string, JsonElement>(StringComparer.Ordinal), Array.Empty<string>());
+    public static RendererConfiguration Empty { get; } = new(
+        Array.Empty<GenericWindowDefinition>(),
+        Array.Empty<WallpaperProfile>(),
+        Array.Empty<WidgetDefinition>(),
+        new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+        Array.Empty<string>());
 
     public static RendererConfiguration Load(IReadOnlyList<string> paths)
     {
@@ -75,9 +77,9 @@ public sealed class RendererConfiguration
 
     private static RendererConfiguration Build(IReadOnlyList<(JsonElement Root, string Source)> documents)
     {
+        JsonElement? windows = null;
         JsonElement? wallpaper = null;
         JsonElement? widgets = null;
-        JsonElement? menu = null;
         JsonElement? variables = null;
         JsonElement? cues = null;
         var seenSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -95,7 +97,7 @@ public sealed class RendererConfiguration
                         $"Configuration file '{source}' contains duplicate section '{property.Name}'.");
 
                 string section = property.Name.ToLowerInvariant();
-                if (section is not ("wallpaper" or "widgets" or "menu" or "variables" or "cues"))
+                if (section is not ("windows" or "wallpaper" or "widgets" or "variables" or "cues"))
                     throw new RendererConfigurationException(
                         $"Unknown top-level section '{property.Name}' in '{source}'.");
                 if (!seenSections.Add(section))
@@ -104,9 +106,9 @@ public sealed class RendererConfiguration
 
                 switch (section)
                 {
+                    case "windows": windows = property.Value.Clone(); break;
                     case "wallpaper": wallpaper = property.Value.Clone(); break;
                     case "widgets": widgets = property.Value.Clone(); break;
-                    case "menu": menu = property.Value.Clone(); break;
                     case "variables": variables = property.Value.Clone(); break;
                     case "cues": cues = property.Value.Clone(); break;
                 }
@@ -118,6 +120,14 @@ public sealed class RendererConfiguration
 
         var variableValues = ParseVariables(variables);
         var cueNames = ParseCues(cues);
+        var genericWindows = new List<GenericWindowDefinition>();
+        if (windows.HasValue)
+        {
+            RequireKind(windows.Value, JsonValueKind.Array, "windows");
+            int index = 0;
+            foreach (JsonElement item in windows.Value.EnumerateArray())
+                genericWindows.Add(ParseGenericWindow(item, ++index));
+        }
 
         var wallpapers = new List<WallpaperProfile>();
         if (wallpaper.HasValue)
@@ -137,11 +147,7 @@ public sealed class RendererConfiguration
                 widgetDefinitions.Add(ParseWidget(item, ++index));
         }
 
-        StartMenuDefinition? startMenuDefinition = menu.HasValue
-            ? ParseStartMenu(menu.Value)
-            : null;
-
-        return new RendererConfiguration(wallpapers, widgetDefinitions, startMenuDefinition, variableValues, cueNames);
+        return new RendererConfiguration(genericWindows, wallpapers, widgetDefinitions, variableValues, cueNames);
     }
 
     public IReadOnlyList<RendererWindowSpec> ResolveWindowSpecs()
@@ -162,6 +168,9 @@ public sealed class RendererConfiguration
             specs.Add(spec);
         }
 
+        foreach (GenericWindowDefinition definition in Windows)
+            Add(definition.Resolve(screens, virtualBounds, Variables, Cues));
+
         for (int profileIndex = 0; profileIndex < Wallpapers.Count; profileIndex++)
         {
             WallpaperProfile profile = Wallpapers[profileIndex];
@@ -175,20 +184,10 @@ public sealed class RendererConfiguration
                 {
                     string id = profile.WindowIds[monitorIndex];
                     string url = profile.MonitorUrls.TryGetValue(monitorIndex + 1, out string? overrideUrl)
-                        ? overrideUrl
-                        : profile.Url;
-                    Add(new RendererWindowSpec(
-                        id,
-                        url,
-                        screens[monitorIndex].Bounds,
-                        virtualBounds,
-                        profile.ThreadGroup,
-                        WindowKind.Wallpaper,
-                        profile.Transparent,
-                        monitorIndex + 1,
-                        Bridge: profile.Bridge,
-                        Variables: Variables,
-                        Cues: Cues));
+                        ? overrideUrl : profile.Url;
+                    Add(CreateDesktopSpec(id, url, screens[monitorIndex].Bounds, virtualBounds,
+                        profile.ThreadGroup, WindowKind.Wallpaper, profile.Transparent,
+                        monitorIndex + 1, profile.Bridge));
                 }
                 continue;
             }
@@ -196,52 +195,32 @@ public sealed class RendererConfiguration
             switch (profile.Mode)
             {
                 case WallpaperMode.Span:
-                    Add(new RendererWindowSpec(
-                        profile.Id ?? $"wallpaper-{profileIndex + 1}", profile.Url, virtualBounds, virtualBounds,
-                        profile.ThreadGroup, WindowKind.Wallpaper, profile.Transparent,
-                        Bridge: profile.Bridge, Variables: Variables, Cues: Cues));
+                    Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}", profile.Url,
+                        virtualBounds, virtualBounds, profile.ThreadGroup, WindowKind.Wallpaper,
+                        profile.Transparent, 0, profile.Bridge));
                     break;
                 case WallpaperMode.All:
                     for (int monitorIndex = 0; monitorIndex < screens.Length; monitorIndex++)
                     {
                         string url = profile.MonitorUrls.TryGetValue(monitorIndex + 1, out string? overrideUrl)
-                            ? overrideUrl
-                            : profile.Url;
-                        Add(new RendererWindowSpec(
+                            ? overrideUrl : profile.Url;
+                        Add(CreateDesktopSpec(
                             profile.WindowIds.Count > monitorIndex
                                 ? profile.WindowIds[monitorIndex]
                                 : profile.Id is { } baseId
                                     ? $"{baseId}:monitor:{monitorIndex + 1}"
                                     : $"wallpaper-{profileIndex + 1}-monitor-{monitorIndex + 1}",
-                            url,
-                            screens[monitorIndex].Bounds,
-                            virtualBounds,
-                            profile.ThreadGroup,
-                            WindowKind.Wallpaper,
-                            profile.Transparent,
-                            monitorIndex + 1,
-                            Bridge: profile.Bridge,
-                            Variables: Variables,
-                            Cues: Cues));
+                            url, screens[monitorIndex].Bounds, virtualBounds, profile.ThreadGroup,
+                            WindowKind.Wallpaper, profile.Transparent, monitorIndex + 1, profile.Bridge));
                     }
                     break;
                 case WallpaperMode.Single:
                     ValidateMonitor(profile.Monitor, screens.Length, $"Wallpaper profile {profileIndex + 1}");
                     string singleUrl = profile.MonitorUrls.TryGetValue(profile.Monitor, out string? singleOverride)
-                        ? singleOverride
-                        : profile.Url;
-                    Add(new RendererWindowSpec(
-                        profile.Id ?? $"wallpaper-{profileIndex + 1}-monitor-{profile.Monitor}",
-                        singleUrl,
-                        screens[profile.Monitor - 1].Bounds,
-                        virtualBounds,
-                        profile.ThreadGroup,
-                        WindowKind.Wallpaper,
-                        profile.Transparent,
-                        profile.Monitor,
-                        Bridge: profile.Bridge,
-                        Variables: Variables,
-                        Cues: Cues));
+                        ? singleOverride : profile.Url;
+                    Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}-monitor-{profile.Monitor}",
+                        singleUrl, screens[profile.Monitor - 1].Bounds, virtualBounds, profile.ThreadGroup,
+                        WindowKind.Wallpaper, profile.Transparent, profile.Monitor, profile.Bridge));
                     break;
                 default:
                     throw new RendererConfigurationException($"Unsupported wallpaper mode: {profile.Mode}");
@@ -252,40 +231,92 @@ public sealed class RendererConfiguration
         {
             WidgetDefinition widget = Widgets[index];
             ValidateMonitor(widget.MonitorNumber, screens.Length, $"Widget {index + 1}");
-            Add(new RendererWindowSpec(
-                widget.Id ?? $"widget-{index + 1}",
-                widget.Url,
-                WidgetGeometry.Resolve(widget, screens[widget.MonitorNumber - 1].Bounds),
-                virtualBounds,
-                widget.ThreadGroup,
-                WindowKind.Widget,
-                widget.Transparent,
-                widget.MonitorNumber,
-                Bridge: widget.Bridge,
-                Variables: Variables,
-                Cues: Cues));
-        }
-
-        if (Menu != null)
-        {
-            ValidateMonitor(Menu.MonitorNumber, screens.Length, "Menu");
-            Add(new RendererWindowSpec(
-                Menu.Id ?? "menu",
-                Menu.Url,
-                WidgetGeometry.Resolve(Menu.ToWidgetDefinition(), screens[Menu.MonitorNumber - 1].Bounds),
-                virtualBounds,
-                Menu.ThreadGroup,
-                WindowKind.StartMenu,
-                Menu.Transparent,
-                Menu.MonitorNumber,
-                Menu.AutoHide,
-                Menu.HiddenBehavior,
-                Menu.Bridge,
-                Variables,
-                Cues));
+            Add(CreateDesktopSpec(widget.Id ?? $"widget-{index + 1}", widget.Url,
+                WidgetGeometry.Resolve(widget, screens[widget.MonitorNumber - 1].Bounds), virtualBounds,
+                widget.ThreadGroup, WindowKind.Widget, widget.Transparent, widget.MonitorNumber, widget.Bridge));
         }
 
         return specs;
+    }
+
+    private static RendererWindowSpec CreateDesktopSpec(
+        string id,
+        string url,
+        Rectangle bounds,
+        Rectangle virtualBounds,
+        string group,
+        WindowKind kind,
+        bool transparent,
+        int monitor,
+        BridgePolicy? bridge) => new(
+            id, url, bounds, virtualBounds, group, kind, transparent, monitor,
+            WindowHiddenBehavior.Retain, bridge, null, null, WindowPlacement.Desktop,
+            WindowZOrder.Bottom, false, false, false, false, true, null,
+            new(WindowInputMode.Forwarded, WindowInputMode.Forwarded, WindowFocusMode.OnClick),
+            new(), new(), true);
+
+    private static GenericWindowDefinition ParseGenericWindow(JsonElement element, int index)
+    {
+        string prefix = $"Window {index}";
+        RequireKind(element, JsonValueKind.Object, prefix);
+        ValidateProperties(element, prefix,
+            "id", "url", "thread-group", "title", "x", "y", "width", "height", "monitor",
+            "coordinate-space", "anchor", "x-unit", "y-unit", "width-unit", "height-unit",
+            "framed", "transparent", "resizable", "show-in-taskbar", "placement", "z-order",
+            "initial-visible", "hidden-behavior", "suspend-on-fullscreen", "input", "notifications",
+            "work-area", "bridge");
+
+        string id = GetRequiredString(element, "id", prefix).Trim();
+        ValidateLogicalId(id, $"{prefix} id");
+        string url = NormalizeUrl(GetRequiredString(element, "url", prefix), prefix);
+        double x = GetOptionalDouble(element, "x") ?? 0;
+        double y = GetOptionalDouble(element, "y") ?? 0;
+        double width = GetRequiredDouble(element, "width", prefix);
+        double height = GetRequiredDouble(element, "height", prefix);
+        int monitor = GetOptionalInt(element, "monitor") ?? 1;
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0)
+            throw new RendererConfigurationException($"{prefix} geometry must contain finite positive dimensions.");
+        if (monitor <= 0)
+            throw new RendererConfigurationException($"{prefix} monitor must be positive.");
+
+        string coordinateSpace = (GetOptionalString(element, "coordinate-space") ?? "monitor").Trim().ToLowerInvariant();
+        if (coordinateSpace is not ("monitor" or "work-area" or "virtual-screen"))
+            throw new RendererConfigurationException($"{prefix} coordinate-space must be monitor, work-area, or virtual-screen.");
+        string anchorText = GetOptionalString(element, "anchor") ?? "top-left";
+        if (!TryParseAnchor(anchorText, out WidgetAnchor anchor))
+            throw new RendererConfigurationException($"{prefix} anchor '{anchorText}' is invalid.");
+
+        string xUnit = ParseUnit(element, "x-unit", prefix);
+        string yUnit = ParseUnit(element, "y-unit", prefix);
+        string widthUnit = ParseUnit(element, "width-unit", prefix);
+        string heightUnit = ParseUnit(element, "height-unit", prefix);
+        WindowPlacement placement = ParsePlacement(GetOptionalString(element, "placement"), prefix);
+        WindowZOrder zOrder = ParseZOrder(GetOptionalString(element, "z-order"), prefix);
+        WindowHiddenBehavior hidden = ParseHiddenBehavior(GetOptionalString(element, "hidden-behavior"));
+        WindowInputPolicy input = ParseInputPolicy(element, prefix);
+        WindowNotificationPolicy notifications = ParseNotifications(element, prefix);
+        WorkAreaReservation workArea = ParseWorkArea(element, prefix);
+        bool framed = GetOptionalBool(element, "framed") ?? false;
+        bool transparent = GetOptionalBool(element, "transparent") ?? false;
+        bool resizable = GetOptionalBool(element, "resizable") ?? false;
+        bool showInTaskbar = GetOptionalBool(element, "show-in-taskbar") ?? false;
+        bool initialVisible = GetOptionalBool(element, "initial-visible") ?? true;
+        bool suspendOnFullscreen = GetOptionalBool(element, "suspend-on-fullscreen") ?? true;
+
+        if (placement == WindowPlacement.Desktop &&
+            (framed || showInTaskbar || workArea.Enabled || zOrder is WindowZOrder.Topmost or WindowZOrder.TopmostWhenFocused))
+            throw new RendererConfigurationException($"{prefix} desktop windows cannot be framed, taskbar-visible, work-area-reserving, or topmost.");
+        if (workArea.Enabled && placement != WindowPlacement.TopLevel)
+            throw new RendererConfigurationException($"{prefix} work-area reservation requires top-level placement.");
+        if (input.Focus != WindowFocusMode.Never && input.Mouse == WindowInputMode.None && input.Keyboard == WindowInputMode.None)
+            throw new RendererConfigurationException($"{prefix} focus policy requires an input permission.");
+
+        return new GenericWindowDefinition(
+            id, url, GetOptionalString(element, "thread-group")?.Trim() is { Length: > 0 } group ? group : "windows",
+            GetOptionalString(element, "title"), x, y, width, height, monitor, coordinateSpace, anchor,
+            xUnit, yUnit, widthUnit, heightUnit, placement, zOrder, framed, transparent, resizable,
+            showInTaskbar, initialVisible, hidden, suspendOnFullscreen, input, notifications, workArea,
+            ParseBridgePolicy(element, prefix));
     }
 
     private static WallpaperProfile ParseWallpaper(JsonElement element, int index)
@@ -293,17 +324,14 @@ public sealed class RendererConfiguration
         string prefix = $"Wallpaper profile {index}";
         RequireKind(element, JsonValueKind.Object, prefix);
         ValidateProperties(element, prefix, "id", "thread-group", "url", "mode", "monitor", "monitor-urls", "window-ids", "transparent", "bridge");
-
         string url = NormalizeUrl(GetRequiredString(element, "url", prefix), prefix);
         string group = GetGroup(element, "wallpaper");
         string modeText = GetOptionalString(element, "mode") ?? "span";
         if (!Enum.TryParse<WallpaperMode>(modeText, true, out WallpaperMode mode))
             throw new RendererConfigurationException($"{prefix} mode must be span, all, or single.");
-
         int monitor = GetOptionalInt(element, "monitor") ?? 1;
         if (monitor <= 0)
             throw new RendererConfigurationException($"{prefix} monitor must be positive.");
-
         var monitorUrls = new Dictionary<int, string>();
         if (TryGet(element, "monitor-urls", out JsonElement monitorUrlsElement))
         {
@@ -315,7 +343,6 @@ public sealed class RendererConfiguration
                 monitorUrls[monitorNumber] = NormalizeUrl(GetString(property.Value, $"{prefix} monitor-urls[{property.Name}]"), prefix);
             }
         }
-
         var windowIds = new List<string>();
         if (TryGet(element, "window-ids", out JsonElement idsElement))
         {
@@ -323,22 +350,13 @@ public sealed class RendererConfiguration
             foreach (JsonElement id in idsElement.EnumerateArray())
             {
                 string value = GetString(id, $"{prefix} window-ids").Trim();
-                if (value.Length == 0)
-                    throw new RendererConfigurationException($"{prefix} window-ids cannot contain empty IDs.");
+                ValidateLogicalId(value, $"{prefix} window ID");
                 windowIds.Add(value);
             }
         }
-
-        return new WallpaperProfile(
-            url,
-            mode,
-            monitor,
-            monitorUrls,
-            windowIds,
-            GetOptionalBool(element, "transparent") ?? false,
-            group,
-            GetOptionalId(element, "id", prefix),
-            ParseBridgePolicy(element, prefix));
+        return new WallpaperProfile(url, mode, monitor, monitorUrls, windowIds,
+            GetOptionalBool(element, "transparent") ?? false, group,
+            GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
     }
 
     private static WidgetDefinition ParseWidget(JsonElement element, int index)
@@ -348,7 +366,6 @@ public sealed class RendererConfiguration
         ValidateProperties(element, prefix,
             "id", "x", "y", "pos-scaled", "pos-scale", "size-scaled", "size-scale", "anchor",
             "width", "w", "height", "h", "monitor", "url", "transparent", "thread-group", "bridge");
-
         double x = GetRequiredDouble(element, "x", prefix);
         double y = GetRequiredDouble(element, "y", prefix);
         bool posScaled = GetRequiredBoolOrAlias(element, "pos-scaled", "pos-scale", prefix);
@@ -358,7 +375,6 @@ public sealed class RendererConfiguration
         int monitor = GetRequiredInt(element, "monitor", prefix);
         string anchorText = GetRequiredString(element, "anchor", prefix);
         string url = NormalizeUrl(GetRequiredString(element, "url", prefix), prefix);
-
         if (!double.IsFinite(x) || !double.IsFinite(y))
             throw new RendererConfigurationException($"{prefix} x and y must be finite numbers.");
         if (!double.IsFinite(width) || width <= 0 || !double.IsFinite(height) || height <= 0)
@@ -371,60 +387,108 @@ public sealed class RendererConfiguration
             throw new RendererConfigurationException($"{prefix} pos-scaled x and y must be between -100 and 100.");
         if (sizeScaled && (width > 100 || height > 100))
             throw new RendererConfigurationException($"{prefix} size-scaled width and height must be between 0 and 100.");
-
-        return new WidgetDefinition(
-            x, y, posScaled, sizeScaled, anchor, width, height, monitor, url,
+        return new WidgetDefinition(x, y, posScaled, sizeScaled, anchor, width, height, monitor, url,
             GetOptionalBool(element, "transparent") ?? true, GetGroup(element, "widgets"),
             GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
     }
 
-    private static StartMenuDefinition ParseStartMenu(JsonElement element)
+    private static WindowInputPolicy ParseInputPolicy(JsonElement element, string prefix)
     {
-        const string prefix = "Menu";
-        RequireKind(element, JsonValueKind.Object, prefix);
-        ValidateProperties(element, prefix,
-            "id", "x", "y", "pos-scaled", "pos-scale", "size-scaled", "size-scale", "anchor",
-            "width", "w", "height", "h", "monitor", "url", "transparent", "auto-hide",
-            "hidden-behavior", "thread-group", "bridge");
-
-        double x = GetRequiredDouble(element, "x", prefix);
-        double y = GetRequiredDouble(element, "y", prefix);
-        bool posScaled = GetRequiredBoolOrAlias(element, "pos-scaled", "pos-scale", prefix);
-        bool sizeScaled = GetRequiredBoolOrAlias(element, "size-scaled", "size-scale", prefix);
-        double width = GetRequiredDoubleOrAlias(element, "width", "w", prefix);
-        double height = GetRequiredDoubleOrAlias(element, "height", "h", prefix);
-        int monitor = GetRequiredInt(element, "monitor", prefix);
-        string anchorText = GetRequiredString(element, "anchor", prefix);
-        string url = NormalizeUrl(GetRequiredString(element, "url", prefix), prefix);
-
-        if (!double.IsFinite(x) || !double.IsFinite(y))
-            throw new RendererConfigurationException($"{prefix} x and y must be finite numbers.");
-        if (!double.IsFinite(width) || width <= 0 || !double.IsFinite(height) || height <= 0)
-            throw new RendererConfigurationException($"{prefix} width and height must be positive finite numbers.");
-        if (monitor <= 0)
-            throw new RendererConfigurationException($"{prefix} monitor must be positive.");
-        if (!TryParseAnchor(anchorText, out WidgetAnchor anchor))
-            throw new RendererConfigurationException($"{prefix} anchor '{anchorText}' is invalid.");
-        if (posScaled && (x < -100 || x > 100 || y < -100 || y > 100))
-            throw new RendererConfigurationException($"{prefix} pos-scaled x and y must be between -100 and 100.");
-        if (sizeScaled && (width > 100 || height > 100))
-            throw new RendererConfigurationException($"{prefix} size-scaled width and height must be between 0 and 100.");
-
-        StartMenuHiddenBehavior hiddenBehavior = ParseHiddenBehavior(GetOptionalString(element, "hidden-behavior"));
-        return new StartMenuDefinition(
-            x, y, posScaled, sizeScaled, anchor, width, height, monitor, url,
-            GetOptionalBool(element, "transparent") ?? true,
-            GetOptionalBool(element, "auto-hide") ?? true,
-            hiddenBehavior,
-            GetGroup(element, "menu"),
-            GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
+        if (!TryGet(element, "input", out JsonElement value))
+            return new(WindowInputMode.Native, WindowInputMode.Native, WindowFocusMode.Never);
+        RequireKind(value, JsonValueKind.Object, $"{prefix} input");
+        ValidateProperties(value, $"{prefix} input", "mouse", "keyboard", "focus", "click-through");
+        return new(ParseInputMode(GetOptionalString(value, "mouse"), $"{prefix} input mouse"),
+            ParseInputMode(GetOptionalString(value, "keyboard"), $"{prefix} input keyboard"),
+            ParseFocusMode(GetOptionalString(value, "focus"), $"{prefix} input focus"),
+            GetOptionalBool(value, "click-through") ?? false);
     }
+
+    private static WindowNotificationPolicy ParseNotifications(JsonElement element, string prefix)
+    {
+        if (!TryGet(element, "notifications", out JsonElement value))
+            return new();
+        RequireKind(value, JsonValueKind.Object, $"{prefix} notifications");
+        ValidateProperties(value, $"{prefix} notifications", "focus", "visibility", "geometry", "lifecycle");
+        return new(GetOptionalBool(value, "focus") ?? false, GetOptionalBool(value, "visibility") ?? false,
+            GetOptionalBool(value, "geometry") ?? false, GetOptionalBool(value, "lifecycle") ?? false);
+    }
+
+    private static WorkAreaReservation ParseWorkArea(JsonElement element, string prefix)
+    {
+        if (!TryGet(element, "work-area", out JsonElement value))
+            return new();
+        RequireKind(value, JsonValueKind.Object, $"{prefix} work-area");
+        ValidateProperties(value, $"{prefix} work-area", "enabled", "edge", "thickness");
+        bool enabled = GetOptionalBool(value, "enabled") ?? false;
+        string edge = (GetOptionalString(value, "edge") ?? "bottom").Trim().ToLowerInvariant();
+        if (edge is not ("top" or "bottom" or "left" or "right"))
+            throw new RendererConfigurationException($"{prefix} work-area edge must be top, bottom, left, or right.");
+        int thickness = GetOptionalInt(value, "thickness") ?? 0;
+        if (enabled && thickness <= 0)
+            throw new RendererConfigurationException($"{prefix} work-area thickness must be positive when enabled.");
+        return new(enabled, edge, thickness);
+    }
+
+    private static string ParseUnit(JsonElement element, string name, string prefix)
+    {
+        string value = (GetOptionalString(element, name) ?? "pixels").Trim().ToLowerInvariant();
+        if (value is not ("pixels" or "percent"))
+            throw new RendererConfigurationException($"{prefix} {name} must be pixels or percent.");
+        return value;
+    }
+
+    private static WindowPlacement ParsePlacement(string? value, string prefix) =>
+        (value ?? "top-level").Trim().ToLowerInvariant() switch
+        {
+            "desktop" => WindowPlacement.Desktop,
+            "top-level" or "toplevel" or "window" => WindowPlacement.TopLevel,
+            _ => throw new RendererConfigurationException($"{prefix} placement must be desktop or top-level.")
+        };
+
+    private static WindowZOrder ParseZOrder(string? value, string prefix) =>
+        (value ?? "normal").Trim().ToLowerInvariant() switch
+        {
+            "bottom" or "below" => WindowZOrder.Bottom,
+            "normal" => WindowZOrder.Normal,
+            "top" or "above" => WindowZOrder.Top,
+            "topmost" => WindowZOrder.Topmost,
+            "topmost-when-focused" or "focus" => WindowZOrder.TopmostWhenFocused,
+            _ => throw new RendererConfigurationException($"{prefix} z-order is invalid.")
+        };
+
+    private static WindowHiddenBehavior ParseHiddenBehavior(string? value) =>
+        (value ?? "retain").Trim().ToLowerInvariant() switch
+        {
+            "retain" or "none" => WindowHiddenBehavior.Retain,
+            "pause" or "suspend" => WindowHiddenBehavior.Pause,
+            "unload" => WindowHiddenBehavior.Unload,
+            _ => throw new RendererConfigurationException("hidden-behavior must be retain, pause, suspend, or unload.")
+        };
+
+    private static WindowInputMode ParseInputMode(string? value, string prefix) =>
+        (value ?? "native").Trim().ToLowerInvariant() switch
+        {
+            "none" or "disabled" => WindowInputMode.None,
+            "native" => WindowInputMode.Native,
+            "forwarded" or "forward" => WindowInputMode.Forwarded,
+            _ => throw new RendererConfigurationException($"{prefix} must be none, native, or forwarded.")
+        };
+
+    private static WindowFocusMode ParseFocusMode(string? value, string prefix) =>
+        (value ?? "never").Trim().ToLowerInvariant() switch
+        {
+            "never" or "none" => WindowFocusMode.Never,
+            "on-show" or "show" => WindowFocusMode.OnShow,
+            "on-reveal" or "reveal" => WindowFocusMode.OnReveal,
+            "on-click" or "click" => WindowFocusMode.OnClick,
+            _ => throw new RendererConfigurationException($"{prefix} must be never, on-show, on-reveal, or on-click.")
+        };
 
     private static IReadOnlyDictionary<string, JsonElement> ParseVariables(JsonElement? element)
     {
         if (!element.HasValue)
             return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-
         RequireKind(element.Value, JsonValueKind.Object, "variables");
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (JsonProperty property in element.Value.EnumerateObject())
@@ -440,31 +504,16 @@ public sealed class RendererConfiguration
     {
         if (!element.HasValue)
             return Array.Empty<string>();
-
         RequireKind(element.Value, JsonValueKind.Array, "cues");
         var names = new List<string>();
         foreach (JsonElement item in element.Value.EnumerateArray())
         {
             string name = GetString(item, "cues").Trim();
             ValidateLogicalId(name, "Cue name");
-            if (names.Contains(name, StringComparer.Ordinal))
+            if (!names.AddUnique(name))
                 throw new RendererConfigurationException($"Cues contains duplicate name '{name}'.");
-            names.Add(name);
         }
         return names;
-    }
-
-    private static StartMenuHiddenBehavior ParseHiddenBehavior(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return StartMenuHiddenBehavior.None;
-        return value.Trim().ToLowerInvariant() switch
-        {
-            "none" => StartMenuHiddenBehavior.None,
-            "pause" or "suspend" => StartMenuHiddenBehavior.Pause,
-            "unload" => StartMenuHiddenBehavior.Unload,
-            _ => throw new RendererConfigurationException("Menu hidden-behavior must be none, pause, suspend, or unload.")
-        };
     }
 
     private static string GetGroup(JsonElement element, string defaultGroup)
@@ -490,48 +539,35 @@ public sealed class RendererConfiguration
             return BridgePolicy.Default;
         RequireKind(bridge, JsonValueKind.Object, $"{prefix} bridge");
         ValidateProperties(bridge, $"{prefix} bridge", "enabled", "backend-ids", "control-routes", "runtime-commands");
-
         bool? enabled = GetOptionalBool(bridge, "enabled");
-        var backendIds = new List<string>();
-        if (TryGet(bridge, "backend-ids", out JsonElement ids))
-        {
-            RequireKind(ids, JsonValueKind.Array, $"{prefix} bridge backend-ids");
-            foreach (JsonElement item in ids.EnumerateArray())
+        var backendIds = ParseStringArray(bridge, "backend-ids", $"{prefix} bridge");
+        var controlRoutes = ParseStringArray(bridge, "control-routes", $"{prefix} bridge")
+            .Select(route =>
             {
-                string id = GetString(item, $"{prefix} bridge backend-ids").Trim();
-                if (id.Length == 0 || backendIds.Contains(id, StringComparer.Ordinal))
-                    throw new RendererConfigurationException($"{prefix} bridge backend-ids contains an invalid or duplicate ID.");
-                backendIds.Add(id);
-            }
-        }
+                if (!route.StartsWith("/v1/", StringComparison.Ordinal))
+                    throw new RendererConfigurationException($"{prefix} bridge control-routes contains an invalid route.");
+                return route;
+            }).ToArray();
+        var runtimeCommands = ParseStringArray(bridge, "runtime-commands", $"{prefix} bridge");
+        foreach (string command in runtimeCommands)
+            if (!RuntimeCommandNames.TryMap(command, out _))
+                throw new RendererConfigurationException($"{prefix} bridge runtime-commands contains an invalid command.");
+        return new(enabled, backendIds, controlRoutes, runtimeCommands);
+    }
 
-        var controlRoutes = new List<string>();
-        if (TryGet(bridge, "control-routes", out JsonElement routes))
+    private static string[] ParseStringArray(JsonElement element, string name, string prefix)
+    {
+        if (!TryGet(element, name, out JsonElement value))
+            return Array.Empty<string>();
+        RequireKind(value, JsonValueKind.Array, $"{prefix} {name}");
+        var values = new List<string>();
+        foreach (JsonElement item in value.EnumerateArray())
         {
-            RequireKind(routes, JsonValueKind.Array, $"{prefix} bridge control-routes");
-            foreach (JsonElement item in routes.EnumerateArray())
-            {
-                string route = GetString(item, $"{prefix} bridge control-routes").Trim();
-                if (!route.StartsWith("/v1/", StringComparison.Ordinal) || controlRoutes.Contains(route, StringComparer.Ordinal))
-                    throw new RendererConfigurationException($"{prefix} bridge control-routes contains an invalid or duplicate route.");
-                controlRoutes.Add(route);
-            }
+            string text = GetString(item, $"{prefix} {name}").Trim();
+            if (text.Length == 0 || !values.AddUnique(text))
+                throw new RendererConfigurationException($"{prefix} {name} contains an invalid or duplicate value.");
         }
-
-        var runtimeCommands = new List<string>();
-        if (TryGet(bridge, "runtime-commands", out JsonElement commands))
-        {
-            RequireKind(commands, JsonValueKind.Array, $"{prefix} bridge runtime-commands");
-            foreach (JsonElement item in commands.EnumerateArray())
-            {
-                string command = GetString(item, $"{prefix} bridge runtime-commands").Trim();
-                if (!RuntimeCommandNames.TryMap(command, out _) || runtimeCommands.Contains(command, StringComparer.Ordinal))
-                    throw new RendererConfigurationException($"{prefix} bridge runtime-commands contains an invalid or duplicate command.");
-                runtimeCommands.Add(command);
-            }
-        }
-
-        return new BridgePolicy(enabled, backendIds, controlRoutes, runtimeCommands);
+        return values.ToArray();
     }
 
     private static void ValidateProperties(JsonElement element, string prefix, params string[] allowed)
@@ -552,21 +588,17 @@ public sealed class RendererConfiguration
         if (id.Length == 0 || id.Length > 128 || id.Any(character =>
                 character is < 'A' or > 'Z' && character is < 'a' or > 'z' &&
                 character is < '0' or > '9' && character is not ('.' or '_' or ':' or '-')))
-        {
             throw new RendererConfigurationException($"{prefix} must match [A-Za-z0-9._:-] and be at most 128 characters.");
-        }
     }
 
     private static bool TryGet(JsonElement element, string name, out JsonElement value)
     {
         foreach (JsonProperty property in element.EnumerateObject())
-        {
             if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
             {
                 value = property.Value;
                 return true;
             }
-        }
         value = default;
         return false;
     }
@@ -576,8 +608,7 @@ public sealed class RendererConfiguration
 
     private static string GetRequiredString(JsonElement element, string name, string prefix) =>
         GetOptionalString(element, name) is { } value && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : throw new RendererConfigurationException($"{prefix} requires '{name}'.");
+            ? value : throw new RendererConfigurationException($"{prefix} requires '{name}'.");
 
     private static string GetString(JsonElement value, string prefix) => value.ValueKind switch
     {
@@ -588,19 +619,17 @@ public sealed class RendererConfiguration
     private static double GetRequiredDouble(JsonElement element, string name, string prefix) =>
         GetRequiredNumber(element, name, prefix);
 
-    private static double GetRequiredDoubleOrAlias(JsonElement element, string name, string alias, string prefix)
-    {
-        if (TryGet(element, name, out JsonElement value))
-            return GetNumber(value, $"{prefix} {name}");
-        if (TryGet(element, alias, out value))
-            return GetNumber(value, $"{prefix} {alias}");
+    private static double? GetOptionalDouble(JsonElement element, string name) =>
+        TryGet(element, name, out JsonElement value) ? GetNumber(value, name) : null;
+
+    private static double GetRequiredDoubleOrAlias(JsonElement element, string name, string alias, string prefix) =>
+        TryGet(element, name, out JsonElement value) ? GetNumber(value, $"{prefix} {name}") :
+        TryGet(element, alias, out value) ? GetNumber(value, $"{prefix} {alias}") :
         throw new RendererConfigurationException($"{prefix} requires '{name}'.");
-    }
 
     private static double GetRequiredNumber(JsonElement element, string name, string prefix) =>
-        TryGet(element, name, out JsonElement value)
-            ? GetNumber(value, $"{prefix} {name}")
-            : throw new RendererConfigurationException($"{prefix} requires '{name}'.");
+        TryGet(element, name, out JsonElement value) ? GetNumber(value, $"{prefix} {name}") :
+        throw new RendererConfigurationException($"{prefix} requires '{name}'.");
 
     private static double GetNumber(JsonElement value, string prefix)
     {
@@ -629,14 +658,10 @@ public sealed class RendererConfiguration
         return (int)number;
     }
 
-    private static bool GetRequiredBoolOrAlias(JsonElement element, string name, string alias, string prefix)
-    {
-        if (TryGet(element, name, out JsonElement value))
-            return GetBool(value, $"{prefix} {name}");
-        if (TryGet(element, alias, out value))
-            return GetBool(value, $"{prefix} {alias}");
+    private static bool GetRequiredBoolOrAlias(JsonElement element, string name, string alias, string prefix) =>
+        TryGet(element, name, out JsonElement value) ? GetBool(value, $"{prefix} {name}") :
+        TryGet(element, alias, out value) ? GetBool(value, $"{prefix} {alias}") :
         throw new RendererConfigurationException($"{prefix} requires '{name}'.");
-    }
 
     private static bool? GetOptionalBool(JsonElement element, string name) =>
         TryGet(element, name, out JsonElement value) ? GetBool(value, name) : null;
@@ -654,9 +679,7 @@ public sealed class RendererConfiguration
     {
         try { return UrlBuilder.Normalize(value); }
         catch (Exception ex) when (ex is FormatException or UriFormatException or RendererConfigurationException)
-        {
-            throw new RendererConfigurationException($"{prefix} has an invalid URL: {value}", ex);
-        }
+        { throw new RendererConfigurationException($"{prefix} has an invalid URL: {value}", ex); }
     }
 
     private static bool TryParseAnchor(string value, out WidgetAnchor anchor)
@@ -678,71 +701,101 @@ public sealed class RendererConfiguration
     }
 }
 
-public sealed record WallpaperProfile(
+public sealed record GenericWindowDefinition(
+    string Id,
     string Url,
-    WallpaperMode Mode,
-    int Monitor,
-    IReadOnlyDictionary<int, string> MonitorUrls,
-    IReadOnlyList<string> WindowIds,
-    bool Transparent,
     string ThreadGroup,
-    string? Id = null,
-    BridgePolicy? Bridge = null);
-
-public enum WallpaperMode
+    string? Title,
+    double X,
+    double Y,
+    double Width,
+    double Height,
+    int Monitor,
+    string CoordinateSpace,
+    WidgetAnchor Anchor,
+    string XUnit,
+    string YUnit,
+    string WidthUnit,
+    string HeightUnit,
+    WindowPlacement Placement,
+    WindowZOrder ZOrder,
+    bool Framed,
+    bool Transparent,
+    bool Resizable,
+    bool ShowInTaskbar,
+    bool InitialVisible,
+    WindowHiddenBehavior HiddenBehavior,
+    bool SuspendOnFullscreen,
+    WindowInputPolicy Input,
+    WindowNotificationPolicy Notifications,
+    WorkAreaReservation WorkArea,
+    BridgePolicy Bridge)
 {
-    Span,
-    All,
-    Single
+    public RendererWindowSpec Resolve(Screen[] screens, Rectangle virtualBounds,
+        IReadOnlyDictionary<string, JsonElement> variables, IReadOnlyList<string> cues)
+    {
+        if (Monitor <= 0 || Monitor > screens.Length)
+            throw new RendererConfigurationException($"Window '{Id}' selects monitor {Monitor}, but only {screens.Length} monitor(s) are available.");
+        Rectangle monitorBounds = screens[Monitor - 1].Bounds;
+        Rectangle reference = CoordinateSpace == "virtual-screen"
+            ? virtualBounds
+            : CoordinateSpace == "work-area" ? screens[Monitor - 1].WorkingArea : monitorBounds;
+        Rectangle bounds = GenericWindowGeometry.Resolve(this, reference);
+        return new(Id, Url, bounds, virtualBounds, ThreadGroup, WindowKind.Generic, Transparent, Monitor,
+            HiddenBehavior, Bridge, variables, cues, Placement, ZOrder, Framed, Resizable, ShowInTaskbar,
+            Input.Focus is WindowFocusMode.OnShow, SuspendOnFullscreen, Title, Input, Notifications, WorkArea,
+            InitialVisible);
+    }
 }
+
+public static class GenericWindowGeometry
+{
+    public static Rectangle Resolve(GenericWindowDefinition definition, Rectangle reference)
+    {
+        double xUnit = definition.XUnit == "percent" ? reference.Width / 100d : 1d;
+        double yUnit = definition.YUnit == "percent" ? reference.Height / 100d : 1d;
+        double widthUnit = definition.WidthUnit == "percent" ? reference.Width / 100d : 1d;
+        double heightUnit = definition.HeightUnit == "percent" ? reference.Height / 100d : 1d;
+        int width = checked(Math.Max(1, (int)Math.Round(definition.Width * widthUnit, MidpointRounding.AwayFromZero)));
+        int height = checked(Math.Max(1, (int)Math.Round(definition.Height * heightUnit, MidpointRounding.AwayFromZero)));
+        Point monitorAnchor = ResolveAnchor(definition.Anchor, reference);
+        Point windowAnchor = GetWindowAnchor(definition.Anchor, width, height);
+        int left = checked((int)Math.Round(monitorAnchor.X + definition.X * xUnit - windowAnchor.X, MidpointRounding.AwayFromZero));
+        int top = checked((int)Math.Round(monitorAnchor.Y + definition.Y * yUnit - windowAnchor.Y, MidpointRounding.AwayFromZero));
+        return new(left, top, width, height);
+    }
+
+    public static Point ResolveAnchor(WidgetAnchor anchor, Rectangle bounds) => anchor switch
+    {
+        WidgetAnchor.TopLeft => new(bounds.Left, bounds.Top), WidgetAnchor.Top => new(bounds.Left + bounds.Width / 2, bounds.Top),
+        WidgetAnchor.TopRight => new(bounds.Right, bounds.Top), WidgetAnchor.Left => new(bounds.Left, bounds.Top + bounds.Height / 2),
+        WidgetAnchor.Center => new(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2), WidgetAnchor.Right => new(bounds.Right, bounds.Top + bounds.Height / 2),
+        WidgetAnchor.BottomLeft => new(bounds.Left, bounds.Bottom), WidgetAnchor.Bottom => new(bounds.Left + bounds.Width / 2, bounds.Bottom),
+        WidgetAnchor.BottomRight => new(bounds.Right, bounds.Bottom), _ => throw new ArgumentOutOfRangeException(nameof(anchor))
+    };
+
+    private static Point GetWindowAnchor(WidgetAnchor anchor, int width, int height) => anchor switch
+    {
+        WidgetAnchor.TopLeft => new(0, 0), WidgetAnchor.Top => new(width / 2, 0), WidgetAnchor.TopRight => new(width, 0),
+        WidgetAnchor.Left => new(0, height / 2), WidgetAnchor.Center => new(width / 2, height / 2), WidgetAnchor.Right => new(width, height / 2),
+        WidgetAnchor.BottomLeft => new(0, height), WidgetAnchor.Bottom => new(width / 2, height), WidgetAnchor.BottomRight => new(width, height),
+        _ => throw new ArgumentOutOfRangeException(nameof(anchor))
+    };
+}
+
+public sealed record WallpaperProfile(
+    string Url, WallpaperMode Mode, int Monitor, IReadOnlyDictionary<int, string> MonitorUrls,
+    IReadOnlyList<string> WindowIds, bool Transparent, string ThreadGroup, string? Id = null, BridgePolicy? Bridge = null);
+
+public enum WallpaperMode { Span, All, Single }
 
 public sealed record WidgetDefinition(
-    double X,
-    double Y,
-    bool PosScaled,
-    bool SizeScaled,
-    WidgetAnchor Anchor,
-    double Width,
-    double Height,
-    int MonitorNumber,
-    string Url,
-    bool Transparent,
-    string ThreadGroup,
-    string? Id = null,
-    BridgePolicy? Bridge = null);
-
-public sealed record StartMenuDefinition(
-    double X,
-    double Y,
-    bool PosScaled,
-    bool SizeScaled,
-    WidgetAnchor Anchor,
-    double Width,
-    double Height,
-    int MonitorNumber,
-    string Url,
-    bool Transparent,
-    bool AutoHide,
-    StartMenuHiddenBehavior HiddenBehavior,
-    string ThreadGroup,
-    string? Id = null,
-    BridgePolicy? Bridge = null)
-{
-    internal WidgetDefinition ToWidgetDefinition() => new(
-        X, Y, PosScaled, SizeScaled, Anchor, Width, Height, MonitorNumber, Url, Transparent, ThreadGroup, Id, Bridge);
-}
+    double X, double Y, bool PosScaled, bool SizeScaled, WidgetAnchor Anchor, double Width, double Height,
+    int MonitorNumber, string Url, bool Transparent, string ThreadGroup, string? Id = null, BridgePolicy? Bridge = null);
 
 public enum WidgetAnchor
 {
-    TopLeft,
-    Top,
-    TopRight,
-    Left,
-    Center,
-    Right,
-    BottomLeft,
-    Bottom,
-    BottomRight
+    TopLeft, Top, TopRight, Left, Center, Right, BottomLeft, Bottom, BottomRight
 }
 
 public static class WidgetGeometry
@@ -754,44 +807,20 @@ public static class WidgetGeometry
         double sizeUnit = widget.SizeScaled ? Math.Min(monitor.Width, monitor.Height) / 100d : 1d;
         int width = ToDimension(widget.Width * sizeUnit);
         int height = ToDimension(widget.Height * sizeUnit);
-        double offsetX = widget.X * positionUnitX;
-        double offsetY = widget.Y * positionUnitY;
         Point monitorAnchor = GetMonitorAnchor(widget.Anchor, monitor);
-        double placementX = (widget.PosScaled ? monitor.Left : monitorAnchor.X) + offsetX;
-        double placementY = (widget.PosScaled ? monitor.Top : monitorAnchor.Y) + offsetY;
         Point widgetAnchor = GetWidgetAnchor(widget.Anchor, width, height);
-        int left = checked((int)Math.Round(placementX - widgetAnchor.X, MidpointRounding.AwayFromZero));
-        int top = checked((int)Math.Round(placementY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
-        return new Rectangle(left, top, width, height);
+        int left = checked((int)Math.Round(monitorAnchor.X + widget.X * positionUnitX - widgetAnchor.X, MidpointRounding.AwayFromZero));
+        int top = checked((int)Math.Round(monitorAnchor.Y + widget.Y * positionUnitY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
+        return new(left, top, width, height);
     }
 
     private static int ToDimension(double value) => checked(Math.Max(1, (int)Math.Round(value, MidpointRounding.AwayFromZero)));
-
-    private static Point GetMonitorAnchor(WidgetAnchor anchor, Rectangle monitor) => anchor switch
-    {
-        WidgetAnchor.TopLeft => new Point(monitor.Left, monitor.Top),
-        WidgetAnchor.Top => new Point(monitor.Left + monitor.Width / 2, monitor.Top),
-        WidgetAnchor.TopRight => new Point(monitor.Right, monitor.Top),
-        WidgetAnchor.Left => new Point(monitor.Left, monitor.Top + monitor.Height / 2),
-        WidgetAnchor.Center => new Point(monitor.Left + monitor.Width / 2, monitor.Top + monitor.Height / 2),
-        WidgetAnchor.Right => new Point(monitor.Right, monitor.Top + monitor.Height / 2),
-        WidgetAnchor.BottomLeft => new Point(monitor.Left, monitor.Bottom),
-        WidgetAnchor.Bottom => new Point(monitor.Left + monitor.Width / 2, monitor.Bottom),
-        WidgetAnchor.BottomRight => new Point(monitor.Right, monitor.Bottom),
-        _ => throw new ArgumentOutOfRangeException(nameof(anchor))
-    };
-
+    private static Point GetMonitorAnchor(WidgetAnchor anchor, Rectangle monitor) => GenericWindowGeometry.ResolveAnchor(anchor, monitor);
     private static Point GetWidgetAnchor(WidgetAnchor anchor, int width, int height) => anchor switch
     {
-        WidgetAnchor.TopLeft => new Point(0, 0),
-        WidgetAnchor.Top => new Point(width / 2, 0),
-        WidgetAnchor.TopRight => new Point(width, 0),
-        WidgetAnchor.Left => new Point(0, height / 2),
-        WidgetAnchor.Center => new Point(width / 2, height / 2),
-        WidgetAnchor.Right => new Point(width, height / 2),
-        WidgetAnchor.BottomLeft => new Point(0, height),
-        WidgetAnchor.Bottom => new Point(width / 2, height),
-        WidgetAnchor.BottomRight => new Point(width, height),
+        WidgetAnchor.TopLeft => new(0, 0), WidgetAnchor.Top => new(width / 2, 0), WidgetAnchor.TopRight => new(width, 0),
+        WidgetAnchor.Left => new(0, height / 2), WidgetAnchor.Center => new(width / 2, height / 2), WidgetAnchor.Right => new(width, height / 2),
+        WidgetAnchor.BottomLeft => new(0, height), WidgetAnchor.Bottom => new(width / 2, height), WidgetAnchor.BottomRight => new(width, height),
         _ => throw new ArgumentOutOfRangeException(nameof(anchor))
     };
 }
@@ -813,5 +842,15 @@ public static class UrlBuilder
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFile))
             throw new RendererConfigurationException($"Invalid URL: {url}");
         return uri.AbsoluteUri;
+    }
+}
+
+internal static class ConfigurationExtensions
+{
+    internal static bool AddUnique<T>(this ICollection<T> values, T value) where T : notnull
+    {
+        if (values.Contains(value)) return false;
+        values.Add(value);
+        return true;
     }
 }

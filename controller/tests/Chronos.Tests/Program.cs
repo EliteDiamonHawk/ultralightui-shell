@@ -33,6 +33,7 @@ internal static class Program
             (nameof(WindowsKeyMenuPolicyNormalizes), WindowsKeyMenuPolicyNormalizes),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
+            (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
             (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
@@ -319,7 +320,8 @@ internal static class Program
         }, fallbackEnabled: true);
         KeybindDefinition windows = bindings.Single(binding => binding.SystemBinding);
         AssertTrue(windows.Enabled);
-        AssertEqual(RendererCommandKind.ToggleMenu, windows.EffectiveAction.Command);
+        AssertEqual(KeybindActionKind.ManagedMenu, windows.EffectiveAction.Kind);
+        AssertEqual(ManagedMenuAction.Toggle, windows.EffectiveAction.MenuAction);
         KeybindDefinition cue = bindings.Single(binding => !binding.SystemBinding);
         AssertEqual(2, cue.EffectiveAction.EffectiveCueNames.Count);
         AssertEqual("first", cue.EffectiveAction.EffectiveCueNames[0]);
@@ -409,6 +411,49 @@ internal static class Program
             AssertFalse(prepared.AetherJson.Contains("after", StringComparison.OrdinalIgnoreCase));
             AssertTrue(prepared.AetherJson.Contains("wallpaper", StringComparison.Ordinal));
             AssertTrue(prepared.AetherJson.Contains("widgets", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeConfigurationMovesMenuToGenericWindow()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-menu-config-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "theme.json");
+            File.WriteAllText(path, """
+                {
+                  "wallpaper": [],
+                  "menu": {
+                    "id": "shell-menu",
+                    "x": 50,
+                    "y": 50,
+                    "pos-scaled": true,
+                    "width": 640,
+                    "height": 480,
+                    "monitor": 1,
+                    "anchor": "center",
+                    "url": "file:///menu.html",
+                    "auto-hide": false,
+                    "hidden-behavior": "pause"
+                  }
+                }
+                """);
+
+            PreparedTheme prepared = ThemeConfigurationLoader.Load(new[] { path });
+            AssertTrue(prepared.MenuJson != null);
+            AssertFalse(prepared.MenuAutoHide);
+            AssertFalse(prepared.AetherJson.Contains("menu", StringComparison.OrdinalIgnoreCase));
+            using JsonDocument menu = JsonDocument.Parse(prepared.MenuJson!);
+            AssertEqual("shell-menu", menu.RootElement.GetProperty("id").GetString());
+            AssertEqual("top-level", menu.RootElement.GetProperty("placement").GetString());
+            AssertEqual("topmost", menu.RootElement.GetProperty("z-order").GetString());
+            AssertEqual("pause", menu.RootElement.GetProperty("hidden-behavior").GetString());
+            AssertTrue(menu.RootElement.GetProperty("notifications").GetProperty("focus").GetBoolean());
         }
         finally
         {

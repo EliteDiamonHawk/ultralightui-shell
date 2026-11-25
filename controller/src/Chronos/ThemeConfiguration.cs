@@ -19,13 +19,15 @@ internal sealed record PreparedTheme(
     IReadOnlyList<string> SourcePaths,
     string AetherJson,
     IReadOnlyList<ThemeHook> Before,
-    IReadOnlyList<ThemeHook> After);
+    IReadOnlyList<ThemeHook> After,
+    string? MenuJson,
+    bool MenuAutoHide);
 
 internal static class ThemeConfigurationLoader
 {
     private static readonly HashSet<string> AetherSections = new(StringComparer.OrdinalIgnoreCase)
     {
-        "wallpaper", "widgets", "menu", "variables", "cues"
+        "windows", "wallpaper", "widgets", "variables", "cues"
     };
 
     public static PreparedTheme Load(IReadOnlyList<string> paths)
@@ -38,6 +40,7 @@ internal static class ThemeConfigurationLoader
         var before = new List<ThemeHook>();
         var after = new List<ThemeHook>();
         bool hasAetherSection = false;
+        JsonElement? menu = null;
 
         foreach (string path in paths)
         {
@@ -64,20 +67,150 @@ internal static class ThemeConfigurationLoader
                 if (!seenSections.Add(section))
                     throw new InvalidOperationException($"Top-level section '{property.Name}' may only appear in one theme file.");
 
-                hasAetherSection |= AetherSections.Contains(property.Name);
+                if (string.Equals(section, "menu", StringComparison.OrdinalIgnoreCase))
+                {
+                    menu = property.Value.Clone();
+                    continue;
+                }
+
+                if (!AetherSections.Contains(section))
+                    throw new InvalidOperationException($"Unknown top-level section '{property.Name}'.");
+                hasAetherSection = true;
                 sanitizedSections.Add((property.Name, property.Value.Clone()));
             }
         }
 
-        if (!hasAetherSection)
-            throw new InvalidOperationException("Theme requires at least one Aether configuration section.");
+        if (!hasAetherSection && menu == null)
+            throw new InvalidOperationException("Theme requires at least one Aether or Chronos configuration section.");
+
+        string aetherJson = sanitizedSections.Count == 0
+            ? "{\"windows\":[]}"
+            : SerializeSections(sanitizedSections);
+        (string? menuJson, bool menuAutoHide) = menu is { } menuElement
+            ? BuildManagedMenu(menuElement)
+            : (null, false);
 
         return new PreparedTheme(
             paths.ToArray(),
-            SerializeSections(sanitizedSections),
+            aetherJson,
             before,
-            after);
+            after,
+            menuJson,
+            menuAutoHide);
     }
+
+    private static (string Json, bool AutoHide) BuildManagedMenu(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("'menu' must be an object.");
+
+        string url = RequiredString(element, "url", "menu");
+        string id = OptionalString(element, "id") ?? "menu";
+        string group = OptionalString(element, "thread-group") ?? "menu";
+        double x = RequiredNumber(element, "x", "menu");
+        double y = RequiredNumber(element, "y", "menu");
+        double width = RequiredNumber(element, "width", "menu", "w");
+        double height = RequiredNumber(element, "height", "menu", "h");
+        int monitor = OptionalInt(element, "monitor") ?? 1;
+        bool positionScaled = OptionalBool(element, "pos-scaled") ?? false;
+        bool sizeScaled = OptionalBool(element, "size-scaled") ?? false;
+        bool transparent = OptionalBool(element, "transparent") ?? true;
+        bool autoHide = OptionalBool(element, "auto-hide") ?? true;
+        string hiddenBehavior = OptionalString(element, "hidden-behavior")?.ToLowerInvariant() switch
+        {
+            null or "none" or "retain" => "retain",
+            "pause" or "suspend" => "pause",
+            "unload" => "unload",
+            _ => throw new InvalidOperationException("menu hidden-behavior must be none, retain, pause, suspend, or unload.")
+        };
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", id);
+            writer.WriteString("url", url);
+            writer.WriteString("thread-group", group);
+            writer.WriteNumber("x", x);
+            writer.WriteNumber("y", y);
+            writer.WriteNumber("width", width);
+            writer.WriteNumber("height", height);
+            writer.WriteNumber("monitor", monitor);
+            writer.WriteString("coordinate-space", "monitor");
+            writer.WriteString("anchor", OptionalString(element, "anchor") ?? "top-left");
+            writer.WriteString("x-unit", positionScaled ? "percent" : "pixels");
+            writer.WriteString("y-unit", positionScaled ? "percent" : "pixels");
+            writer.WriteString("width-unit", sizeScaled ? "percent" : "pixels");
+            writer.WriteString("height-unit", sizeScaled ? "percent" : "pixels");
+            writer.WriteBoolean("transparent", transparent);
+            writer.WriteBoolean("framed", false);
+            writer.WriteBoolean("resizable", false);
+            writer.WriteBoolean("show-in-taskbar", false);
+            writer.WriteString("placement", "top-level");
+            writer.WriteString("z-order", "topmost");
+            writer.WriteBoolean("initial-visible", true);
+            writer.WriteString("hidden-behavior", hiddenBehavior);
+            writer.WriteBoolean("suspend-on-fullscreen", false);
+            writer.WriteStartObject("input");
+            writer.WriteString("mouse", "native");
+            writer.WriteString("keyboard", "native");
+            writer.WriteString("focus", "on-show");
+            writer.WriteBoolean("click-through", false);
+            writer.WriteEndObject();
+            writer.WriteStartObject("notifications");
+            writer.WriteBoolean("focus", true);
+            writer.WriteEndObject();
+            if (TryGet(element, "bridge", out JsonElement bridge))
+            {
+                writer.WritePropertyName("bridge");
+                bridge.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        }
+        return (Encoding.UTF8.GetString(stream.ToArray()), autoHide);
+    }
+
+    private static string RequiredString(JsonElement element, string name, string prefix)
+    {
+        string? value = OptionalString(element, name);
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException($"{prefix} {name} must be a non-empty string.");
+        return value.Trim();
+    }
+
+    private static double RequiredNumber(JsonElement element, string name, string prefix, string? alias = null)
+    {
+        if (!TryGet(element, name, out JsonElement value) && alias != null)
+            TryGet(element, alias, out value);
+        double number = 0;
+        bool valid = value.ValueKind == JsonValueKind.Number
+            ? value.TryGetDouble(out number)
+            : value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out number);
+        if (!valid || !double.IsFinite(number))
+            throw new InvalidOperationException($"{prefix} {name} must be a finite number.");
+        return number;
+    }
+
+    private static string? OptionalString(JsonElement element, string name) =>
+        TryGet(element, name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static int? OptionalInt(JsonElement element, string name) =>
+        TryGet(element, name, out JsonElement value) &&
+        ((value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number)) ||
+         (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number)))
+            ? number
+            : null;
+
+    private static bool? OptionalBool(JsonElement element, string name) =>
+        TryGet(element, name, out JsonElement value) &&
+        (value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? true
+            : value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out _))
+            ? value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : bool.Parse(value.GetString()!)
+            : null;
 
     private static JsonElement ReadRoot(string path)
     {

@@ -23,19 +23,20 @@ Configuration swaps use one host lock. Control-pipe and command-pipe requests ca
 
 ## Window types
 
-`RendererConfiguration.ResolveWindowSpecs` converts profiles into `RendererWindowSpec` values:
+`RendererConfiguration.ResolveWindowSpecs` converts configuration into `RendererWindowSpec` values:
 
-- Wallpaper: virtual-screen (`span`), per-monitor (`all`), or one selected monitor (`single`).
-- Widget: monitor-relative geometry resolved from anchor, position scaling, and size scaling.
-- Menu: widget-like geometry with visibility and hidden-behavior state.
+- Generic windows: explicit monitor/work-area/virtual-screen geometry, placement,
+  z-order, input/focus, lifecycle, notification, and bridge policies.
+- Wallpaper: virtual-screen (`span`), per-monitor (`all`), or one selected monitor (`single`) desktop adapter.
+- Widget: monitor-relative geometry resolved from anchor, position scaling, and size scaling desktop adapter.
 
 `UltralightRuntime` creates borderless, hidden windows, panels, and views, loads each URL, then shows each window when ready.
 
 ## Native placement
 
-Aether embeds wallpaper and widget windows below the Windows desktop worker window through `DesktopEmbedder`. Aether checks their client bounds and repairs geometry on the reconciliation timer. The menu controller keeps menu windows topmost and shows them without activation.
+Aether embeds desktop-placement windows below the Windows desktop worker window through `DesktopEmbedder`. Top-level windows use the generic placement controller, which applies frame, taskbar, z-order, focus, and work-area policy. Aether checks geometry and repairs it on the reconciliation timer.
 
-The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend wallpaper/widget views on their matching monitor. Menu auto-hide ignores foreground windows owned by the renderer process.
+The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend any window that opts into that policy. Windows opting into focus notifications produce generic `window.focusChanged` events; Chronos uses that event to implement menu auto-hide.
 
 ## Reload behavior
 
@@ -45,4 +46,4 @@ Control EOF marks Aether unavailable to Chronos and fails pending requests. Back
 
 ## Native boundary
 
-`UltralightNative` contains the C API bindings. `NativeMethods`, `NativeWindowApi`, and `WinEventApi` contain Win32 interop. Keep ownership and thread affinity explicit when you change these layers. Failures often appear as invalid handles, geometry mismatches, or shutdown races.
+`UltralightNative` contains the C API bindings. `NativeMethods` and `NativeWindowApi` contain Win32 interop. Keep ownership and thread affinity explicit when you change these layers. Failures often appear as invalid handles, geometry mismatches, or shutdown races.

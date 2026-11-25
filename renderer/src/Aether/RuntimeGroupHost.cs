@@ -56,15 +56,15 @@ public sealed class RuntimeGroupHost : IDisposable
     public string InvokeStatus() => Invoke(context => context.GetStatus());
     public void InvokePause(bool paused) => Invoke(context => context.SetPaused(paused));
     public void InvokeFullscreenMonitor(IntPtr monitor) => Invoke(context => context.SetFullscreenMonitor(monitor));
-    public void InvokeShowMenu() => Invoke(context => context.ShowStartMenu());
-    public void InvokeHideMenu() => Invoke(context => context.HideStartMenu());
-    public bool InvokeToggleMenu() => Invoke(context => context.ToggleStartMenu());
     public void InvokeHideWindow(string? id) => Invoke(context => context.SetWindowVisible(id, false));
     public void InvokeRevealWindow(string? id) => Invoke(context => context.SetWindowVisible(id, true));
+    public WindowSnapshot InvokeCreateWindow(RendererWindowSpec spec) => Invoke(context => context.CreateDynamicWindow(spec));
+    public void InvokeDestroyWindow(string id) => Invoke(context => context.DestroyDynamicWindow(id));
+    public WindowSnapshot InvokeWindowAction(string id, string action) => Invoke(context => context.ApplyWindowAction(id, action));
+    public IReadOnlyList<WindowSnapshot> InvokeForegroundChanged(IntPtr foreground) => Invoke(context => context.UpdateFocus(foreground));
     public void InvokeReload() => Invoke(context => context.Reload());
     public void InvokeReload(IReadOnlyList<RendererWindowSpec> specs) => Invoke(context => context.Reload(specs));
     public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => Invoke(context => context.GetWindowSnapshots());
-    public bool GetStartMenuVisibility() => Invoke(context => context.GetStartMenuVisibility());
 
     public void Stop()
     {
@@ -156,14 +156,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly object _windowSync = new();
     private readonly UltralightRuntime _runtime;
     private readonly DesktopEmbedder _embedder;
-    private readonly StartMenuWindowController _startMenuController;
+    private readonly GenericWindowPlacementController _windowController;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly List<AppWindow> _windows = new();
     private WindowRegistry _registry = new();
-    private AutoHideMonitor? _autoHide;
     private List<RendererWindowSpec> _currentSpecs;
-    private AppWindow? _startMenu;
-    private bool _desiredStartMenuVisible = true;
     private bool _paused;
     private IntPtr _fullscreenMonitor;
     private bool _stopping;
@@ -191,26 +188,16 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         _dispatcher.CreateControl();
         _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control, _runtimeCommandExecutor);
         _embedder = new DesktopEmbedder(options.Verbose);
-        _startMenuController = new StartMenuWindowController(options.Verbose);
+        _windowController = new GenericWindowPlacementController();
         _timer = new System.Windows.Forms.Timer { Interval = 16 };
         _timer.Tick += (_, _) => Tick();
 
         ReplaceWindows(_currentSpecs);
-        if (_startMenu != null)
-        {
-            _autoHide = new AutoHideMonitor(
-                _dispatcher,
-                () => _startMenu?.Spec.AutoHide == true,
-                () => _startMenu?.IsVisible == true,
-                () => _startMenu?.Hwnd ?? IntPtr.Zero,
-                HideStartMenu);
-            _autoHide.Start();
-        }
         _timer.Start();
     }
 
     public IReadOnlyList<WallpaperWindow> GetDesktopWindows() =>
-        SnapshotWindows().Where(window => window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
+        SnapshotWindows().Where(window => window.Spec.Placement == WindowPlacement.Desktop)
             .Select(window => new WallpaperWindow(window))
             .ToArray();
 
@@ -251,20 +238,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         return $"{_name}: {paused}; windows=[{windows}]";
     }
 
-    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() =>
-        SnapshotWindows().Select(window => new WindowSnapshot(
-            window.LogicalId,
-            window.Url,
-            _name,
-            window.Kind,
-            window.Spec.Bounds,
-            GetCurrentBounds(window),
-            window.Spec.MonitorNumber,
-            window.IsVisible,
-            window.RendererSuspended,
-            window.State)).ToArray();
-
-    public bool GetStartMenuVisibility() => _desiredStartMenuVisible;
+    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => SnapshotWindows().Select(Snapshot).ToArray();
 
     public void SetWindowVisible(string? id, bool visible)
     {
@@ -274,8 +248,98 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             string.Equals(item.LogicalId, id, StringComparison.Ordinal));
         if (window == null)
             throw new InvalidOperationException($"Unknown window ID: {id}");
+        if (!visible && window.Spec.HiddenBehavior == WindowHiddenBehavior.Unload)
+        {
+            DestroyDynamicWindow(id);
+            return;
+        }
         window.DesiredVisible = visible;
         ApplyWindowVisibility(window);
+    }
+
+    public WindowSnapshot CreateDynamicWindow(RendererWindowSpec spec)
+    {
+        if (!string.Equals(spec.ThreadGroup, _name, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Window group does not match runtime group '{_name}'.");
+        if (SnapshotWindows().Any(window => string.Equals(window.LogicalId, spec.LogicalId, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"Logical window ID is already registered: {spec.LogicalId}");
+        AppWindow window = CreateWindow(spec);
+        lock (_windowSync)
+        {
+            _registry.Add(window);
+            _windows.Add(window);
+        }
+        return Snapshot(window);
+    }
+
+    public void DestroyDynamicWindow(string id)
+    {
+        AppWindow? window = SnapshotWindows().FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
+        if (window == null)
+            throw new InvalidOperationException($"Unknown window ID: {id}");
+        RemoveAndDestroy(window);
+    }
+
+    public WindowSnapshot ApplyWindowAction(string id, string action)
+    {
+        AppWindow? window = SnapshotWindows().FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
+        if (window == null)
+            throw new InvalidOperationException($"Unknown window ID: {id}");
+        switch (action.Trim().ToLowerInvariant())
+        {
+            case "show":
+                window.DesiredVisible = true;
+                ApplyWindowVisibility(window);
+                break;
+            case "hide":
+                SetWindowVisible(id, false);
+                break;
+            case "toggle":
+                SetWindowVisible(id, !window.DesiredVisible);
+                break;
+            case "focus":
+                if (window.Spec.Placement == WindowPlacement.Desktop)
+                    throw new InvalidOperationException("Desktop windows require forwarded input focus.");
+                window.DesiredVisible = true;
+                ApplyWindowVisibility(window);
+                if (!_windowController.Focus(window))
+                    throw new InvalidOperationException($"Could not focus window: {id}");
+                break;
+            case "blur":
+                _windowController.Blur(window);
+                break;
+            case "pause":
+                _runtime.TrySetSuspended(window, true);
+                window.RendererSuspended = true;
+                break;
+            case "resume":
+                _runtime.TrySetSuspended(window, false);
+                window.RendererSuspended = false;
+                break;
+            case "reload":
+                throw new InvalidOperationException("Window reload requires group reload.");
+            default:
+                throw new InvalidOperationException($"Unknown window action: {action}");
+        }
+        return Snapshot(window);
+    }
+
+    public IReadOnlyList<WindowSnapshot> UpdateFocus(IntPtr foreground)
+    {
+        var changed = new List<WindowSnapshot>();
+        foreach (AppWindow window in SnapshotWindows())
+        {
+            bool focused = foreground != IntPtr.Zero &&
+                (foreground == window.Hwnd || NativeMethods.IsDescendantOrSelf(foreground, window.Hwnd));
+            if (focused == window.Focused)
+                continue;
+            window.Focused = focused;
+            if (window.Spec.Notifications?.Focus == true || window.Spec.EffectiveNotifications.Focus)
+                changed.Add(Snapshot(window));
+            if (window.Spec.ZOrder == WindowZOrder.TopmostWhenFocused && window.Spec.Placement == WindowPlacement.TopLevel)
+                _windowController.Reconcile(window);
+        }
+        return changed;
     }
 
     public void SetPaused(bool paused)
@@ -285,17 +349,8 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             if (window.State is AppWindowState.Closed or AppWindowState.Failed)
                 continue;
-            if (window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
-                ApplySuspension(window);
-            if (window.Kind == WindowKind.StartMenu)
-            {
-                if (paused) _startMenuController.Hide(window);
-                else ApplyStartMenuVisibility(window);
-            }
-            else
-            {
-                ApplyWindowVisibility(window, keepVisibleWhenPaused: true);
-            }
+            ApplySuspension(window);
+            ApplyWindowVisibility(window, keepVisibleWhenPaused: true);
         }
         _timer.Interval = paused ? 1000 : 16;
     }
@@ -306,55 +361,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         foreach (AppWindow window in _windows.ToArray())
         {
             window.FullscreenOccluded = monitor != IntPtr.Zero && window.MonitorHandle == monitor;
-            if (window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
+            if (window.Spec.SuspendOnFullscreen)
                 ApplySuspension(window);
         }
         if (!_paused)
             _timer.Interval = _windows.Any(window => !window.RendererSuspended) ? 16 : 1000;
-    }
-
-    public void ShowStartMenu()
-    {
-        _desiredStartMenuVisible = true;
-        if (_startMenu == null)
-        {
-            RendererWindowSpec? spec = _specFactory().FirstOrDefault(item => item.ThreadGroup == _name && item.Kind == WindowKind.StartMenu);
-            if (spec == null)
-                throw new InvalidOperationException("No menu window is configured.");
-            CreateAndAttach(spec, true);
-        }
-        if (!_paused && _startMenu != null)
-            ApplyStartMenuVisibility(_startMenu);
-    }
-
-    public void HideStartMenu()
-    {
-        _desiredStartMenuVisible = false;
-        if (_startMenu == null)
-            return;
-
-        if (_startMenu.Spec.HiddenBehavior == StartMenuHiddenBehavior.Unload)
-        {
-            AppWindow window = _startMenu;
-            _startMenu = null;
-            RemoveAndDestroy(window);
-        }
-        else
-        {
-            ApplyStartMenuVisibility(_startMenu);
-        }
-    }
-
-    public bool ToggleStartMenu()
-    {
-        if (_desiredStartMenuVisible)
-        {
-            HideStartMenu();
-            return false;
-        }
-
-        ShowStartMenu();
-        return true;
     }
 
     public void Reload()
@@ -397,10 +408,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                     return;
                 }
 
-                if (window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
+                if (window.Spec.Placement == WindowPlacement.Desktop)
                     _embedder.Reconcile(window);
                 else
-                    _startMenuController.Reconcile(window);
+                    _windowController.Reconcile(window);
             }
         }
         catch (Exception ex)
@@ -438,12 +449,9 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             _windows.AddRange(created);
             foreach (AppWindow window in created)
                 _registry.Add(window);
-            _startMenu = _windows.FirstOrDefault(window => window.Kind == WindowKind.StartMenu);
         }
         if (_paused)
             SetPaused(true);
-        else if (_startMenu != null)
-            ApplyStartMenuVisibility(_startMenu);
     }
 
     private AppWindow CreateWindow(RendererWindowSpec spec)
@@ -459,22 +467,22 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         window.MonitorHandle = NativeMethods.MonitorFromPoint(center, NativeMethods.MONITOR_DEFAULTTONEAREST);
         try
         {
-            if (spec.Kind is WindowKind.Wallpaper or WindowKind.Widget)
+            window.DesiredVisible = spec.InitialVisible;
+            if (spec.Placement == WindowPlacement.Desktop)
             {
                 _embedder.Embed(window);
-                window.IsVisible = true;
+                window.IsVisible = spec.InitialVisible;
             }
             else
             {
-                window.IsVisible = _desiredStartMenuVisible;
-                _startMenuController.Reconcile(window);
+                window.IsVisible = spec.InitialVisible;
+                _windowController.Reconcile(window);
                 if (window.IsVisible)
-                    _startMenuController.Show(window);
+                    _windowController.Show(window, spec.ActivateOnShow || spec.EffectiveInput.Focus == WindowFocusMode.OnShow);
             }
             _runtime.ShowWhenReady(window, _options.StartupTimeout);
             window.State = AppWindowState.Embedded;
-            if (window.Kind is WindowKind.Wallpaper or WindowKind.Widget)
-                ApplySuspension(window);
+            ApplySuspension(window);
             return window;
         }
         catch
@@ -484,62 +492,37 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         }
     }
 
-    private void CreateAndAttach(RendererWindowSpec spec, bool visible)
+    private void ApplyWindowVisibility(AppWindow window, bool keepVisibleWhenPaused = false)
     {
-        _desiredStartMenuVisible = visible;
-        AppWindow window = CreateWindow(spec);
-        window.DesiredVisible = visible;
-        lock (_windowSync)
+        if (window.DesiredVisible && (!_paused || keepVisibleWhenPaused))
         {
-            _registry.Add(window);
-            _windows.Add(window);
-            _startMenu = window;
-        }
-        if (_paused)
-            SetPaused(true);
-    }
-
-    private void ApplyStartMenuVisibility(AppWindow window)
-    {
-        if (_desiredStartMenuVisible && window.DesiredVisible && !_paused)
-        {
-            if (window.RendererSuspended)
+            ApplySuspension(window);
+            if (window.Spec.Placement == WindowPlacement.Desktop)
             {
-                _runtime.TrySetSuspended(window, false);
-                window.RendererSuspended = false;
+                NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
+                window.IsVisible = true;
             }
-            _startMenuController.Show(window);
-            window.IsVisible = true;
+            else
+            {
+                _windowController.Show(window, window.Spec.EffectiveInput.Focus is WindowFocusMode.OnShow or WindowFocusMode.OnReveal);
+            }
         }
         else
         {
-            _startMenuController.Hide(window);
-            window.IsVisible = false;
-            if (window.Spec.HiddenBehavior == StartMenuHiddenBehavior.Pause && !_paused)
+            if (window.Spec.Placement == WindowPlacement.Desktop)
+            {
+                NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_HIDE);
+                window.IsVisible = false;
+            }
+            else
+            {
+                _windowController.Hide(window);
+            }
+            if (window.Spec.HiddenBehavior == WindowHiddenBehavior.Pause && !_paused)
             {
                 _runtime.TrySetSuspended(window, true);
                 window.RendererSuspended = true;
             }
-        }
-    }
-
-    private void ApplyWindowVisibility(AppWindow window, bool keepVisibleWhenPaused = false)
-    {
-        if (window.Kind == WindowKind.StartMenu)
-        {
-            ApplyStartMenuVisibility(window);
-            return;
-        }
-
-        if (window.DesiredVisible && (!_paused || keepVisibleWhenPaused))
-        {
-            NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
-            window.IsVisible = true;
-        }
-        else
-        {
-            NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_HIDE);
-            window.IsVisible = false;
         }
     }
 
@@ -553,18 +536,34 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             : window.Spec.Bounds;
     }
 
+    private WindowSnapshot Snapshot(AppWindow window) => new(
+        window.LogicalId,
+        window.Url,
+        _name,
+        window.Kind,
+        window.Spec.Bounds,
+        GetCurrentBounds(window),
+        window.Spec.MonitorNumber,
+        window.IsVisible,
+        window.Focused,
+        window.RendererSuspended,
+        window.State,
+        window.Spec.Placement,
+        window.Spec.ZOrder);
+
     private void ApplySuspension(AppWindow window)
     {
-        bool viewSuspended = window.FullscreenOccluded;
+        bool viewSuspended = window.Spec.SuspendOnFullscreen && window.FullscreenOccluded;
         window.DesiredSuspended = _paused || viewSuspended;
-        if (_runtime.TrySetSuspended(window, viewSuspended))
-            window.RendererSuspended = viewSuspended;
+        if (_runtime.TrySetSuspended(window, _paused || viewSuspended))
+            window.RendererSuspended = _paused || viewSuspended;
     }
 
     private void RemoveAndDestroy(AppWindow window)
     {
         _registry.MarkIntentionalClose(window);
         _registry.Remove(window);
+        NativeWindowApi.RemoveAppBarReservation(window.Hwnd);
         _embedder.Close(window);
         lock (_windowSync) _windows.Remove(window);
         DestroyWindow(window);
@@ -612,7 +611,6 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             return;
         _stopping = true;
         _timer.Stop();
-        _autoHide?.Dispose();
         foreach (AppWindow window in _windows.ToArray())
             RemoveAndDestroy(window);
         lock (_windowSync) _windows.Clear();
