@@ -187,7 +187,7 @@ public sealed class RendererConfiguration
                         ? overrideUrl : profile.Url;
                     Add(CreateDesktopSpec(id, url, screens[monitorIndex].Bounds, virtualBounds,
                         profile.ThreadGroup, WindowKind.Wallpaper, profile.Transparent,
-                        monitorIndex + 1, profile.Bridge));
+                        monitorIndex + 1, profile.Bridge, Variables, Cues));
                 }
                 continue;
             }
@@ -197,7 +197,7 @@ public sealed class RendererConfiguration
                 case WallpaperMode.Span:
                     Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}", profile.Url,
                         virtualBounds, virtualBounds, profile.ThreadGroup, WindowKind.Wallpaper,
-                        profile.Transparent, 0, profile.Bridge));
+                        profile.Transparent, 0, profile.Bridge, Variables, Cues));
                     break;
                 case WallpaperMode.All:
                     for (int monitorIndex = 0; monitorIndex < screens.Length; monitorIndex++)
@@ -211,7 +211,8 @@ public sealed class RendererConfiguration
                                     ? $"{baseId}:monitor:{monitorIndex + 1}"
                                     : $"wallpaper-{profileIndex + 1}-monitor-{monitorIndex + 1}",
                             url, screens[monitorIndex].Bounds, virtualBounds, profile.ThreadGroup,
-                            WindowKind.Wallpaper, profile.Transparent, monitorIndex + 1, profile.Bridge));
+                            WindowKind.Wallpaper, profile.Transparent, monitorIndex + 1, profile.Bridge,
+                            Variables, Cues));
                     }
                     break;
                 case WallpaperMode.Single:
@@ -220,7 +221,8 @@ public sealed class RendererConfiguration
                         ? singleOverride : profile.Url;
                     Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}-monitor-{profile.Monitor}",
                         singleUrl, screens[profile.Monitor - 1].Bounds, virtualBounds, profile.ThreadGroup,
-                        WindowKind.Wallpaper, profile.Transparent, profile.Monitor, profile.Bridge));
+                        WindowKind.Wallpaper, profile.Transparent, profile.Monitor, profile.Bridge,
+                        Variables, Cues));
                     break;
                 default:
                     throw new RendererConfigurationException($"Unsupported wallpaper mode: {profile.Mode}");
@@ -233,7 +235,8 @@ public sealed class RendererConfiguration
             ValidateMonitor(widget.MonitorNumber, screens.Length, $"Widget {index + 1}");
             Add(CreateDesktopSpec(widget.Id ?? $"widget-{index + 1}", widget.Url,
                 WidgetGeometry.Resolve(widget, screens[widget.MonitorNumber - 1].Bounds), virtualBounds,
-                widget.ThreadGroup, WindowKind.Widget, widget.Transparent, widget.MonitorNumber, widget.Bridge));
+                widget.ThreadGroup, WindowKind.Widget, widget.Transparent, widget.MonitorNumber, widget.Bridge,
+                Variables, Cues));
         }
 
         return specs;
@@ -248,9 +251,11 @@ public sealed class RendererConfiguration
         WindowKind kind,
         bool transparent,
         int monitor,
-        BridgePolicy? bridge) => new(
+        BridgePolicy? bridge,
+        IReadOnlyDictionary<string, JsonElement> variables,
+        IReadOnlyList<string> cues) => new(
             id, url, bounds, virtualBounds, group, kind, transparent, monitor,
-            WindowHiddenBehavior.Retain, bridge, null, null, WindowPlacement.Desktop,
+            WindowHiddenBehavior.Retain, bridge, variables, cues, WindowPlacement.Desktop,
             WindowZOrder.Bottom, false, false, false, false, true, null,
             new(WindowInputMode.Forwarded, WindowInputMode.Forwarded, WindowFocusMode.OnClick),
             new(), new(), true);
@@ -809,8 +814,14 @@ public static class WidgetGeometry
         int height = ToDimension(widget.Height * sizeUnit);
         Point monitorAnchor = GetMonitorAnchor(widget.Anchor, monitor);
         Point widgetAnchor = GetWidgetAnchor(widget.Anchor, width, height);
-        int left = checked((int)Math.Round(monitorAnchor.X + widget.X * positionUnitX - widgetAnchor.X, MidpointRounding.AwayFromZero));
-        int top = checked((int)Math.Round(monitorAnchor.Y + widget.Y * positionUnitY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
+        // Preserve the legacy widget contract: scaled x/y are percentages of
+        // the monitor origin, while the anchor only controls how the widget
+        // itself is attached to that position. Unscaled coordinates remain
+        // offsets from the selected monitor anchor.
+        double placementX = (widget.PosScaled ? monitor.Left : monitorAnchor.X) + widget.X * positionUnitX;
+        double placementY = (widget.PosScaled ? monitor.Top : monitorAnchor.Y) + widget.Y * positionUnitY;
+        int left = checked((int)Math.Round(placementX - widgetAnchor.X, MidpointRounding.AwayFromZero));
+        int top = checked((int)Math.Round(placementY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
         return new(left, top, width, height);
     }
 

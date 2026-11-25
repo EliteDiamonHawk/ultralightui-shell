@@ -39,6 +39,8 @@ internal static class Program
             (nameof(RuntimeCommandPayloadsMapAndValidate), RuntimeCommandPayloadsMapAndValidate),
             (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
             (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
+            (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
+            (nameof(DesktopAdaptersPreserveSharedPageData), DesktopAdaptersPreserveSharedPageData),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
             (nameof(CommandProtocolRoundTrips), CommandProtocolRoundTrips)
@@ -354,6 +356,31 @@ internal static class Program
     {
         var widget = new WidgetDefinition(10, 20, false, false, WidgetAnchor.BottomRight, 100, 50, 1, "https://example.test/", true, "widgets");
         AssertEqual(new Rectangle(-90, -30, 100, 50), WidgetGeometry.Resolve(widget, new Rectangle(-1920, -1200, 1920, 1200)));
+    }
+
+    private static void GeometryPreservesScaledWidgetAnchorSemantics()
+    {
+        var widget = new WidgetDefinition(50, 50, true, false, WidgetAnchor.Center, 100, 50, 1, "https://example.test/", true, "widgets");
+        AssertEqual(new Rectangle(910, 515, 100, 50), WidgetGeometry.Resolve(widget, new Rectangle(0, 0, 1920, 1080)));
+    }
+
+    private static void DesktopAdaptersPreserveSharedPageData()
+    {
+        using JsonDocument document = JsonDocument.Parse("""
+            {
+              "variables": { "theme": "dark" },
+              "cues": ["next"],
+              "widgets": [{
+                "x": 50, "y": 50, "pos-scaled": true, "size-scaled": false,
+                "anchor": "center", "width": 100, "height": 50, "monitor": 1,
+                "url": "example.test"
+              }]
+            }
+            """);
+
+        RendererWindowSpec spec = RendererConfiguration.LoadJson(document.RootElement).ResolveWindowSpecs().Single();
+        AssertEqual("dark", spec.Variables!["theme"].GetString());
+        AssertEqual("next", spec.Cues!.Single());
     }
 
     private static void UrlBuilderNormalizesAndRejects()
