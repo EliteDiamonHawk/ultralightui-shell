@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Windows.Forms;
+using KhaosShell.Contracts;
 
 namespace Chronos;
 
@@ -33,6 +34,8 @@ internal sealed class ChronosHostContext : ApplicationContext
     private string? _rendererFailure;
     private bool _rendererStarting;
     private bool _exiting;
+    private string? _managedMenuId;
+    private bool _managedMenuAutoHide;
 
     public event Action? UiStateChanged;
 
@@ -72,7 +75,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _escapePanic = new EscapePanicController(_settings.PanicEscapeEnabled, QueuePanicTrigger, Diagnostic);
         _escapePanic.StateChanged += OnEscapePanicChanged;
         _keybinds = new KeybindController(_settings.Keybinds ?? KeybindCatalog.DefaultBindings, DispatchKeybindAsync, Diagnostic);
-        _tray = trayEnabled ? new TrayController(_commands, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
+        _tray = trayEnabled ? new TrayController(_commands, ShowMenuAsync, HideMenuAsync, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
         PreparedTheme? preparedTheme = configPaths.Count == 0 ? null : ThemeConfigurationLoader.Load(configPaths);
         StartRenderer(configPaths, options.RendererPath, _settings.RendererPath, preparedTheme: preparedTheme);
@@ -190,14 +193,31 @@ internal sealed class ChronosHostContext : ApplicationContext
         try
         {
             await _themeHooks.RunBeforeAsync(preparedTheme.Before).ConfigureAwait(true);
+            await DeleteManagedMenuAsync().ConfigureAwait(true);
             AetherCommandResult result = await _commands.ApplyConfigAsync(
                 Array.Empty<string>(),
                 theme.Id,
                 generation,
                 preparedTheme.AetherJson,
                 files).ConfigureAwait(true);
-            if (result.Success)
+            if (!result.Success)
             {
+                if (outgoingTheme != null)
+                {
+                    AetherCommandResult restoreResult = await CreateManagedMenuAsync(outgoingTheme).ConfigureAwait(true);
+                    if (!restoreResult.Success)
+                        Diagnostic($"Could not restore the previous managed menu: {restoreResult.Error ?? restoreResult.Payload}");
+                }
+                _themeHooks.TerminateTrackedBefore();
+                return result;
+            }
+
+            if (preparedTheme.MenuJson != null)
+            {
+                AetherCommandResult menuResult = await CreateManagedMenuAsync(preparedTheme).ConfigureAwait(true);
+                if (!menuResult.Success)
+                    return menuResult;
+            }
                 RendererCapabilities capabilities = await _commands.RefreshAsync().ConfigureAwait(true);
                 if (PathsEqual(files, capabilities.ConfigFiles))
                 {
@@ -210,9 +230,6 @@ internal sealed class ChronosHostContext : ApplicationContext
                 NotifyUiStateChanged();
                 if (outgoingTheme != null)
                     await RunAfterAsync(outgoingTheme).ConfigureAwait(true);
-            }
-            else
-                _themeHooks.TerminateTrackedBefore();
             return result;
         }
         finally
@@ -229,6 +246,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         {
             try
             {
+                await DeleteManagedMenuAsync().ConfigureAwait(true);
                 ControlResponse response = await _renderer.Control.SendAsync(
                     "POST",
                     "/v1/renderer/configure",
@@ -253,6 +271,8 @@ internal sealed class ChronosHostContext : ApplicationContext
         _themeHooks.TerminateTrackedBefore();
         _activeThemeId = null;
         _activeTheme = null;
+        _managedMenuId = null;
+        _commands.ClearManagedMenu();
         _activeThemeGeneration = 0;
         _pendingThemeId = null;
         _pendingThemeGeneration = null;
@@ -348,15 +368,34 @@ internal sealed class ChronosHostContext : ApplicationContext
     public Task<AetherCommandResult> ResumeAsync(string? group, bool all) => _commands.ResumeAsync(group, all);
     public Task<AetherCommandResult> ReloadAsync(string? group, bool all) => _commands.ReloadAsync(group, all);
     public Task<AetherCommandResult> StatusAsync(string? group, bool all) => _commands.StatusAsync(group, all);
-    public Task<AetherCommandResult> ShowMenuAsync() => _commands.ShowMenuAsync();
-    public Task<AetherCommandResult> HideMenuAsync() => _commands.HideMenuAsync();
-    public Task<AetherCommandResult> ToggleMenuAsync() => _commands.ToggleMenuAsync();
+    public Task<AetherCommandResult> ShowMenuAsync() => SetManagedMenuVisibilityAsync(true);
+    public Task<AetherCommandResult> HideMenuAsync() => SetManagedMenuVisibilityAsync(false);
+    public async Task<AetherCommandResult> ToggleMenuAsync()
+    {
+        (AetherCommandResult result, RendererMenuVisibility? visibility) = await QueryManagedMenuVisibilityAsync().ConfigureAwait(false);
+        return !result.Success || visibility == null
+            ? result
+            : await SetManagedMenuVisibilityAsync(!visibility.Visible).ConfigureAwait(false);
+    }
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible) => _commands.SetWindowVisibilityAsync(id, visible);
     public void RequestExitFromUi() => RequestExit();
 
     private async Task DispatchKeybindAsync(KeybindDefinition binding)
     {
         KeybindAction action = binding.EffectiveAction;
+        if (action.Kind == KeybindActionKind.ManagedMenu)
+        {
+            AetherCommandResult result = action.MenuAction switch
+            {
+                ManagedMenuAction.Show => await ShowMenuAsync().ConfigureAwait(false),
+                ManagedMenuAction.Hide => await HideMenuAsync().ConfigureAwait(false),
+                _ => await ToggleMenuAsync().ConfigureAwait(false)
+            };
+            if (!result.Success)
+                Diagnostic(result.Error ?? result.Payload);
+            return;
+        }
+
         if (action.Kind == KeybindActionKind.AetherCommand)
         {
             AetherCommandResult result = await _commands.ExecuteAsync(action.ToRendererCommand()).ConfigureAwait(false);
@@ -405,17 +444,16 @@ internal sealed class ChronosHostContext : ApplicationContext
     private async Task<(AetherCommandResult Result, RendererMenuVisibility? Visibility)> QueryManagedMenuVisibilityAsync()
     {
         RendererSession? renderer = _renderer;
-        if (renderer?.Control is not { State: "connected" } control)
+        string? menuId = _managedMenuId;
+        if (renderer?.Control is not { State: "connected" } control || string.IsNullOrWhiteSpace(menuId))
             return (AetherCommandResult.Failure("Renderer is not running."), null);
         try
         {
             ControlResponse response = await control.SendAsync(
-                "GET", "/v1/renderer/menu", null, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+                "GET", $"/v1/renderer/windows/{Uri.EscapeDataString(menuId)}", null, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
             if (response.Status is < 200 or >= 300)
-                return (AetherCommandResult.Failure(response.Error?.Message ?? "Aether menu query failed."), null);
+                return (AetherCommandResult.Failure(response.Error?.Message ?? "Menu query failed."), null);
             if (response.Body is not { } body || body.ValueKind != System.Text.Json.JsonValueKind.Object ||
-                !body.TryGetProperty("configured", out System.Text.Json.JsonElement configured) ||
-                configured.ValueKind != System.Text.Json.JsonValueKind.True ||
                 !body.TryGetProperty("id", out System.Text.Json.JsonElement idValue) ||
                 idValue.ValueKind != System.Text.Json.JsonValueKind.String ||
                 string.IsNullOrWhiteSpace(idValue.GetString()))
@@ -436,22 +474,84 @@ internal sealed class ChronosHostContext : ApplicationContext
     private async Task<AetherCommandResult> SetManagedMenuVisibilityAsync(bool visible)
     {
         RendererSession? renderer = _renderer;
-        if (renderer?.Control is not { State: "connected" } control)
+        string? menuId = _managedMenuId;
+        if (renderer?.Control is not { State: "connected" } control || string.IsNullOrWhiteSpace(menuId))
             return AetherCommandResult.Failure("Renderer is not running.");
         try
         {
             ControlResponse response = await control.SendAsync(
                 "POST",
-                "/v1/renderer/menu",
+                $"/v1/renderer/windows/{Uri.EscapeDataString(menuId)}/actions",
                 new { action = visible ? "show" : "hide" },
                 TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (response.Status == 404 && visible && _activeTheme?.MenuJson != null)
+            {
+                AetherCommandResult recreated = await CreateManagedMenuAsync(_activeTheme).ConfigureAwait(false);
+                if (recreated.Success)
+                    return recreated;
+            }
             if (response.Status is < 200 or >= 300)
-                return AetherCommandResult.Failure(response.Error?.Message ?? "Aether menu command failed.");
+                return AetherCommandResult.Failure(response.Error?.Message ?? "Menu command failed.");
+            _commands.SetManagedMenu(menuId, visible);
             return new AetherCommandResult(true, $"OK {(visible ? "showed" : "hid")} menu");
         }
         catch (Exception ex)
         {
             return AetherCommandResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task<AetherCommandResult> CreateManagedMenuAsync(PreparedTheme theme)
+    {
+        if (theme.MenuJson == null)
+        {
+            _managedMenuId = null;
+            _commands.ClearManagedMenu();
+            return new AetherCommandResult(true, "OK no managed menu");
+        }
+
+        RendererSession? renderer = _renderer;
+        if (renderer?.Control is not { State: "connected" } control)
+            return AetherCommandResult.Failure("Renderer is not running.");
+        try
+        {
+            using JsonDocument definition = JsonDocument.Parse(theme.MenuJson);
+            ControlResponse response = await control.SendAsync(
+                "POST", "/v1/renderer/windows", definition.RootElement, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (response.Status is < 200 or >= 300)
+                return AetherCommandResult.Failure(response.Error?.Message ?? "Menu window creation failed.");
+            if (response.Body is not { } window || window.ValueKind != JsonValueKind.Object ||
+                !window.TryGetProperty("id", out JsonElement id) ||
+                id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString()))
+                return AetherCommandResult.Failure("Aether returned an invalid managed menu window.");
+
+            _managedMenuId = id.GetString();
+            _managedMenuAutoHide = theme.MenuAutoHide;
+            _commands.SetManagedMenu(_managedMenuId!, true);
+            return new AetherCommandResult(true, "OK menu window created");
+        }
+        catch (Exception ex)
+        {
+            return AetherCommandResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task DeleteManagedMenuAsync()
+    {
+        string? menuId = _managedMenuId;
+        _managedMenuId = null;
+        _managedMenuAutoHide = false;
+        _commands.ClearManagedMenu();
+        if (string.IsNullOrWhiteSpace(menuId) || _renderer?.Control is not { State: "connected" } control)
+            return;
+        try
+        {
+            await control.SendAsync(
+                "DELETE", $"/v1/renderer/windows/{Uri.EscapeDataString(menuId)}", null, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic($"Managed menu cleanup failed: {ex.Message}");
         }
     }
 
@@ -572,6 +672,13 @@ internal sealed class ChronosHostContext : ApplicationContext
 
             WaitForRenderer(configPaths);
 
+            if (preparedTheme != null)
+            {
+                AetherCommandResult menuResult = CreateManagedMenuAsync(preparedTheme).GetAwaiter().GetResult();
+                if (!menuResult.Success)
+                    throw new InvalidOperationException(menuResult.Error ?? menuResult.Payload);
+            }
+
             if (configPaths.Count > 0)
                 PersistAcceptedConfig(configPaths);
 
@@ -598,6 +705,8 @@ internal sealed class ChronosHostContext : ApplicationContext
             }
             _renderer = null;
             _commands.MarkDisconnected();
+            _managedMenuId = null;
+            _managedMenuAutoHide = false;
             NotifyUiStateChanged();
             ShowRendererFailure(message);
             return false;
@@ -636,6 +745,9 @@ internal sealed class ChronosHostContext : ApplicationContext
     {
         RendererSession? renderer = _renderer;
         _renderer = null;
+        _managedMenuId = null;
+        _managedMenuAutoHide = false;
+        _commands.ClearManagedMenu();
         if (renderer == null)
         {
             _commands.MarkDisconnected();
@@ -825,6 +937,38 @@ internal sealed class ChronosHostContext : ApplicationContext
 
     private void OnRendererEvent(string eventName, System.Text.Json.JsonElement? body)
     {
+        if (eventName == "window.focusChanged" && body is { } focusBody)
+        {
+            string? id = focusBody.TryGetProperty("window", out JsonElement focusWindow) &&
+                         focusWindow.ValueKind == JsonValueKind.Object
+                ? ControlCodec.GetString(focusWindow, "id")
+                : null;
+            bool focused = focusWindow.ValueKind == JsonValueKind.Object &&
+                           focusWindow.TryGetProperty("focused", out JsonElement focusedValue) &&
+                           focusedValue.ValueKind == JsonValueKind.True;
+            if (_managedMenuAutoHide && !focused && string.Equals(id, _managedMenuId, StringComparison.Ordinal))
+            {
+                try
+                {
+                    _dispatcher.BeginInvoke((Action)(() =>
+                    {
+                        _ = SetManagedMenuVisibilityAsync(false).ContinueWith(
+                            task =>
+                            {
+                                if (task.IsFaulted)
+                                    Diagnostic($"Managed menu auto-hide failed: {task.Exception?.GetBaseException().Message}");
+                            },
+                            CancellationToken.None,
+                            TaskContinuationOptions.None,
+                            TaskScheduler.Default);
+                    }));
+                }
+                catch (InvalidOperationException) { }
+            }
+            NotifyUiStateChanged();
+            return;
+        }
+
         if (eventName is not ("config.changed" or "window.changed"))
             return;
         if (body is { } eventBody &&

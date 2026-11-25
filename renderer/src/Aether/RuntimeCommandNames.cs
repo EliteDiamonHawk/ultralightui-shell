@@ -6,9 +6,6 @@ internal static class RuntimeCommandNames
 {
     public static IReadOnlyList<string> Allowed { get; } = new[]
     {
-        "showMenu",
-        "hideMenu",
-        "toggleMenu",
         "showWindow",
         "hideWindow",
         "pause",
@@ -21,9 +18,6 @@ internal static class RuntimeCommandNames
     {
         kind = name switch
         {
-            "showMenu" => RendererCommandKind.ShowMenu,
-            "hideMenu" => RendererCommandKind.HideMenu,
-            "toggleMenu" => RendererCommandKind.ToggleMenu,
             "showWindow" => RendererCommandKind.RevealWindow,
             "hideWindow" => RendererCommandKind.HideWindow,
             "pause" => RendererCommandKind.Pause,

@@ -9,8 +9,6 @@ public enum RendererCommandKind
     None = 0,
     Show = 1,
     SystemTray = 2,
-    ShowMenu = 3,
-    HideMenu = 4,
     HideWindow = 5,
     RevealWindow = 6,
     ApplyConfig = 7,
@@ -18,8 +16,7 @@ public enum RendererCommandKind
     Resume = 9,
     Status = 10,
     Reload = 11,
-    Exit = 12,
-    ToggleMenu = 13
+    Exit = 12
 }
 
 public enum SystemTrayAction

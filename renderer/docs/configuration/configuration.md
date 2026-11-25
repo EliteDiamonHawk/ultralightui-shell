@@ -4,9 +4,9 @@ Pass one or more JSON files with repeated `--config` options. The parser accepts
 
 Use one top-level section per file. The loader combines sections across files; it does not merge two copies of the same section. Valid sections:
 
-- `wallpaper`: an array of wallpaper profiles.
-- `widgets`: an array of widget definitions.
-- `menu`: one menu definition.
+- `windows`: an array of generic window definitions.
+- `wallpaper`: an array of wallpaper profiles. This is a lightweight desktop-window adapter.
+- `widgets`: an array of widget definitions. This is a lightweight desktop-window adapter.
 - `variables`: an object of JSON values shared with bridge-enabled pages.
 - `cues`: an array of Chronos cue names accepted by bridge-enabled pages.
 
@@ -14,13 +14,13 @@ Chronos-managed themes may contain Chronos-only `before` and `after` sections.
 Chronos removes those sections and sends Aether one sanitized inline document;
 direct Aether configuration does not accept them.
 
-Add at least one section. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
+Add at least one section. Aether intentionally does not accept a `menu` section; Chronos owns menu policy and creates its menu through the generic window API. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
 
 See [`README.md`](README.md) for the files in this directory and [`schema.json`](schema.json) for editor validation.
 
 ## URLs
 
-Add `url` to each wallpaper, widget, and menu definition. The loader accepts `http`, `https`, and `file` schemes. It adds `https://` to a value without a scheme.
+Add `url` to each generic window, wallpaper, or widget definition. The loader accepts `http`, `https`, and `file` schemes. It adds `https://` to a value without a scheme.
 
 ```json
 "url": "https://example.com/ui"
@@ -97,45 +97,71 @@ Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bott
 
 Set `id` for stable window control. Add `bridge` only when the page needs backend or control access.
 
-## Menu
+## Generic windows
 
-Give `menu` the same geometry and URL fields as a widget. Add these fields when needed:
+Use `windows` for any top-level or desktop window that does not need one of the
+small wallpaper/widget adapters:
 
-| Field | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `auto-hide` | No | `true` | Hide when another, non-owned foreground window becomes active. |
-| `hidden-behavior` | No | `none` | `none`, `pause`/`suspend`, or `unload`. |
-| `transparent` | No | `true` | Transparent Ultralight window. |
-| `thread-group` | No | `menu` | Runtime group. |
+```json
+{
+  "windows": [{
+    "id": "clock",
+    "url": "file:///C:/Shell/clock/index.html",
+    "thread-group": "utility",
+    "x": 50,
+    "y": 24,
+    "width": 320,
+    "height": 100,
+    "monitor": 1,
+    "anchor": "top-right",
+    "placement": "top-level",
+    "z-order": "topmost-when-focused",
+    "initial-visible": true,
+    "input": { "mouse": "native", "keyboard": "native", "focus": "on-show" },
+    "notifications": { "focus": true }
+  }]
+}
+```
 
-The optional `id` follows the same rules as a widget ID. The optional `bridge` object controls page access to configured backends and `/v1/` control routes. Keep bridge access disabled unless the page needs it.
+Generic definitions support `pixels` or `percent` units independently for
+position and size, `monitor`, `work-area`, or `virtual-screen` coordinate
+spaces, all nine anchors, framed/resizable/taskbar-visible styles, desktop or
+top-level placement, `bottom`/`normal`/`top`/`topmost`/
+`topmost-when-focused` z-order, `retain`/`pause`/`unload` hidden behavior,
+fullscreen suspension, native/forwarded/disabled mouse and keyboard input,
+focus-on-show/reveal/click, notification opt-ins, work-area reservation, and
+the existing backend/control/runtime bridge permissions.
 
-`none` hides the loaded window. `pause` hides the window and suspends its view. `unload` destroys the window; `--toggle-menu show` creates it again.
+The inherited control pipe exposes `GET|POST|PUT|DELETE /v1/renderer/windows`
+and `POST /v1/renderer/windows/{id}/actions`. Actions are `show`, `hide`,
+`toggle`, `focus`, `blur`, `pause`, `resume`, and `reload` (reload currently
+requires a group reload). Aether emits generic lifecycle, change, focus, and
+visibility events. Chronos uses these same operations for its menu; Aether has
+no menu-specific route, command, or runtime model.
 
 ## Bridge policy
 
-Add `bridge` to a wallpaper, widget, or menu when that page needs backend access:
+Add `bridge` to a generic window, wallpaper, or widget when that page needs backend access:
 
 ```json
 "bridge": {
   "enabled": true,
   "backend-ids": ["nyx"],
   "control-routes": ["/v1/status"],
-  "runtime-commands": ["toggleMenu", "hideMenu"]
+  "runtime-commands": ["showWindow", "hideWindow"]
 }
 ```
 
-`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. `runtime-commands` grants page JavaScript access to selected safe Aether commands. Supported values are `showMenu`, `hideMenu`, `toggleMenu`, `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and `reload`. Permissions default to empty.
+`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. `runtime-commands` grants page JavaScript access to selected safe generic Aether commands: `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and `reload`. Permissions default to empty.
 
 When granted, page JavaScript can call:
 
 ```js
-await window.aether.command({ command: "toggleMenu" });
 await window.aether.command({ command: "hideWindow", targetId: "widget-1" });
 await window.aether.command({ command: "pause", group: "desktop" });
 ```
 
-Menu commands accept no target fields. Window commands require `targetId`. Group commands accept optional `group` or `all`, but not both. The Promise resolves to `{ command, message }`; invalid, unauthorized, or failed commands reject. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
+Window commands require `targetId`. Group commands accept optional `group` or `all`, but not both. The Promise resolves to `{ command, message }`; invalid, unauthorized, or failed commands reject. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
 
 ## Variables and events
 

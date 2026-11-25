@@ -99,9 +99,6 @@ public sealed class HostOptions
                 case "--list":
                     SetCommand(ref command, new(RendererCommandKind.Show, Topic: NextRequiredTopic(args, ref index, inlineValue, option)), option);
                     break;
-                case "--toggle-menu":
-                    SetCommand(ref command, ParseMenuCommand(args, ref index, inlineValue, option), option);
-                    break;
                 case "--hide":
                     SetCommand(ref command, new(RendererCommandKind.HideWindow, TargetId: NextRequiredId(args, ref index, inlineValue, option)), option);
                     break;
@@ -168,13 +165,12 @@ public sealed class HostOptions
     };
 
     public const string HelpText = """
-        Aether - unified Ultralight wallpaper, widget, and menu host
+        Aether - generic Ultralight window host with wallpaper and widget adapters
 
         Usage:
           Aether.exe [--config <path> ...] [options]
-          Aether.exe --toggle-menu [show|hide]
           Aether.exe --hide <id> | --show <id>
-          Aether.exe --list pipes|config|windows|menu|paths
+          Aether.exe --list pipes|config|windows|paths
           Aether.exe --system-tray [show|hide]
           Aether.exe --pause [group] | --pause-all
           Aether.exe --resume [group] | --resume-all
@@ -194,9 +190,8 @@ public sealed class HostOptions
           --system-tray [show|hide]      Set tray visibility; bare flag toggles it.
 
         Runtime commands:
-          --toggle-menu [show|hide]      Toggle, show, or hide configured menu.
           --hide <id>, --show <id>       Hide or show one window.
-          --list <topic>                 List pipes, config, windows, menu, or paths as JSON.
+          --list <topic>                 List pipes, config, windows, or paths as JSON.
           --pause [group], --pause-all   Pause one group or all groups.
           --resume [group], --resume-all Resume one group or all groups.
           --status [group], --status-all Print one group or all groups.
@@ -229,24 +224,9 @@ public sealed class HostOptions
     private static string NextRequiredTopic(string[] args, ref int index, string? inlineValue, string option)
     {
         string value = NextValue(args, ref index, option, inlineValue).Trim().ToLowerInvariant();
-        if (value is not ("pipes" or "config" or "windows" or "menu" or "paths"))
-            throw new OptionException($"{option} topic must be pipes, config, windows, menu, or paths.");
+        if (value is not ("pipes" or "config" or "windows" or "paths"))
+            throw new OptionException($"{option} topic must be pipes, config, windows, or paths.");
         return value;
-    }
-
-    private static RendererCommand ParseMenuCommand(string[] args, ref int index, string? inlineValue, string option)
-    {
-        string? value = inlineValue;
-        if (value == null && index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal))
-            value = args[++index];
-
-        return value?.Trim().ToLowerInvariant() switch
-        {
-            null or "" => new(RendererCommandKind.ToggleMenu),
-            "show" => new(RendererCommandKind.ShowMenu),
-            "hide" => new(RendererCommandKind.HideMenu),
-            _ => throw new OptionException($"{option} value must be show or hide.")
-        };
     }
 
     private static SystemTrayAction NextSystemTrayAction(string[] args, ref int index, string? inlineValue, string option)

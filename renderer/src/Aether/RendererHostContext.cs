@@ -10,10 +10,10 @@ public sealed class RendererHostContext : ApplicationContext
     private readonly SingleInstanceLease _lease;
     private readonly Control _dispatcher = new();
     private readonly NotifyIcon? _tray;
-    private readonly ContextMenuStrip? _menu;
     private readonly CommandPipeServer _commandServer;
     private readonly InputRouter _input;
     private readonly FullscreenMonitor _fullscreenMonitor;
+    private readonly WindowFocusMonitor _focusMonitor;
     private readonly RendererLogger _logger;
     private BackendConnectionManager? _backendManager;
     private readonly object _sync = new();
@@ -73,6 +73,8 @@ public sealed class RendererHostContext : ApplicationContext
             _input = new InputRouter(GetDesktopWindows);
             _fullscreenMonitor = new FullscreenMonitor(OnFullscreenChanged);
             _fullscreenMonitor.Start();
+            _focusMonitor = new WindowFocusMonitor(OnForegroundChanged);
+            _focusMonitor.Start();
             _commandServer = new CommandPipeServer(HandleCommand);
             _commandServer.Start();
 
@@ -81,12 +83,10 @@ public sealed class RendererHostContext : ApplicationContext
 
             if (!options.NoTray && !_managedStartup)
             {
-                _menu = BuildMenu();
                 _tray = new NotifyIcon
                 {
                     Text = "Aether",
                     Icon = SystemIcons.Application,
-                    ContextMenuStrip = _menu,
                     Visible = options.InitialSystemTrayAction is not (SystemTrayAction.Hide or SystemTrayAction.Toggle)
                 };
             }
@@ -133,21 +133,6 @@ public sealed class RendererHostContext : ApplicationContext
         }
     }
 
-    private ContextMenuStrip BuildMenu()
-    {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Show menu", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.ShowMenu)));
-        menu.Items.Add("Hide menu", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.HideMenu)));
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Pause all groups", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.Pause, All: true)));
-        menu.Items.Add("Resume all groups", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.Resume, All: true)));
-        menu.Items.Add("Reload all groups", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.Reload, All: true)));
-        menu.Items.Add("Print status", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.Status, All: true)));
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExecuteUiCommand(new(RendererCommandKind.Exit)));
-        return menu;
-    }
-
     private void ExecuteUiCommand(RendererCommand command)
     {
         try
@@ -190,9 +175,6 @@ public sealed class RendererHostContext : ApplicationContext
                     command.ConfigJson,
                     command.ConfigSourcePaths),
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
-                RendererCommandKind.ShowMenu => SetMenuVisibility(true),
-                RendererCommandKind.HideMenu => SetMenuVisibility(false),
-                RendererCommandKind.ToggleMenu => ToggleMenuVisibility(),
                 RendererCommandKind.HideWindow => SetWindowVisibility(command.TargetId, false),
                 RendererCommandKind.RevealWindow => SetWindowVisibility(command.TargetId, true),
                 RendererCommandKind.Show => ShowTopic(command.Topic),
@@ -386,28 +368,6 @@ public sealed class RendererHostContext : ApplicationContext
         }
     }
 
-    private string SetMenuVisibility(bool visible)
-    {
-        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
-        if (spec == null)
-            return "ERR No menu window is configured.";
-        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
-            return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
-        if (visible) host.InvokeShowMenu(); else host.InvokeHideMenu();
-        return $"OK {(visible ? "showed" : "hid")} menu";
-    }
-
-    private string ToggleMenuVisibility()
-    {
-        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
-        if (spec == null)
-            return "ERR No menu window is configured.";
-        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
-            return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
-        bool visible = host.InvokeToggleMenu();
-        return $"OK {(visible ? "showed" : "hid")} menu";
-    }
-
     private string SetSystemTrayVisibility(SystemTrayAction action)
     {
         bool visible = false;
@@ -431,11 +391,9 @@ public sealed class RendererHostContext : ApplicationContext
     {
         if (string.IsNullOrWhiteSpace(id))
             return "ERR Window ID is required.";
-        RendererWindowSpec? spec = _specs.FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
-        if (spec == null)
+        RuntimeGroupHost? host = FindGroupForWindow(id);
+        if (host == null)
             return $"ERR Unknown window ID: {id}";
-        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
-            return $"ERR Window group '{spec.ThreadGroup}' is not running.";
         if (visible) host.InvokeRevealWindow(id); else host.InvokeHideWindow(id);
         _controlChannel?.TrySendEvent("window.changed", new
         {
@@ -454,7 +412,6 @@ public sealed class RendererHostContext : ApplicationContext
         {
             "config" => ControlPipeCodec.SerializeJson(BuildConfigPayload()),
             "windows" => ControlPipeCodec.SerializeJson(new { windows = GetWindowSnapshots() }),
-            "menu" => GetMenuVisibility(),
             "paths" => ControlPipeCodec.SerializeJson(RendererPaths.Resolve(_options.UltralightRoot)),
             "pipes" => ControlPipeCodec.SerializeJson(new
             {
@@ -464,23 +421,8 @@ public sealed class RendererHostContext : ApplicationContext
                 themeActivationId = ActiveThemeActivationId,
                 themeGeneration = ActiveThemeGeneration
             }),
-            _ => "ERR Show topic must be pipes, config, windows, menu, or paths."
+            _ => "ERR Show topic must be pipes, config, windows, or paths."
         };
-    }
-
-    private string GetMenuVisibility()
-    {
-        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
-        if (spec == null)
-            return ControlPipeCodec.SerializeJson(new { configured = false, id = (string?)null, visible = false });
-        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
-            return $"ERR Menu group '{spec.ThreadGroup}' is not running.";
-        return ControlPipeCodec.SerializeJson(new
-        {
-            configured = true,
-            id = spec.LogicalId,
-            visible = host.GetStartMenuVisibility()
-        });
     }
 
     private string RequestExit()
@@ -501,8 +443,8 @@ public sealed class RendererHostContext : ApplicationContext
     {
         if (request.Method == "POST" && request.Path == "/v1/renderer/configure")
             return ConfigureManagedRenderer(request);
-        if (request.Path == "/v1/renderer/menu")
-            return HandleManagedMenuRequest(request);
+        if (request.Path == "/v1/renderer/windows" || request.Path.StartsWith("/v1/renderer/windows/", StringComparison.Ordinal))
+            return HandleWindowRequest(request);
         if (request.Method == "GET" && request.Path == "/v1/pipes")
             return new ControlResponse(request.Id, 200, new
             {
@@ -522,59 +464,165 @@ public sealed class RendererHostContext : ApplicationContext
         return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown control route."));
     }
 
-    private ControlResponse HandleManagedMenuRequest(ControlRequest request)
+    private ControlResponse HandleWindowRequest(ControlRequest request)
     {
-        RendererWindowSpec? spec = _specs.FirstOrDefault(item => item.Kind == WindowKind.StartMenu);
+        const string prefix = "/v1/renderer/windows";
+        string suffix = request.Path.Length == prefix.Length ? "" : request.Path[prefix.Length..].Trim('/');
+        string? id = suffix.Length == 0 ? null : suffix.Split('/', StringSplitOptions.RemoveEmptyEntries)[0];
+        bool actionRoute = suffix.EndsWith("/actions", StringComparison.OrdinalIgnoreCase);
+        if (actionRoute)
+            id = suffix[..^"/actions".Length].Trim('/');
+
         if (request.Method == "GET")
         {
-            if (spec == null)
-                return new ControlResponse(request.Id, 200, new { configured = false, id = (string?)null, visible = false });
-            if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? queryHost))
-                return new ControlResponse(request.Id, 503,
-                    Error: new ControlError("menu_unavailable", $"Menu group '{spec.ThreadGroup}' is not running."));
-            return new ControlResponse(request.Id, 200, new
-            {
-                configured = true,
-                id = spec.LogicalId,
-                visible = queryHost.GetStartMenuVisibility()
-            });
+            if (id == null)
+                return new ControlResponse(request.Id, 200, new { windows = GetWindowSnapshots() });
+            WindowSnapshot? snapshot = GetWindowSnapshots().FirstOrDefault(window => window.Id == id);
+            return snapshot == null
+                ? new ControlResponse(request.Id, 404, Error: new ControlError("window_not_found", $"Unknown window ID: {id}"))
+                : new ControlResponse(request.Id, 200, snapshot);
         }
 
-        if (request.Method != "POST")
-            return new ControlResponse(request.Id, 405,
-                Error: new ControlError("method_not_allowed", "Menu route supports GET and POST."));
-        if (request.Body is not { } body || body.ValueKind != JsonValueKind.Object ||
-            !body.TryGetProperty("action", out JsonElement actionValue) ||
-            actionValue.ValueKind != JsonValueKind.String)
+        if (request.Method == "POST" && id == null)
         {
-            return new ControlResponse(request.Id, 400,
-                Error: new ControlError("menu_action_invalid", "Menu action must be show or hide."));
+            if (!TryResolveDynamicSpec(request.Body, out RendererWindowSpec? spec, out string error))
+                return new ControlResponse(request.Id, 400, Error: new ControlError("window_definition_invalid", error));
+            try
+            {
+                RuntimeGroupHost host = EnsureGroup(spec!.ThreadGroup);
+                WindowSnapshot snapshot = host.InvokeCreateWindow(spec);
+                EmitWindowEvent("window.created", snapshot);
+                return new ControlResponse(request.Id, 201, snapshot);
+            }
+            catch (Exception ex)
+            {
+                return new ControlResponse(request.Id, 409, Error: new ControlError("window_create_failed", ex.Message));
+            }
         }
 
-        string action = actionValue.GetString()?.Trim().ToLowerInvariant() ?? "";
-        if (action is not ("show" or "hide"))
-            return new ControlResponse(request.Id, 400,
-                Error: new ControlError("menu_action_invalid", "Menu action must be show or hide."));
-        if (spec == null)
-            return new ControlResponse(request.Id, 404,
-                Error: new ControlError("menu_not_configured", "No menu window is configured."));
-        if (!_groups.TryGetValue(spec.ThreadGroup, out RuntimeGroupHost? host))
-            return new ControlResponse(request.Id, 503,
-                Error: new ControlError("menu_unavailable", $"Menu group '{spec.ThreadGroup}' is not running."));
+        if (id == null)
+            return new ControlResponse(request.Id, 400, Error: new ControlError("window_id_required", "A window ID is required."));
+        RuntimeGroupHost? group = FindGroupForWindow(id);
 
-        bool visible = action == "show";
-        if (visible)
-            host.InvokeShowMenu();
-        else
-            host.InvokeHideMenu();
-        return new ControlResponse(request.Id, 200, new { configured = true, id = spec.LogicalId, visible });
+        if (request.Method == "DELETE")
+        {
+            if (group == null)
+                return new ControlResponse(request.Id, 404, Error: new ControlError("window_not_found", $"Unknown window ID: {id}"));
+            group.InvokeDestroyWindow(id);
+            EmitWindowEvent("window.destroyed", new { id });
+            return new ControlResponse(request.Id, 200, new { id, destroyed = true });
+        }
+
+        if (request.Method == "PUT")
+        {
+            if (!TryResolveDynamicSpec(request.Body, out RendererWindowSpec? replacement, out string error))
+                return new ControlResponse(request.Id, 400, Error: new ControlError("window_definition_invalid", error));
+            if (!string.Equals(replacement!.LogicalId, id, StringComparison.Ordinal))
+                return new ControlResponse(request.Id, 400, Error: new ControlError("window_id_mismatch", "Definition ID must match the URL ID."));
+            if (group != null)
+                group.InvokeDestroyWindow(id);
+            RuntimeGroupHost replacementGroup = EnsureGroup(replacement.ThreadGroup);
+            WindowSnapshot snapshot = replacementGroup.InvokeCreateWindow(replacement);
+            EmitWindowEvent("window.updated", snapshot);
+            return new ControlResponse(request.Id, 200, snapshot);
+        }
+
+        if (request.Method == "POST" && actionRoute)
+        {
+            if (group == null)
+                return new ControlResponse(request.Id, 404, Error: new ControlError("window_not_found", $"Unknown window ID: {id}"));
+            if (request.Body is not { } body || body.ValueKind != JsonValueKind.Object ||
+                !body.TryGetProperty("action", out JsonElement actionValue) || actionValue.ValueKind != JsonValueKind.String)
+                return new ControlResponse(request.Id, 400, Error: new ControlError("window_action_invalid", "Window action must be a string."));
+            try
+            {
+                string action = actionValue.GetString() ?? "";
+                WindowSnapshot snapshot = group.InvokeWindowAction(id, action);
+                EmitWindowEvent("window.changed", snapshot);
+                if (snapshot.State == AppWindowState.Closed)
+                    EmitWindowEvent("window.destroyed", new { id });
+                if (action.Trim().Equals("show", StringComparison.OrdinalIgnoreCase) ||
+                    action.Trim().Equals("hide", StringComparison.OrdinalIgnoreCase) ||
+                    action.Trim().Equals("toggle", StringComparison.OrdinalIgnoreCase))
+                    EmitWindowEvent("window.visibilityChanged", snapshot);
+                return new ControlResponse(request.Id, 200, snapshot);
+            }
+            catch (Exception ex)
+            {
+                return new ControlResponse(request.Id, 409, Error: new ControlError("window_action_failed", ex.Message));
+            }
+        }
+
+        return new ControlResponse(request.Id, 405, Error: new ControlError("method_not_allowed", "Unsupported window operation."));
     }
+
+    private bool TryResolveDynamicSpec(JsonElement? body, out RendererWindowSpec? spec, out string error)
+    {
+        spec = null;
+        error = "Window definition must be an object.";
+        if (body is not { } value || value.ValueKind != JsonValueKind.Object)
+            return false;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse($"{{\"windows\":[{value.GetRawText()}]}}");
+            IReadOnlyList<RendererWindowSpec> specs = RendererConfiguration.LoadJson(document.RootElement, "window request").ResolveWindowSpecs();
+            if (specs.Count != 1)
+            {
+                error = "Window definition must resolve to exactly one window.";
+                return false;
+            }
+            spec = specs[0];
+            return true;
+        }
+        catch (RendererConfigurationException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private RuntimeGroupHost EnsureGroup(string name)
+    {
+        lock (_sync)
+        {
+            if (_groups.TryGetValue(name, out RuntimeGroupHost? existing))
+                return existing;
+            RuntimeGroupHost group = new(name, _options, () => _specs, _logger, _backendManager, _controlChannel, HandleCommand);
+            group.Start();
+            _groups.Add(name, group);
+            return group;
+        }
+    }
+
+    private RuntimeGroupHost? FindGroupForWindow(string id)
+    {
+        lock (_sync)
+        {
+            foreach (RuntimeGroupHost group in _groups.Values)
+                if (group.GetWindowSnapshots().Any(window => string.Equals(window.Id, id, StringComparison.Ordinal)))
+                    return group;
+            return null;
+        }
+    }
+
+    private void EmitWindowEvent(string name, object body) => _controlChannel?.TrySendEvent(name, new
+    {
+        window = body,
+        themeId = _themeId,
+        themeActivationId = ActiveThemeActivationId,
+        themeGeneration = ActiveThemeGeneration
+    });
 
     private object BuildConfigPayload() => new
     {
         files = _configPaths,
         cues = _configuration.Cues,
-        sections = new { wallpaper = _configuration.Wallpapers, widgets = _configuration.Widgets, menu = _configuration.Menu },
+        sections = new { windows = _configuration.Windows, wallpaper = _configuration.Wallpapers, widgets = _configuration.Widgets },
         resolvedWindows = _specs,
         themeId = _themeId,
         themeActivationId = ActiveThemeActivationId,
@@ -859,6 +907,21 @@ public sealed class RendererHostContext : ApplicationContext
         }
     }
 
+    private void OnForegroundChanged(IntPtr foreground)
+    {
+        RuntimeGroupHost[] groups;
+        lock (_sync) groups = _groups.Values.ToArray();
+        foreach (RuntimeGroupHost group in groups)
+        {
+            try
+            {
+                foreach (WindowSnapshot snapshot in group.InvokeForegroundChanged(foreground))
+                    EmitWindowEvent("window.focusChanged", snapshot);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"[Focus] {ex.Message}"); }
+        }
+    }
+
     private void ExitHost()
     {
         if (_exiting)
@@ -866,6 +929,7 @@ public sealed class RendererHostContext : ApplicationContext
         _exiting = true;
         _input.Dispose();
         _fullscreenMonitor.Dispose();
+        _focusMonitor.Dispose();
         _commandServer.Dispose();
         _logger.Info("renderer.stopping");
         if (_tray != null)
@@ -873,7 +937,6 @@ public sealed class RendererHostContext : ApplicationContext
             _tray.Visible = false;
             _tray.Dispose();
         }
-        _menu?.Dispose();
         StopGroups();
         _backendManager?.Dispose();
         _logger.Dispose();

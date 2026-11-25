@@ -65,6 +65,7 @@ internal sealed class ShellForm : Form
     private readonly CheckBox _keybindAll = new();
     private readonly ComboBox _keybindActionKind = new();
     private readonly ComboBox _keybindCommand = new();
+    private readonly ComboBox _keybindMenuAction = new();
     private readonly ComboBox _keybindTrayAction = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
@@ -347,11 +348,14 @@ internal sealed class ShellForm : Form
         editor.Controls.Add(EditorField("Key", gesturePanel));
 
         _keybindActionKind.DropDownStyle = ComboBoxStyle.DropDownList;
-        _keybindActionKind.Items.AddRange(new object[] { KeybindActionKind.Cue, KeybindActionKind.AetherCommand });
+        _keybindActionKind.Items.AddRange(new object[] { KeybindActionKind.Cue, KeybindActionKind.AetherCommand, KeybindActionKind.ManagedMenu });
         _keybindActionKind.SelectedIndexChanged += (_, _) => { UpdateKeybindEditorVisibility(); MarkKeybindDirty(); };
         _keybindCommand.DropDownStyle = ComboBoxStyle.DropDownList;
         _keybindCommand.Items.AddRange(Enum.GetValues<RendererCommandKind>().Where(value => value != RendererCommandKind.None).Cast<object>().ToArray());
         _keybindCommand.SelectedIndexChanged += (_, _) => { UpdateKeybindEditorVisibility(); MarkKeybindDirty(); };
+        _keybindMenuAction.DropDownStyle = ComboBoxStyle.DropDownList;
+        _keybindMenuAction.Items.AddRange(Enum.GetValues<ManagedMenuAction>().Cast<object>().ToArray());
+        _keybindMenuAction.SelectedIndexChanged += (_, _) => MarkKeybindDirty();
         _keybindTrayAction.DropDownStyle = ComboBoxStyle.DropDownList;
         _keybindTrayAction.Items.AddRange(Enum.GetValues<SystemTrayAction>().Cast<object>().ToArray());
         _keybindGroup.Width = 220;
@@ -411,7 +415,7 @@ internal sealed class ShellForm : Form
         return new(
             Guid.NewGuid(),
             gesture,
-            Action: new KeybindAction(KeybindActionKind.AetherCommand, Command: RendererCommandKind.ToggleMenu));
+            Action: new KeybindAction(KeybindActionKind.ManagedMenu, MenuAction: ManagedMenuAction.Toggle));
     }
 
     private void AddKeybind()
@@ -472,7 +476,8 @@ internal sealed class ShellForm : Form
             _keybindGesture.Text = _editingKeybind.Gesture.DisplayName;
             _keybindOverride.Checked = _editingKeybind.Override;
             _keybindActionKind.SelectedItem = action.Kind;
-            _keybindCommand.SelectedItem = action.Command == RendererCommandKind.None ? RendererCommandKind.ShowMenu : action.Command;
+            _keybindCommand.SelectedItem = action.Command == RendererCommandKind.None ? RendererCommandKind.Show : action.Command;
+            _keybindMenuAction.SelectedItem = action.MenuAction;
             _keybindGroup.Text = action.Group ?? string.Empty;
             _keybindTarget.Text = action.TargetId ?? string.Empty;
             _keybindTopic.Text = action.Topic ?? string.Empty;
@@ -503,13 +508,14 @@ internal sealed class ShellForm : Form
         var action = new KeybindAction(
             kind,
             CueNames: _keybindCueList.CheckedItems.Cast<CueOption>().Select(option => option.Name).ToArray(),
-            Command: _keybindCommand.SelectedItem is RendererCommandKind command ? command : RendererCommandKind.ShowMenu,
+            Command: _keybindCommand.SelectedItem is RendererCommandKind command ? command : RendererCommandKind.Show,
             Group: _keybindGroup.Text,
             All: _keybindAll.Checked,
             TargetId: _keybindTarget.Text,
             Topic: _keybindTopic.Text,
             ConfigPaths: configPaths,
-            TrayAction: _keybindTrayAction.SelectedItem is SystemTrayAction trayAction ? trayAction : SystemTrayAction.Toggle);
+            TrayAction: _keybindTrayAction.SelectedItem is SystemTrayAction trayAction ? trayAction : SystemTrayAction.Toggle,
+            MenuAction: _keybindMenuAction.SelectedItem is ManagedMenuAction menuAction ? menuAction : ManagedMenuAction.Toggle);
         KeybindDefinition nextBinding = _editingKeybind with
         {
             Gesture = ParseGesture(_keybindGesture.Text, _editingKeybind.Gesture),
@@ -554,16 +560,22 @@ internal sealed class ShellForm : Form
         _keybindActionKind.Enabled = editable;
         _keybindOverride.Enabled = editable;
         bool cue = _keybindActionKind.SelectedItem is KeybindActionKind.Cue;
+        bool managedMenu = _keybindActionKind.SelectedItem is KeybindActionKind.ManagedMenu;
         if (cue)
         {
             _keybindCueList.Enabled = editable;
             _keybindOptionsPanel.Controls.Add(EditorField("Cues", _keybindCueList));
         }
+        else if (managedMenu)
+        {
+            _keybindMenuAction.Enabled = editable;
+            _keybindOptionsPanel.Controls.Add(EditorField("Menu action", _keybindMenuAction));
+        }
         else
         {
             _keybindCommand.Enabled = editable;
             _keybindOptionsPanel.Controls.Add(EditorField("Command", _keybindCommand));
-            RendererCommandKind command = _keybindCommand.SelectedItem is RendererCommandKind selected ? selected : RendererCommandKind.ToggleMenu;
+            RendererCommandKind command = _keybindCommand.SelectedItem is RendererCommandKind selected ? selected : RendererCommandKind.Show;
             switch (command)
             {
                 case RendererCommandKind.Show:

@@ -12,14 +12,15 @@
       "description": "Wallpaper profiles. Each profile resolves to one or more desktop windows.",
       "items": { "$ref": "#/$defs/wallpaper" }
     },
+    "windows": {
+      "type": "array",
+      "description": "Generic Aether windows.",
+      "items": { "$ref": "#/$defs/genericWindow" }
+    },
     "widgets": {
       "type": "array",
       "description": "Desktop widget windows.",
       "items": { "$ref": "#/$defs/widget" }
-    },
-    "menu": {
-      "description": "One menu window.",
-      "$ref": "#/$defs/startMenu"
     },
     "variables": {
       "type": "object",
@@ -72,9 +73,6 @@
           "items": {
             "type": "string",
             "enum": [
-              "showMenu",
-              "hideMenu",
-              "toggleMenu",
               "showWindow",
               "hideWindow",
               "pause",
@@ -99,6 +97,70 @@
         "bottom",
         "bottom-right"
       ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mouse": { "enum": ["none", "native", "forwarded"] },
+        "keyboard": { "enum": ["none", "native", "forwarded"] },
+        "focus": { "enum": ["never", "on-show", "on-reveal", "on-click"] },
+        "click-through": { "type": "boolean" }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "focus": { "type": "boolean" },
+        "visibility": { "type": "boolean" },
+        "geometry": { "type": "boolean" },
+        "lifecycle": { "type": "boolean" }
+      }
+    },
+    "workArea": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "edge": { "enum": ["top", "bottom", "left", "right"] },
+        "thickness": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "genericWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "url", "width", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "url": { "$ref": "#/$defs/url" },
+        "thread-group": { "$ref": "#/$defs/threadGroup" },
+        "title": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "monitor": { "type": "integer", "minimum": 1 },
+        "coordinate-space": { "enum": ["monitor", "work-area", "virtual-screen"] },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "x-unit": { "enum": ["pixels", "percent"] },
+        "y-unit": { "enum": ["pixels", "percent"] },
+        "width-unit": { "enum": ["pixels", "percent"] },
+        "height-unit": { "enum": ["pixels", "percent"] },
+        "framed": { "type": "boolean" },
+        "transparent": { "type": "boolean" },
+        "resizable": { "type": "boolean" },
+        "show-in-taskbar": { "type": "boolean" },
+        "placement": { "enum": ["desktop", "top-level", "toplevel", "window"] },
+        "z-order": { "enum": ["bottom", "below", "normal", "top", "above", "topmost", "topmost-when-focused", "focus"] },
+        "initial-visible": { "type": "boolean" },
+        "hidden-behavior": { "enum": ["retain", "none", "pause", "suspend", "unload"] },
+        "suspend-on-fullscreen": { "type": "boolean" },
+        "input": { "$ref": "#/$defs/input" },
+        "notifications": { "$ref": "#/$defs/notifications" },
+        "work-area": { "$ref": "#/$defs/workArea" },
+        "bridge": { "$ref": "#/$defs/bridge" }
+      }
     },
     "geometry": {
       "type": "object",
@@ -194,22 +256,6 @@
         "thread-group": { "$ref": "#/$defs/threadGroup" },
         "bridge": { "$ref": "#/$defs/bridge" }
       }
-    },
-    "startMenu": {
-      "allOf": [
-        { "$ref": "#/$defs/geometry" },
-        {
-          "type": "object",
-          "properties": {
-            "auto-hide": { "type": "boolean" },
-            "hidden-behavior": {
-              "type": "string",
-              "enum": ["none", "pause", "suspend", "unload"]
-            }
-          }
-        }
-      ],
-      "unevaluatedProperties": false
     }
   }
 }

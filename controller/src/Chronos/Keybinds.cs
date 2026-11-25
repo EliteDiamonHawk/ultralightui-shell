@@ -7,7 +7,15 @@ namespace Chronos;
 internal enum KeybindActionKind
 {
     Cue = 0,
-    AetherCommand = 1
+    AetherCommand = 1,
+    ManagedMenu = 2
+}
+
+internal enum ManagedMenuAction
+{
+    Toggle = 0,
+    Show = 1,
+    Hide = 2
 }
 
 [Flags]
@@ -58,7 +66,8 @@ internal sealed record KeybindAction(
     string? TargetId = null,
     string? Topic = null,
     IReadOnlyList<string>? ConfigPaths = null,
-    SystemTrayAction TrayAction = SystemTrayAction.Toggle)
+    SystemTrayAction TrayAction = SystemTrayAction.Toggle,
+    ManagedMenuAction MenuAction = ManagedMenuAction.Toggle)
 {
     public IReadOnlyList<string> EffectiveCueNames => CueNames ?? Array.Empty<string>();
 
@@ -84,7 +93,9 @@ internal sealed record KeybindDefinition(
 
     public string DisplayName => EffectiveAction.Kind == KeybindActionKind.Cue
         ? $"{Gesture.DisplayName} -> cue:{string.Join(", ", EffectiveAction.EffectiveCueNames)}"
-        : $"{Gesture.DisplayName} -> {EffectiveAction.Command}";
+        : EffectiveAction.Kind == KeybindActionKind.ManagedMenu
+            ? $"{Gesture.DisplayName} -> menu:{EffectiveAction.MenuAction.ToString().ToLowerInvariant()}"
+            : $"{Gesture.DisplayName} -> {EffectiveAction.Command}";
 
     public override string ToString() => DisplayName;
 }
@@ -92,6 +103,7 @@ internal sealed record KeybindDefinition(
 internal static class KeybindCatalog
 {
     internal static readonly Guid WindowsBindingId = Guid.Parse("9b4e6f4f-9f92-4b95-a36d-0d7d6cfe72e6");
+    private const int LegacyToggleMenuCommand = 13;
 
     public static IReadOnlyList<KeybindDefinition> NormalizeAndValidate(IReadOnlyList<KeybindDefinition> bindings)
     {
@@ -121,6 +133,11 @@ internal static class KeybindCatalog
             else if (action.Kind == KeybindActionKind.AetherCommand)
             {
                 ValidateCommand(action);
+            }
+            else if (action.Kind == KeybindActionKind.ManagedMenu)
+            {
+                if (!Enum.IsDefined(action.MenuAction))
+                    throw new InvalidOperationException("Unknown managed menu action.");
             }
             else
             {
@@ -168,13 +185,26 @@ internal static class KeybindCatalog
         new KeybindGesture(Keys.LWin),
         enabled,
         Override: true,
-        new KeybindAction(KeybindActionKind.AetherCommand, Command: RendererCommandKind.ToggleMenu),
+        new KeybindAction(KeybindActionKind.ManagedMenu, MenuAction: ManagedMenuAction.Toggle),
         SystemBinding: true);
 
     public static IReadOnlyList<KeybindDefinition> EnsureWindowsBinding(IReadOnlyList<KeybindDefinition>? bindings, bool fallbackEnabled)
     {
         var result = (bindings ?? Array.Empty<KeybindDefinition>()).Where(binding => !binding.SystemBinding).ToList();
         KeybindDefinition? existing = bindings?.FirstOrDefault(binding => binding.SystemBinding);
+        if (existing is { EffectiveAction.Kind: KeybindActionKind.AetherCommand } &&
+            (int)existing.EffectiveAction.Command == LegacyToggleMenuCommand)
+        {
+            existing = existing with
+            {
+                Action = existing.EffectiveAction with
+                {
+                    Kind = KeybindActionKind.ManagedMenu,
+                    Command = RendererCommandKind.None,
+                    MenuAction = ManagedMenuAction.Toggle
+                }
+            };
+        }
         result.Insert(0, existing ?? CreateWindowsBinding(fallbackEnabled));
         return NormalizeAndValidate(result);
     }
@@ -188,8 +218,8 @@ internal static class KeybindCatalog
     private static void ValidateSystemBinding(KeybindDefinition binding)
     {
         if (binding.Id != WindowsBindingId || binding.Gesture != new KeybindGesture(Keys.LWin) ||
-            binding.EffectiveAction.Kind != KeybindActionKind.AetherCommand ||
-            binding.EffectiveAction.Command != RendererCommandKind.ToggleMenu)
+            binding.EffectiveAction.Kind != KeybindActionKind.ManagedMenu ||
+            binding.EffectiveAction.MenuAction != ManagedMenuAction.Toggle)
             throw new InvalidOperationException("Invalid system Windows key binding.");
     }
 }

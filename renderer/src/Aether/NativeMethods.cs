@@ -58,6 +58,7 @@ internal static class NativeMethods
     internal const long WS_EX_APPWINDOW = 0x00040000L;
     internal const long WS_EX_TOOLWINDOW = 0x00000080L;
     internal const long WS_EX_NOACTIVATE = 0x08000000L;
+    internal const long WS_EX_TRANSPARENT = 0x00000020L;
     internal const uint SWP_NOACTIVATE = 0x0010;
     internal const uint SWP_NOMOVE = 0x0002;
     internal const uint SWP_NOSIZE = 0x0001;

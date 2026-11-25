@@ -38,7 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\contracts\RendererContracts.csproj">
+    <ProjectReference Include="..\..\..\contracts\src\RendererContracts\RendererContracts.csproj">
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
     <None Include="TestAssets\probe.html" Link="assets\probe.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

@@ -101,7 +101,7 @@ public sealed class UltralightRuntime : IDisposable
             if (hwnd == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight window has no native handle: {spec.LogicalId}");
 
-            UltralightNative.ulWindowSetTitle(window, $"Aether - {spec.LogicalId}");
+            UltralightNative.ulWindowSetTitle(window, spec.EffectiveTitle);
             IntPtr viewConfig = UltralightNative.ulCreateViewConfig();
             if (viewConfig == IntPtr.Zero)
                 throw new InvalidOperationException($"Ultralight view configuration could not be created: {spec.LogicalId}");
@@ -307,6 +307,7 @@ public sealed class AppWindow
     public bool DesiredSuspended { get; internal set; }
     public bool RendererSuspended { get; internal set; }
     public bool IsVisible { get; internal set; }
+    public bool Focused { get; internal set; }
     public bool DesiredVisible { get; internal set; } = true;
     public bool TopmostPlacementApplied { get; internal set; }
     public WindowKind Kind => Spec.Kind;

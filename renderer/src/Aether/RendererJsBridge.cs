@@ -1221,15 +1221,7 @@ internal sealed class RendererJsBridge : IDisposable
             return false;
         }
 
-        if (kind is RendererCommandKind.ShowMenu or RendererCommandKind.HideMenu or RendererCommandKind.ToggleMenu)
-        {
-            if (group != null || all || targetId != null)
-            {
-                error = $"{commandName} does not accept group, all, or targetId.";
-                return false;
-            }
-        }
-        else if (kind is RendererCommandKind.RevealWindow or RendererCommandKind.HideWindow)
+        if (kind is RendererCommandKind.RevealWindow or RendererCommandKind.HideWindow)
         {
             if (targetId == null)
             {

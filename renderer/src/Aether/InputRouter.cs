@@ -183,7 +183,7 @@ public sealed class InputRouter : IDisposable
 
     private void SetKeyboardCandidate(WallpaperWindow? target)
     {
-        if (target == null)
+        if (target == null || target.AppWindow.Spec.EffectiveInput.Keyboard != WindowInputMode.Forwarded)
         {
             EndBackgroundKeyboardInteraction("background click without target");
             return;
@@ -443,7 +443,9 @@ public sealed class InputRouter : IDisposable
     }
 
     private WallpaperWindow? FindWallpaperWindow(NativeMethods.POINT point) =>
-        _windows().Where(window => NativeMethods.IsWindow(window.AppWindow.Hwnd) && window.Bounds.Contains(point.X, point.Y))
+        _windows().Where(window => window.AppWindow.Spec.EffectiveInput.Mouse == WindowInputMode.Forwarded &&
+                                  !window.AppWindow.Spec.EffectiveInput.ClickThrough &&
+                                  NativeMethods.IsWindow(window.AppWindow.Hwnd) && window.Bounds.Contains(point.X, point.Y))
             .OrderBy(window => window.Bounds.Width * (long)window.Bounds.Height).FirstOrDefault();
 
     private static IntPtr ResolveInputWindow(WallpaperWindow window, NativeMethods.POINT screenPoint)
