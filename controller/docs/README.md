@@ -1,6 +1,6 @@
 # Chronos documentation
 
-Use these pages when you run or change Chronos.
+Use these pages to run or change Chronos.
 
 - [`architecture.md`](architecture.md): lifecycle, ownership, and shutdown.
 - [`control-protocol.md`](control-protocol.md): inherited control transport and routes.

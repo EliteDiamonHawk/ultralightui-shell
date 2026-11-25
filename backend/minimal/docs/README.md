@@ -1,7 +1,7 @@
 # Minimal backend template
 
-Minimal is a reference implementation for detached backends launched by
-Chronos and consumed by Aether. Copy its transport and lifecycle shape, then
+Minimal is a reference implementation for detached backends that Chronos
+launches and Aether consumes. Copy its transport and lifecycle shape, then
 replace its domain state, routes, and stream producers.
 
 Ownership:
@@ -22,7 +22,7 @@ Chronos launches the backend with:
 --chronos-pipe <name> --backend-id <id> --protocol 1 --sid <current-user-sid>
 ```
 
-Backend must:
+The backend must:
 
 1. Validate supplied SID against its process identity.
 2. Create the private named-pipe server.
@@ -30,14 +30,14 @@ Backend must:
 4. Serve UTF-8 NDJSON on the pipe.
 5. Dispose client-owned subscriptions on disconnect.
 
-Backend payloads never pass through Chronos. Aether connects directly to the
-private pipe after receiving a short-lived grant from Chronos.
+Chronos never proxies backend payloads. After Chronos grants access, Aether
+connects directly to the private pipe.
 
 ## Build and test
 
 ```powershell
-dotnet build .\backend\minimal\minimal\MinimalBackend.csproj
-dotnet run --project .\backend\minimal\minimal.Tests\MinimalBackend.Tests.csproj --no-restore
+dotnet build .\backend\minimal\src\MinimalBackend\MinimalBackend.csproj
+dotnet run --project .\backend\minimal\tests\MinimalBackend.Tests\MinimalBackend.Tests.csproj --no-restore
 ```
 
 See [`protocol.md`](protocol.md) and [`routes.md`](routes.md) before adapting

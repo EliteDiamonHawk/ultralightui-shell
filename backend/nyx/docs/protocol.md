@@ -7,8 +7,8 @@ Chronos launches Nyx with:
 ```
 
 Nyx emits one readiness JSON line, then accepts protocol-v1 UTF-8 NDJSON over
-the supplied private named pipe. Frames use the shared `BackendCodec`, have a
-1 MiB maximum, and may complete out of order.
+the supplied private named pipe. `BackendCodec` reads frames up to 1 MiB. The
+server may complete requests out of order.
 
 Generic transport routes:
 
@@ -18,7 +18,7 @@ POST /v1/streams
 DELETE /v1/streams/{stream-id}
 ```
 
-Nyx currently supports the `json` stream type and
-`nyx.system.metrics` data ID. Metric stream payloads use a fixed object with a
-`json` string containing a serialized snapshot message; this keeps the stream
-schema valid despite nullable and dynamic metric fields.
+Nyx supports the `json` stream type and `nyx.system.metrics` data ID. Metric
+stream payloads use a fixed object with a `json` string that contains a
+serialized snapshot message. That envelope keeps the stream schema valid while
+metric fields remain nullable and dynamic.

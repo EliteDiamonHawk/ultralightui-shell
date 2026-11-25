@@ -1,8 +1,8 @@
 # Theme hooks
 
-Chronos reserves top-level `before` and `after` arrays in theme files. These
-sections are consumed by Chronos and removed before configuration is sent to
-Aether. A theme may keep hooks in their own file or mix them with one Aether
+Chronos reserves top-level `before` and `after` arrays in theme files. Chronos
+consumes those sections and removes them before it sends configuration to
+Aether. A theme can keep hooks in their own file or mix them with one Aether
 configuration section.
 
 ```json
@@ -27,20 +27,20 @@ configuration section.
 ```
 
 Structured entries support `executable`, optional `arguments`, and these
-boolean options. All default to `false`:
+boolean options. Each defaults to `false`:
 
-- `waitForExit`: wait for this process before hook phase completes. Later
+- `waitForExit`: wait for this process before the hook phase completes. Later
   hooks may launch first unless `stall` is also true.
 - `stall`: wait for this process before launching later hooks.
 - `exitAfter`: valid only for `before`; Chronos force-terminates this tracked
-  process on theme change, unload, renderer loss, or application shutdown.
+  process when the theme changes, unloads, loses the renderer, or shuts down.
 
 String entries run through the Windows command shell and use default options.
 Chronos launches hooks in listed order, logs launch failures, and does not
-otherwise monitor hook processes.
+monitor hook processes after launch.
 
-During a theme switch, incoming `before` hooks and Aether configuration are
-completed before outgoing `after` hooks run. Outgoing `after` hooks are the
-final transition work. During shutdown, Chronos stops Aether and backends,
-terminates tracked `before` processes, then runs active `after` hooks before
-exiting.
+During a theme switch, Chronos completes incoming `before` hooks and Aether
+configuration before it runs outgoing `after` hooks. Outgoing `after` hooks
+finish the transition. During shutdown, Chronos stops Aether and backends,
+terminates tracked `before` processes, then runs active `after` hooks before it
+exits.

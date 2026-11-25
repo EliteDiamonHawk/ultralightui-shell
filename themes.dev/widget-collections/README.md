@@ -1,17 +1,17 @@
 # KhaosShell Widget Collections
 
-This directory is a pnpm workspace containing four separated widget
-collections and shared build/runtime packages.
+This directory is a pnpm workspace with widget collections and shared
+build/runtime packages.
 
 KhaosShell is the application as a whole. Aether is the renderer used by
 KhaosShell and the communication surface exposed to widgets.
 
 ## Collections
 
-- `basic` — minimal plain WebSkin widgets.
-- `end4-pc-remake` — end4-pc-remake visual references.
-- `paper-charcoal` — current Paper-Charcoal widgets.
-- `other` — widgets outside the named collections.
+- `basic`: minimal plain WebSkin widgets.
+- `end4-pc-remake`: end4-pc-remake visual references.
+- `paper-charcoal`: Paper-Charcoal widgets.
+- `other`: widgets outside the named collections.
 
 Each widget is addressed as `<collection>/<widget-id>`, for example
 `paper-charcoal/paper-battery-meter`.
@@ -34,10 +34,10 @@ Build one widget, a collection, or everything:
     pnpm collection:build --collection paper-charcoal
     pnpm build
 
-Build outputs are written under `dist/standalone/<collection>/<widget>` and
-`dist/embed/<collection>/<widget>`. Standalone output is a runnable page.
-Embed output contains static `widget.html`, `widget.css`, `widget.js`,
-`widget.json`, and only the assets required by that widget.
+The builder writes standalone output to `dist/standalone/<collection>/<widget>`
+and embed output to `dist/embed/<collection>/<widget>`. Standalone output is a
+runnable page. Embed output contains static `widget.html`, `widget.css`,
+`widget.js`, `widget.json`, and the assets that widget needs.
 
 The embeddable module exports `mount(root, options)` and returns an object with
 `destroy()`. It expects the static markup from `widget.html` in the supplied
@@ -47,4 +47,4 @@ Shared runtime code lives in `packages/widget-runtime`; common assets live in
 `packages/widget-assets`; reusable visual frames live in
 `packages/widget-style-primitives`.
 
-Shared workspace documentation lives in `docs/`.
+Workspace documentation lives in `docs/`.

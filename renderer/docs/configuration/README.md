@@ -1,6 +1,7 @@
 # Configuration files
 
-This directory contains the canonical renderer example and schema.
+This directory contains the canonical renderer example, schema, and
+configuration reference.
 
 Files:
 
@@ -14,6 +15,9 @@ Start the renderer from `renderer/`:
 .\scripts\run.ps1 -Arguments @('--config', '.\docs\configuration\example.json')
 ```
 
-You can split sections across files. Pass each file with another `--config` option. Put each top-level section in one file only.
+Split sections across files by passing each file with another `--config` option.
+Put each top-level section in one file only.
 
-The parser accepts comments, trailing commas, case-insensitive field names, bare host names, and numeric or boolean strings for compatibility. Use the canonical field names and JSON types from `schema.json` in new files.
+The parser accepts comments, trailing commas, case-insensitive field names,
+bare host names, and numeric or boolean strings for compatibility. Use the
+canonical field names and JSON types from `schema.json` in new files.

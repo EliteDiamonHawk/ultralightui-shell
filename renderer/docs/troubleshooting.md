@@ -8,7 +8,7 @@ Check that the SDK is under `renderer\third_party\ultralight`, set `ULTRALIGHT_S
 
 ## Configuration rejected
 
-Configuration errors identify the section, item, or field. Check:
+Configuration errors identify the section, item, or field. Check these rules:
 
 - the root is an object;
 - the file set contains at least one known top-level section;
@@ -22,7 +22,9 @@ Configuration errors identify the section, item, or field. Check:
 
 Runtime commands require a running instance for the same user. Start the host with at least one `--config` first. Avoid combining a command such as `--status-all` with startup options.
 
-If another process owns the instance, inspect and close that process before starting another copy. Do not delete lock or IPC state; the lease and pipe belong to the running process.
+If another process owns the instance, inspect and close that process before you
+start another copy. Do not delete lock or IPC state; the running process owns
+the lease and pipe.
 
 ## Widget is misplaced or clipped
 
@@ -34,14 +36,15 @@ Use `--verbose` and inspect `[EmbedCheck]` / `[Window]` output. Confirm:
 - width and height are positive;
 - mixed-DPI monitor placement is tested on the target machine.
 
-The host periodically reconciles native geometry. A repeated geometry error usually indicates a Windows desktop-host or DPI interaction, not a URL problem.
+The host periodically reconciles native geometry. A repeated geometry error
+points to a Windows desktop-host or DPI interaction rather than a URL problem.
 
 ## Top-level window does not remain visible
 
 Check the generic window's `initial-visible`, `hidden-behavior`, focus policy,
 and z-order. `pause` suspends a retained view and `unload` destroys it; the
 caller must recreate an unloaded window through the generic window API. When
-Chronos owns a menu, its controller handles auto-hide and recreation.
+Chronos owns a menu, Chronos handles auto-hide and recreation.
 
 ```powershell
 Aether.exe --show <window-id>
@@ -50,4 +53,6 @@ Aether.exe --status-all
 
 ## Reload rejected
 
-Reload validates the complete candidate configuration before changing active windows. Fix the reported config error. If the edit adds or removes a `thread-group`, use `--reload-all`.
+Reload validates the complete candidate configuration before changing active
+windows. Fix the reported configuration error. If the edit adds or removes a
+`thread-group`, use `--reload-all`.

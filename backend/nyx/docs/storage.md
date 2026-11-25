@@ -9,10 +9,10 @@ Default root:
     <encoded-data-id>\<encoded-datatype>.json
 ```
 
-App settings currently include backend-wide runtime values such as
+App settings include backend-wide runtime values such as
 `hardware_monitor_enabled`. Provider settings use both `dataId` and
-`datatype`, for example `nyx.system.metrics` plus `json`.
+`datatype`, such as `nyx.system.metrics` and `json`.
 
-Files use version `1`, safe encoded identifiers, and atomic temporary-file
-replacement. Missing data scopes read as empty objects and are created on the
-first write.
+Nyx writes version `1` files with safe encoded identifiers and atomic
+temporary-file replacement. A missing data scope reads as an empty object; Nyx
+creates the file on its first write.

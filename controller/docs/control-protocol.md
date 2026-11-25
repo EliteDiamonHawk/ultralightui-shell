@@ -8,15 +8,19 @@ anonymous pipe handles:
 --control-write-handle <uint64>  Aether -> Chronos
 ```
 
-Each frame contains one object and may not exceed 1 MiB. A request uses a UUID
-`id`, an uppercase `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` method, and a
+Each frame contains one object and may not exceed 1 MiB. A request carries a
+UUID `id`, an uppercase `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` method, and a
 `/v1/` path. A response repeats the ID and contains either `body` or a
-structured `error`. Requests may complete out of order.
+structured `error`. The peers may complete requests out of order.
 
-Readers enforce the frame limit while consuming bytes. Oversized frames receive a `400` error with a null ID. Invalid request IDs also produce null-ID errors, so clients do not wait for an unusable correlation ID. Peer EOF fails pending requests and marks the session disconnected.
+Readers enforce the frame limit while consuming bytes. The receiver returns a
+`400` error with a null ID for an oversized frame. It also returns a null-ID
+error for an invalid request ID, so clients do not wait for an unusable
+correlation ID. Peer EOF fails pending requests and marks the session
+disconnected.
 
-Managed startup is transport-first. Aether parses only the two handle options,
-acquires its single-instance lease, starts this channel, and emits
+Managed startup begins with transport. Aether parses only the two handle
+options, acquires its single-instance lease, starts this channel, and emits
 `renderer.transport.ready`. Chronos then sends `POST /v1/renderer/configure`.
 That request carries `ultralightRoot`, `noTray`, optional theme identity, and
 one config source:
@@ -36,14 +40,14 @@ one config source:
 
 `mode` may be `paths`, `json`, or omitted for an idle renderer. JSON mode
 contains an object `document` instead of `paths`; `sourcePaths` identifies the
-Chronos theme source and does not cause Aether to read that file. A successful
-configuration returns `2xx` and emits `renderer.ready`. Invalid or failed
-startup configuration returns a structured error.
+Chronos theme source, but Aether does not read that file. A successful
+configuration returns `2xx` and emits `renderer.ready`. Aether returns a
+structured error for invalid or failed startup configuration.
 
 Chronos-managed themes use `mode: "json"` with sanitized inline JSON. Chronos
-removes its `before` and `after` hook sections first, and sends original theme
-paths only as `sourcePaths` metadata. This keeps Chronos-only sections out of
-Aether's configuration parser while preserving theme-file identity.
+removes its `before` and `after` hook sections, then sends the original theme
+paths as `sourcePaths` metadata. Aether's configuration parser never sees the
+Chronos-only sections, and Chronos retains theme-file identity.
 
 Chronos handles:
 
@@ -66,14 +70,16 @@ Chronos may send unsolicited cue events to Aether:
 {"id":null,"event":"cue","body":{"name":"menu.toggle","data":{}}}
 ```
 
-Aether forwards only cue names declared in active configuration to
+Aether forwards only cue names that the active configuration declares to
 bridge-enabled renderer pages.
 
 Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs act as
 idempotency keys for five minutes or 256 entries. Duplicate content replays;
 different content returns `409 request_id_reused`.
 
-The existing Aether named pipe remains the renderer's direct runtime command
-transport. Chronos does not expose a second command pipe.
+The existing Aether named pipe carries direct renderer runtime commands.
+Chronos does not expose a second command pipe.
 
-Backend pipe EOF fails pending page requests and removes the stale connection. The next request reconnects through the current grant. Chronos disposes an exited backend before launching its replacement.
+Backend pipe EOF fails pending page requests and removes the stale connection.
+The next request reconnects through the current grant. Chronos disposes an
+exited backend before launching its replacement.

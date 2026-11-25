@@ -13,11 +13,12 @@ diagnostic.
 
 ## Control disconnected
 
-The renderer session is no longer usable. Chronos revokes backend grants,
-keeps its tray/UI alive, and starts a fresh Aether session when a theme is
-applied again.
+The renderer session is no longer usable. Chronos revokes backend grants, keeps
+the tray and UI alive, and starts a fresh Aether session when you apply a theme
+again.
 
-Pending control requests fail when EOF arrives. Backend requests reconnect on a later call after Aether drops its stale backend pipe.
+Pending control requests fail when EOF arrives. After Aether drops its stale
+backend pipe, a later backend request creates a new connection.
 
 ## Windows Key Override remains disabled
 

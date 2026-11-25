@@ -1,10 +1,10 @@
 # Aether JavaScript API
 
-This document describes the communication contract available to theme pages.
-It covers page JavaScript, Aether, Chronos, and detached backends.
+This document defines the communication contract for theme pages. It covers
+page JavaScript, Aether, Chronos, and detached backends.
 
-The bridge carries JSON values. Aether owns the private backend pipe and
-Chronos control channel. Theme JavaScript never receives an OS pipe name,
+The bridge carries JSON values. Aether owns the private backend pipe, and
+Chronos owns the control channel. Theme JavaScript receives no OS pipe name,
 process handle, backend grant, or raw protocol frame.
 
 ## 1. Enable the bridge
@@ -36,8 +36,8 @@ communication:
 ```
 
 `backend-ids`, `control-routes`, and `runtime-commands` are allow-lists. An
-empty list grants no access for that category. A file URL enables the bridge
-by default; network URLs need `"enabled": true`.
+empty list grants no access for that category. A file URL enables the bridge by
+default; network URLs need `"enabled": true`.
 
 Without an attached bridge, `window.renderer` does not exist. Check before
 using it when the same page also runs in a normal browser:
@@ -92,14 +92,14 @@ console.log(window.renderer.capabilities);
 ```
 
 The capability flags describe runtime support. The arrays describe policy.
-Still handle rejected Promises: a backend can stop, a grant can expire, or a
-page can be unloaded while an operation is pending.
+Handle rejected Promises. A backend can stop, a grant can expire, or a page can
+unload while an operation is pending.
 
 ## 3. Backend requests from frontend JavaScript
 
 ### Inspect a backend route
 
-`openPipe()` is synchronous and takes one object:
+`openPipe()` runs synchronously and takes one object:
 
 ```js
 const pipe = window.renderer.openPipe({ backendId: "weather" });
@@ -117,7 +117,7 @@ const pipe = window.renderer.openPipe({ backendId: "weather" });
 ### Send a request
 
 `request()` sends a backend-owned route. It returns a Promise for a response
-object, even when the backend returns an error status:
+object even when the backend returns an error status:
 
 ```js
 async function readWeather() {
@@ -164,8 +164,8 @@ Failure shape:
 ```
 
 The Promise rejects for bridge validation, policy, transport, or lifecycle
-failures. A backend route failure normally resolves with `error`; inspect both
-the resolved response and `catch`.
+failures. A backend route failure normally resolves with `error`; inspect the
+response and handle `catch`.
 
 ### Multiple backends
 
@@ -188,7 +188,7 @@ const [weather, music] = await Promise.all([
 ```
 
 Each backend owns its route names and payloads. Aether forwards the generic
-request and validates the response envelope; it does not interpret domain
+request and validates the response envelope. It does not interpret domain
 payloads.
 
 ## 4. Backend streams
@@ -254,8 +254,8 @@ async function dispose() {
 Protocol v1 supports `type: "json"`. The backend schema is immutable for the
 stream. Aether validates each event against it before delivery.
 
-`closeStream()` releases one local subscription. Always close streams when a
-component or page is disposed. Aether also closes them when the view unloads.
+`closeStream()` releases one local subscription. Close streams when a component
+or page is disposed. Aether also closes them when the view unloads.
 
 ### Stream event forms
 
@@ -307,7 +307,7 @@ const binding = await renderer.createBinding({
 });
 
 // Use `weatherState` from the page's Ultralight DOM data-binding expressions.
-// The binding is read-only and is not a normal writable JS object.
+// The binding exposes read-only data, not a writable JS object.
 
 await renderer.destroyBinding({ bindingId: binding.bindingId });
 ```
@@ -323,7 +323,7 @@ array                   { "kind": "array", "items": { ... } }
 ```
 
 Null schema nodes are valid for raw streams but not for DOM bindings. Object
-fields are closed: every declared field must exist, and undeclared fields are
+fields are closed: each declared field must exist, and undeclared fields are
 rejected. Binding field names must be valid Ultralight names: letters, digits,
 and underscores, with no leading digit.
 
@@ -333,7 +333,7 @@ binding also releases its stream reference.
 
 ## 6. Chronos control routes
 
-`control()` calls a route on Chronos, not on a backend:
+`control()` calls a route on Chronos:
 
 ```js
 const status = await window.renderer.control({
@@ -346,7 +346,7 @@ The page policy must list the exact route in `control-routes`. Methods and
 response handling match `request()`. Paths must begin with `/v1/`.
 
 Keep control routes narrow. A route can affect the whole desktop session, so a
-theme should request only routes it needs.
+theme should request the routes it needs.
 
 ## 7. Aether runtime commands
 
@@ -407,12 +407,12 @@ const stop = window.renderer.aether.onCue(cue => {
 });
 ```
 
-`onCue()` returns an unsubscribe function. A cue not listed in the page's
-configuration is ignored.
+`onCue()` returns an unsubscribe function. The page configuration must list a
+cue before Aether delivers it.
 
 ## 9. Backend author contract
 
-A detached backend is an executable launched by Chronos. Aether connects to it
+A detached backend is an executable that Chronos launches. Aether connects to it
 through a private local named pipe. The backend does not communicate with page
 JavaScript directly.
 
@@ -520,15 +520,15 @@ The backend may coalesce pending state updates. It must document when a stream
 does not guarantee every intermediate value. It must not emit stream events
 before Aether receives a successful subscription response.
 
-See [`BackendContract.cs`](BackendContract.cs),
+See [`BackendContract.cs`](src/RendererContracts/BackendContract.cs),
 [`plans/backend-contract.md`](../plans/backend-contract.md), and the
 [minimal backend example](../backend/minimal/docs/README.md) for the normative
 transport and a working reference.
 
 ## 10. Failure and lifecycle rules
 
-- Treat every bridge Promise as fallible.
-- Check `response.error` and `response.status`; HTTP-like failures do not always reject.
+- Treat each bridge Promise as fallible.
+- Check `response.error` and `response.status`; HTTP-like failures may resolve without rejection.
 - Keep backend route and payload definitions in backend documentation.
 - Close streams and destroy bindings during page/component teardown.
 - Reopen streams after reconnect or theme reload; old stream IDs do not survive.

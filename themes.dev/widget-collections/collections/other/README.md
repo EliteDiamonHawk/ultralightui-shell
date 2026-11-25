@@ -1,6 +1,6 @@
 # KhaosShell Other Widgets
 
-Collection for widgets outside the named visual collections. It currently
+This collection contains widgets outside the named visual collections. It
 contains the `rainmeter-mond-clock` widget.
 
 Build from the workspace root:

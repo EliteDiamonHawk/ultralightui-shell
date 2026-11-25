@@ -1,7 +1,7 @@
 # Minimal example routes
 
-These routes demonstrate how a backend can expose domain behavior without
-requiring frontend-specific APIs.
+These routes show how a backend exposes domain behavior through the generic
+transport. The frontend does not need backend-specific bridge methods.
 
 ## Health
 
@@ -9,7 +9,7 @@ requiring frontend-specific APIs.
 GET /v1/minimal/health
 ```
 
-Returns backend identity and protocol version.
+The response contains backend identity and protocol version.
 
 ## Query state
 
@@ -30,8 +30,8 @@ PUT /v1/minimal/value
 { "value": 42.5 }
 ```
 
-Returns resulting state and publishes it to active `minimal.value`
-subscriptions.
+The response contains the resulting state, and the backend publishes that state
+to active `minimal.value` subscriptions.
 
 ## Command
 
@@ -40,11 +40,12 @@ POST /v1/minimal/commands/increment
 { "delta": 1.5 }
 ```
 
-Returns resulting state and publishes it to active subscriptions.
+The response contains the resulting state, and the backend publishes it to
+active subscriptions.
 
 ## Subscribe
 
-Frontend uses its existing generic bridge:
+The page uses the generic bridge:
 
 ```javascript
 const subscription = await window.renderer.openStream({
@@ -61,8 +62,8 @@ window.renderer.onStream((event) => {
 ```
 
 Register the listener before opening the stream when the page must observe the
-initial snapshot through raw events. A data binding may instead consume the
-same stream through Aether's existing binding API.
+initial snapshot through raw events. A data binding can consume the same stream
+through Aether's existing binding API.
 
 The stream is closed with:
 
@@ -73,6 +74,6 @@ await window.renderer.closeStream({
 });
 ```
 
-Route names and payloads here are Minimal examples. Future backends define
-their own domain routes while retaining the generic request/response and
-subscription transport.
+These route names and payloads belong to Minimal. Other backends define their
+own domain routes while retaining the generic request/response and subscription
+transport.

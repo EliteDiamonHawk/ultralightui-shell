@@ -1,6 +1,6 @@
 # Aether and Nyx
 
-Aether is the KhaosShell renderer and exposes `window.renderer` to pages with
+Aether is the KhaosShell renderer. It exposes `window.renderer` to pages with
 bridge access.
 
 The shared bridge calls:
@@ -10,6 +10,6 @@ The shared bridge calls:
 - `nyx.system.metrics` stream for live metric updates.
 - `POST /v1/nyx/system/controls/<name>` for system controls.
 
-Bridge requests use backend ID `nyx`. Manifests request only access needed by
-each page. Basic timer pages need no bridge; Basic time, metric, and control
-pages demonstrate the corresponding Nyx calls.
+Bridge requests use backend ID `nyx`. Each manifest requests the access its page
+needs. Basic timer pages need no bridge. Basic time, metric, and control pages
+demonstrate the matching Nyx calls.

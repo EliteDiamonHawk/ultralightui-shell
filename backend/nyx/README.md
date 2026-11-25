@@ -1,8 +1,9 @@
 # Nyx
 
-Nyx is a detached KhaosShell backend for Chronos and Aether. It uses the
-protocol in `contracts/BackendContract.cs`, writes one readiness line to
-stdout, and serves UTF-8 NDJSON over the private Chronos named pipe.
+Nyx is a detached KhaosShell backend for Chronos and Aether. It implements the
+shared protocol in [`contracts/src/RendererContracts/BackendContract.cs`](../../contracts/src/RendererContracts/BackendContract.cs),
+writes one readiness line to stdout, and serves UTF-8 NDJSON over the private
+Chronos named pipe.
 
 Nyx provides data and actions only. It has no theme, widget, dashboard, or
 static-asset provisioning functions.
@@ -24,5 +25,9 @@ Manual launch:
   --sid <current-user-sid>
 ```
 
-Settings default to `%LOCALAPPDATA%\KhaosShell\Nyx\settings`. Use
-`--data-root` or `NYX_DATA_ROOT` for an explicit root, especially in tests.
+Settings use `%LOCALAPPDATA%\KhaosShell\Nyx\settings` by default. Set
+`--data-root` or `NYX_DATA_ROOT` to choose another root in tests or local runs.
+
+See [`docs/protocol.md`](docs/protocol.md), [`docs/routes.md`](docs/routes.md),
+and [`docs/storage.md`](docs/storage.md) for the protocol, route, and storage
+details.

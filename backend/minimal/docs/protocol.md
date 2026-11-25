@@ -1,7 +1,7 @@
 # Backend protocol template
 
-Minimal implements protocol version 1 from
-[`plans/backend-contract.md`](../../../plans/backend-contract.md).
+Minimal implements protocol version 1 from the
+[normative backend contract](../../../plans/backend-contract.md).
 
 ## Transport
 
@@ -65,7 +65,7 @@ state. `DELETE /v1/streams/{stream-id}` unsubscribes.
 
 ## Reconnect and resync
 
-Stream IDs are scoped to one backend pipe/session. Disconnect destroys old
+The backend scopes stream IDs to one pipe/session. Disconnect destroys old
 subscriptions. A later `openStream` for the same `dataId` creates a new stream
 and receives a fresh snapshot. Minimal does not replay event history or accept
 resume cursors.

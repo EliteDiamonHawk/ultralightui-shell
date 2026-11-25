@@ -1,6 +1,7 @@
 # Runtime control
 
-Run the executable from its published output directory, or use the PowerShell wrappers from `renderer/`.
+Run the executable from its published output directory, or use the PowerShell
+wrappers from `renderer/`.
 
 ## Start
 
@@ -27,12 +28,14 @@ Startup options:
 | `--system-tray [show\|hide]` | Visible | Set tray visibility. Bare flag toggles it. |
 | `--help`, `-h` | Off | Print usage. |
 
-The parser makes `--config` paths absolute. Do not combine startup options with runtime commands. Aether can start without configuration, but it then has no windows to manage.
+The parser makes `--config` paths absolute. Do not combine startup options with
+runtime commands. Aether can start without configuration, but it then has no
+windows to manage.
 
-When both inherited controller handles are present, they are the only accepted
-startup options. Aether establishes anonymous IPC first and waits for Chronos
-to send `POST /v1/renderer/configure`; root, tray policy, and theme/config are
-not read from managed-process command-line flags.
+When both inherited controller handles are present, Aether accepts only those
+startup options. It establishes anonymous IPC first and waits for Chronos to
+send `POST /v1/renderer/configure`. Aether does not read the root, tray policy,
+or theme/configuration from managed-process command-line flags.
 
 ## Commands
 
@@ -58,7 +61,11 @@ Aether.exe --reload-all
 Aether.exe --exit
 ```
 
-`--hide <id>` and `--show <id>` target one generic window. `--list` accepts `pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and `--reload` accept an optional group. The group may be omitted only when exactly one group is running. The `*-all` forms target every group. Menu commands and policy belong to Chronos, which uses the inherited generic window routes.
+`--hide <id>` and `--show <id>` target one generic window. `--list` accepts
+`pipes`, `config`, `windows`, or `paths`. `--pause`, `--resume`, `--status`, and
+`--reload` accept an optional group. Omit the group only when exactly one group
+is running. The `*-all` forms target every group. Chronos owns menu commands
+and policy, using the inherited generic window routes.
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 
@@ -78,7 +85,9 @@ The tray menu exposes the same common actions.
 
 ## Responses and exit codes
 
-Successful pipe responses start with `OK`, except for `show` commands, which return a JSON object. Failures start with `ERR` and are written to stderr by the command client.
+Successful pipe responses start with `OK`, except for `show` commands, which
+return a JSON object. Failures start with `ERR`; the command client writes them
+to stderr.
 
 - `0`: command or startup succeeded.
 - `1`: unexpected startup/runtime error.

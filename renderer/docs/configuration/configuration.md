@@ -1,6 +1,7 @@
 # Renderer configuration
 
-Pass one or more JSON files with repeated `--config` options. The parser accepts comments and trailing commas. Each file must contain a JSON object.
+Pass one or more JSON files with repeated `--config` options. The parser accepts
+comments and trailing commas. Each file must contain a JSON object.
 
 Use one top-level section per file. The loader combines sections across files; it does not merge two copies of the same section. Valid sections:
 
@@ -14,13 +15,18 @@ Chronos-managed themes may contain Chronos-only `before` and `after` sections.
 Chronos removes those sections and sends Aether one sanitized inline document;
 direct Aether configuration does not accept them.
 
-Add at least one section. Aether intentionally does not accept a `menu` section; Chronos owns menu policy and creates its menu through the generic window API. The loader rejects unknown sections, unknown fields, duplicate fields, and duplicate sections. Field names do not depend on case.
+Add at least one section. Aether does not accept a `menu` section; Chronos owns
+menu policy and creates the menu through the generic window API. The loader
+rejects unknown sections, unknown fields, duplicate fields, and duplicate
+sections. Field names do not depend on case.
 
 See [`README.md`](README.md) for the files in this directory and [`schema.json`](schema.json) for editor validation.
 
 ## URLs
 
-Add `url` to each generic window, wallpaper, or widget definition. The loader accepts `http`, `https`, and `file` schemes. It adds `https://` to a value without a scheme.
+Add `url` to each generic window, wallpaper, or widget definition. The loader
+accepts `http`, `https`, and `file` schemes. It adds `https://` to a value
+without a scheme.
 
 ```json
 "url": "https://example.com/ui"
@@ -56,12 +62,15 @@ Fields:
 | `mode` | No | `span` (default), `all`, or `single`. |
 | `monitor` | For `single` | One-based monitor number. Defaults to `1` when omitted. |
 | `monitor-urls` | No | Object keyed by one-based monitor number; overrides `url` for selected monitors. |
-| `window-ids` | No | Explicit logical IDs. When present, one window is created per ID over the virtual screen; this takes precedence over `mode`. |
+| `window-ids` | No | Explicit logical IDs. Aether creates one window per ID over the virtual screen; this takes precedence over `mode`. |
 | `transparent` | No | Transparent Ultralight window. Default `false`. |
 | `thread-group` | No | Runtime group. Default `wallpaper`. |
 | `bridge` | No | Page backend and control-route permissions. |
 
-Set `id` when another process or page needs a stable window identifier. A generated ID uses the profile index and monitor number. A resolved ID may contain only letters, numbers, `.`, `_`, `:`, or `-`, and may contain up to 128 characters.
+Set `id` when another process or page needs a stable window identifier. Aether
+generates an ID from the profile index and monitor number when you omit it. A
+resolved ID may contain letters, numbers, `.`, `_`, `:`, and `-`, and may contain
+up to 128 characters.
 
 `span` uses one virtual-screen window. `all` uses one window per monitor. `single` uses the selected `monitor`.
 
@@ -83,11 +92,14 @@ Set `id` when another process or page needs a stable window identifier. A genera
 }
 ```
 
-Add `x`, `y`, one position-scale field, one size-scale field, `anchor`, one width field, one height field, `monitor`, and `url`.
+Add `x`, `y`, one position-scale field, one size-scale field, `anchor`, one width
+field, one height field, `monitor`, and `url`.
 
 Use `width` and `height` in new files. The parser also accepts `w` and `h`. It accepts `pos-scale` and `size-scale` as aliases for `pos-scaled` and `size-scaled`.
 
-Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, or `bottom-right`. The parser ignores spaces and hyphens.
+Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`,
+`bottom-left`, `bottom`, or `bottom-right`. The parser ignores spaces and
+hyphens.
 
 - Set `pos-scaled: true` to express `x` and `y` as percentages of the monitor origin. Keep both values between `-100` and `100`.
 - Set `pos-scaled: false` to express `x` and `y` as pixel offsets from the selected anchor.
@@ -95,7 +107,8 @@ Set `anchor` to `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bott
 - Set `size-scaled: false` to express dimensions in pixels.
 - Widgets use `transparent: true` and `thread-group: widgets` when you omit those fields.
 
-Set `id` for stable window control. Add `bridge` only when the page needs backend or control access.
+Set `id` for stable window control. Add `bridge` when the page needs backend or
+control access.
 
 ## Generic windows
 
@@ -134,14 +147,15 @@ the existing backend/control/runtime bridge permissions.
 
 The inherited control pipe exposes `GET|POST|PUT|DELETE /v1/renderer/windows`
 and `POST /v1/renderer/windows/{id}/actions`. Actions are `show`, `hide`,
-`toggle`, `focus`, `blur`, `pause`, `resume`, and `reload` (reload currently
-requires a group reload). Aether emits generic lifecycle, change, focus, and
+`toggle`, `focus`, `blur`, `pause`, `resume`, and `reload` (reload requires a
+group reload). Aether emits generic lifecycle, change, focus, and
 visibility events. Chronos uses these same operations for its menu; Aether has
 no menu-specific route, command, or runtime model.
 
 ## Bridge policy
 
-Add `bridge` to a generic window, wallpaper, or widget when that page needs backend access:
+Add `bridge` to a generic window, wallpaper, or widget when the page needs
+backend access:
 
 ```json
 "bridge": {
@@ -152,7 +166,11 @@ Add `bridge` to a generic window, wallpaper, or widget when that page needs back
 }
 ```
 
-`backend-ids` limits the backends that the page can request. `control-routes` limits routes exposed through the renderer bridge. Each route must begin with `/v1/`. `runtime-commands` grants page JavaScript access to selected safe generic Aether commands: `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and `reload`. Permissions default to empty.
+`backend-ids` limits the backends that the page can request. `control-routes`
+limits routes exposed through the renderer bridge. Each route must begin with
+`/v1/`. `runtime-commands` grants page JavaScript access to these safe generic
+Aether commands: `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and
+`reload`. Permissions default to empty.
 
 When granted, page JavaScript can call:
 
@@ -161,7 +179,11 @@ await window.aether.command({ command: "hideWindow", targetId: "widget-1" });
 await window.aether.command({ command: "pause", group: "desktop" });
 ```
 
-Window commands require `targetId`. Group commands accept optional `group` or `all`, but not both. The Promise resolves to `{ command, message }`; invalid, unauthorized, or failed commands reject. Chronos starts a configured backend on the first request, returns a short-lived grant to Aether, and revokes the grant when the session ends.
+Window commands require `targetId`. Group commands accept optional `group` or
+`all`, but not both. The Promise resolves to `{ command, message }`; invalid,
+unauthorized, or failed commands reject. Chronos starts a configured backend on
+the first request, grants Aether short-lived access, and revokes that grant when
+the session ends.
 
 ## Variables and events
 
@@ -174,7 +196,8 @@ Top-level variables accept any JSON value:
 }
 ```
 
-Bridge-enabled pages query them with `window.aether.variables.get("theme")`. Unknown keys return `undefined`.
+Bridge-enabled pages query them with `window.aether.variables.get("theme")`.
+Unknown keys return `undefined`.
 
 Declare Chronos cues with names:
 
@@ -191,7 +214,10 @@ const unsubscribe = window.aether.onEvent(event => {
 });
 ```
 
-Cue-only subscriptions use `window.aether.onCue(callback)` and receive `{ name, data }`. Existing `window.renderer.onStream(callback)` remains available for stream payloads. Cue payloads originate from Chronos and are reserved for future keybind producers.
+Cue-only subscriptions use `window.aether.onCue(callback)` and receive
+`{ name, data }`. Existing `window.renderer.onStream(callback)` remains
+available for stream payloads. Chronos sends cue payloads; future keybind
+producers can use them.
 
 ## Thread groups and reload
 

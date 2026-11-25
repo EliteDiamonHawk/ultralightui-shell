@@ -1,11 +1,10 @@
 # Chronos controller
 
 Chronos is KhaosShell's Windows controller. It launches one Aether renderer,
-owns the inherited control channel, restores accepted theme state, owns the
-system tray, can turn a bare Windows-key tap into a menu toggle, and maps
-global keybinds to cues or typed Aether commands. Win-key menu behavior is
-configured separately under Keybinds: hide directly or send a cue, plus an
-optional cue after showing.
+owns the inherited control channel and system tray, restores accepted theme
+state, maps global keybinds to cues or typed Aether commands, and can turn a
+bare Windows-key tap into a menu toggle. Keybind settings choose direct hide or
+a cue, with an optional cue after the menu appears.
 
 ## Quick start
 
@@ -26,9 +25,9 @@ Startup options:
 | `--override-windows-key <true\|false>` | Enable Windows Key Override; default `false`. |
 | `--renderer-path <path>` | Override Aether executable discovery. |
 
-Chronos launches Aether with inherited handles only. Root and theme/config
-are sent through the private channel after Aether reports transport readiness.
-Chronos resolves Aether from `--renderer-path`, beside Chronos, or
+Chronos launches Aether with inherited handles only. After Aether reports
+transport readiness, Chronos sends the Ultralight root and theme/configuration
+through the private channel. Chronos resolves Aether from `--renderer-path`, beside Chronos, or
 `%LOCALAPPDATA%\KhaosShell\Aether\installation\Aether.exe`, in that order.
 
 ## Persistent data
@@ -44,8 +43,8 @@ Chronos resolves Aether from `--renderer-path`, beside Chronos, or
 
 Chronos exposes no public command pipe. The existing `Aether.Commands` pipe
 remains available for direct renderer control. Tray and WinForms operations use
-Chronos's typed command service. Open KhaosShell from tray double-click or its
-context menu. Registered themes contain names plus one or more theme file paths.
+Chronos's typed command service. Open KhaosShell with a tray double-click or its
+context menu. A registered theme contains a name and one or more theme paths.
 
 ## Docs
 

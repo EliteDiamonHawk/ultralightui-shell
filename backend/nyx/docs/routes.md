@@ -1,6 +1,7 @@
 # Nyx routes
 
-All routes are nested inside `POST /v1/request` unless stated otherwise.
+Clients send these routes inside `POST /v1/request`, unless a section says
+otherwise.
 
 ## Data
 
@@ -11,9 +12,10 @@ GET /v1/nyx/system/time
 GET /v1/nyx/system/metrics
 ```
 
-Metric request body may contain `fields` as a comma-separated string or string
-array. Supported data includes CPU, memory, disks, network, battery-shaped
-system data, and gracefully unavailable sensor groups.
+The metric request body may contain `fields` as a comma-separated string or a
+string array. Nyx exposes CPU, memory, disk, network, and battery-shaped system
+data. It returns an unavailable value for sensor groups that the host cannot
+provide.
 
 ## Settings
 
@@ -52,5 +54,5 @@ POST /v1/nyx/system/controls/logout
 POST /v1/nyx/system/controls/restart
 ```
 
-Only this fixed allowlist is accepted. `NYX_DEV=true` logs actions without
+Nyx accepts only this fixed allowlist. `NYX_DEV=true` logs actions without
 executing them.
