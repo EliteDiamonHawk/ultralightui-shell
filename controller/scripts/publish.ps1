@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ProjectPath = Join-Path $RepositoryRoot 'Chronos\Chronos.csproj'
+$ProjectPath = Join-Path $RepositoryRoot 'src\Chronos\Chronos.csproj'
 if (-not [IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath = Join-Path $RepositoryRoot $OutputPath
 }

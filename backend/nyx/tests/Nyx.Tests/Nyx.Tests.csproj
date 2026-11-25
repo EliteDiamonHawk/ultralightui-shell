@@ -10,7 +10,7 @@
     <RootNamespace>Nyx.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Nyx.csproj">
+    <ProjectReference Include="..\..\src\Nyx\Nyx.csproj">
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
   </ItemGroup>

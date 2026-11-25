@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ProjectPath = Join-Path $RepositoryRoot 'Aether\Aether.csproj'
+$ProjectPath = Join-Path $RepositoryRoot 'src\Aether\Aether.csproj'
 $LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 if ([string]::IsNullOrWhiteSpace($LocalAppData)) {
     throw 'Could not resolve the local application-data directory.'

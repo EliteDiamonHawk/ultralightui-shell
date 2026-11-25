@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ProjectPath = Join-Path $RepositoryRoot 'Aether\Aether.csproj'
+$ProjectPath = Join-Path $RepositoryRoot 'src\Aether\Aether.csproj'
 if (-not [IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath = Join-Path $RepositoryRoot $OutputPath
 }

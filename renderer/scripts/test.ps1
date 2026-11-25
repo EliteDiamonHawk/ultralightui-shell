@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $SolutionPath = Join-Path $RepositoryRoot 'Aether.sln'
-$TestProjectPath = Join-Path $RepositoryRoot 'Aether.Tests\Aether.Tests.csproj'
+$TestProjectPath = Join-Path $RepositoryRoot 'tests\Aether.Tests\Aether.Tests.csproj'
 $BuildArguments = @('build', $SolutionPath, '--configuration', $Configuration, '-m:1')
 if (-not $IncludeUltralight) { $BuildArguments += '-p:IncludeUltralight=false' }
 $RunArguments = @('run', '--project', $TestProjectPath, '--configuration', $Configuration, '--no-build', '--no-restore') + $Arguments
