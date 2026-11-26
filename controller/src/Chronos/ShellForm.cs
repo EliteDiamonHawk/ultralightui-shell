@@ -26,13 +26,15 @@ internal enum ShellRenderTarget
     Themes = 4,
     Options = 8,
     Keybinds = 16,
-    All = Status | Renderer | Themes | Options | Keybinds
+    Backends = 32,
+    All = Status | Renderer | Themes | Options | Keybinds | Backends
 }
 
 internal sealed class ShellForm : Form
 {
     private readonly ChronosHostContext _host;
     private readonly ListBox _themes = new();
+    private readonly ListBox _backendList = new();
     private readonly ListBox _groups = new();
     private readonly ListBox _windows = new();
     private readonly CheckedListBox _keybindList = new() { CheckOnClick = true };
@@ -55,6 +57,8 @@ internal sealed class ShellForm : Form
     private readonly CheckBox _restoreState = new();
     private readonly TextBox _rendererPath = new();
     private readonly TextBox _ultralightRoot = new();
+    private readonly TextBox _backendId = new();
+    private readonly TextBox _backendExecutable = new();
     private readonly TextBox _keybindGesture = new();
     private readonly CheckedListBox _keybindCueList = new() { CheckOnClick = true };
     private readonly TextBox _keybindGroup = new();
@@ -69,6 +73,7 @@ internal sealed class ShellForm : Form
     private readonly ComboBox _keybindTrayAction = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 1500 };
     private readonly List<ThemeDefinition> _themeItems = new();
+    private readonly List<string> _backendItems = new();
     private readonly List<RendererWindowCapability> _windowItems = new();
     private readonly List<string> _groupItems = new();
     private readonly List<KeybindDefinition> _keybindItems = new();
@@ -146,8 +151,10 @@ internal sealed class ShellForm : Form
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var themesTab = new TabPage("Themes") { Padding = new Padding(6), Controls = { BuildThemesPage() } };
+        var backendsTab = new TabPage("Backends") { Padding = new Padding(6), Controls = { BuildBackendsPage() } };
         var keybindsTab = new TabPage("Keybinds") { Padding = new Padding(6), Controls = { BuildKeybindsPage() } };
         tabs.TabPages.Add(themesTab);
+        tabs.TabPages.Add(backendsTab);
         tabs.TabPages.Add(keybindsTab);
         tabs.TabPages.Add(new TabPage("Aether commands") { Padding = new Padding(6), Controls = { BuildCommandsPage() } });
         tabs.TabPages.Add(new TabPage("Status") { Padding = new Padding(6), Controls = { BuildStatusPage() } });
@@ -156,6 +163,8 @@ internal sealed class ShellForm : Form
         {
             if (tabs.SelectedTab == keybindsTab)
                 Render(_host.GetUiSnapshot(), ShellRenderTarget.Keybinds);
+            else if (tabs.SelectedTab == backendsTab)
+                Render(_host.GetUiSnapshot(), ShellRenderTarget.Backends);
         };
         root.Controls.Add(tabs, 0, 1);
     }
@@ -180,6 +189,53 @@ internal sealed class ShellForm : Form
         buttons.Controls.Add(Button("Remove", (_, _) => RemoveTheme()));
         details.Controls.Add(buttons, 0, 1);
         split.Panel2.Controls.Add(details);
+        return split;
+    }
+
+    private Control BuildBackendsPage()
+    {
+        var split = CreateVerticalSplitContainer(220, 160, 300);
+        _backendList.Dock = DockStyle.Fill;
+        _backendList.SelectedIndexChanged += (_, _) => RenderSelectedBackend();
+        split.Panel1.Controls.Add(_backendList);
+
+        var editor = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 4,
+            Padding = new Padding(8)
+        };
+        editor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        editor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        editor.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _backendId.Dock = DockStyle.Fill;
+        _backendId.PlaceholderText = "nyx or another backend ID";
+        _backendExecutable.Dock = DockStyle.Fill;
+        _backendExecutable.PlaceholderText = "Path to backend executable";
+        editor.Controls.Add(new Label { Text = "Backend ID", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        editor.Controls.Add(_backendId, 1, 0);
+        editor.Controls.Add(new Label { Text = "Executable", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
+        editor.Controls.Add(_backendExecutable, 1, 1);
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        buttons.Controls.Add(Button("Browse", (_, _) => BrowseBackendExecutable()));
+        buttons.Controls.Add(Button("Register / Update", (_, _) => RegisterBackend()));
+        buttons.Controls.Add(Button("Remove", (_, _) => RemoveBackend()));
+        buttons.Controls.Add(Button("Clear", (_, _) => ClearBackendEditor()));
+        editor.Controls.Add(buttons, 1, 2);
+        editor.Controls.Add(new Label
+        {
+            Text = "Nyx opens in its installation folder. Other backends open in KhaosShell\\backends, falling back to KhaosShell.",
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            MaximumSize = new Size(520, 0)
+        }, 1, 3);
+        split.Panel2.Controls.Add(editor);
         return split;
     }
 
@@ -961,6 +1017,23 @@ internal sealed class ShellForm : Form
                 RenderSelectedTheme();
             }
 
+            if (target.HasFlag(ShellRenderTarget.Backends))
+            {
+                string? selectedBackendId = SelectedBackendId();
+                IReadOnlyList<string> backendIds = _host.Backends.Keys.OrderBy(id => id, StringComparer.Ordinal).ToArray();
+                UpdateList(_backendList, _backendItems, backendIds);
+                if (selectedBackendId != null)
+                {
+                    int selectedIndex = _backendItems.FindIndex(id => string.Equals(id, selectedBackendId, StringComparison.Ordinal));
+                    if (selectedIndex >= 0)
+                        _backendList.SelectedIndex = selectedIndex;
+                }
+                if (_backendList.SelectedIndex < 0 && _backendItems.Count > 0)
+                    _backendList.SelectedIndex = 0;
+                if (!_backendId.Focused && !_backendExecutable.Focused && !_backendId.Modified && !_backendExecutable.Modified)
+                    RenderSelectedBackend();
+            }
+
             if (target.HasFlag(ShellRenderTarget.Keybinds))
             {
                 _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
@@ -1065,10 +1138,10 @@ internal sealed class ShellForm : Form
             return;
         if (InvokeRequired)
         {
-            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer))); } catch (InvalidOperationException) { }
+            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Backends))); } catch (InvalidOperationException) { }
             return;
         }
-        Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer);
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Backends);
     }
 
     private void SetOutput(string text) => _statusOutput.Text = text;
@@ -1092,6 +1165,72 @@ internal sealed class ShellForm : Form
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
             _rendererPath.Text = dialog.FileName;
+    }
+
+    private void BrowseBackendExecutable()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Select backend executable",
+            Filter = "Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            InitialDirectory = _host.BackendChooserDirectory(_backendId.Text)
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            _backendExecutable.Text = dialog.FileName;
+    }
+
+    private void RegisterBackend()
+    {
+        string backendId = _backendId.Text.Trim();
+        if (RunSync(() => _host.RegisterBackend(backendId, _backendExecutable.Text)))
+        {
+            SetOutput($"Backend '{backendId}' registered.");
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Backends);
+            int selectedIndex = _backendItems.FindIndex(id => string.Equals(id, backendId, StringComparison.Ordinal));
+            if (selectedIndex >= 0)
+                _backendList.SelectedIndex = selectedIndex;
+        }
+    }
+
+    private void RemoveBackend()
+    {
+        string? backendId = SelectedBackendId();
+        if (backendId == null)
+        {
+            SetOutput("Select a backend first.");
+            return;
+        }
+        if (MessageBox.Show(this, $"Remove '{backendId}' from the backend registry?", "KhaosShell", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+        if (RunSync(() => _host.RemoveBackend(backendId)))
+        {
+            SetOutput($"Backend '{backendId}' removed.");
+            Render(_host.GetUiSnapshot(), ShellRenderTarget.Backends);
+        }
+    }
+
+    private void ClearBackendEditor()
+    {
+        _backendList.ClearSelected();
+        _backendId.Clear();
+        _backendExecutable.Clear();
+    }
+
+    private string? SelectedBackendId() =>
+        _backendList.SelectedIndex >= 0 && _backendList.SelectedIndex < _backendItems.Count
+            ? _backendItems[_backendList.SelectedIndex]
+            : null;
+
+    private void RenderSelectedBackend()
+    {
+        string? backendId = SelectedBackendId();
+        if (backendId == null || !_host.Backends.TryGetValue(backendId, out BackendDefinition? definition))
+            return;
+        _backendId.Text = backendId;
+        _backendExecutable.Text = definition.Executable;
+        _backendId.Modified = false;
+        _backendExecutable.Modified = false;
     }
 
     private void SaveRendererPath()

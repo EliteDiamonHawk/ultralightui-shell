@@ -8,7 +8,8 @@ Chronos stores data under `%LOCALAPPDATA%\KhaosShell\`:
   bundles.
 - `Chronos\settings.json`: persisted Chronos runtime defaults.
 - `logs\`: durable renderer batches and Chronos diagnostics.
-- `Chronos\backend-registry.json`: optional backend definitions.
+- `Chronos\backend-registry.json`: backend definitions; a missing file is
+  created with the installed Nyx executable configured by default.
 
 Chronos writes each file through a same-directory temporary file, flushes the
 file, and replaces the previous version. At startup, Chronos creates missing

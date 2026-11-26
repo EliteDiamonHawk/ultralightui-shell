@@ -191,7 +191,7 @@ internal sealed class PersistenceStore
         }
     }
 
-    private static void WriteAtomic(string path, object value)
+    internal static void WriteAtomic(string path, object value, JsonSerializerOptions? options = null)
     {
         string? directory = Path.GetDirectoryName(path);
         if (string.IsNullOrWhiteSpace(directory))
@@ -203,7 +203,7 @@ internal sealed class PersistenceStore
         {
             using (FileStream stream = new(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             {
-                JsonSerializer.Serialize(stream, value, ControlCodec.JsonOptions);
+                JsonSerializer.Serialize(stream, value, options ?? ControlCodec.JsonOptions);
                 stream.Flush(true);
             }
 

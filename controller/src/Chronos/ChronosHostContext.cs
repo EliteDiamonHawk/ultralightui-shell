@@ -48,7 +48,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _themes = _persistence.ReadThemes();
         _settings = _persistence.ReadSettings();
         _statusPollingEnabled = options.StatusPolling ?? _settings.StatusPollingEnabled;
-        BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, Diagnostic);
+        BackendRegistry registry = BackendRegistry.Load(_paths.BackendRegistryFile, _paths.NyxExecutableFile, Diagnostic);
         _backends = new BackendManager(registry);
         _themeHooks = new ThemeHookRunner(Diagnostic);
         _dispatcher.CreateControl();
@@ -87,6 +87,47 @@ internal sealed class ChronosHostContext : ApplicationContext
     public bool TrayVisible => _tray?.Visible == true;
     public IReadOnlyList<ThemeDefinition> Themes => _themes.Themes;
     public string ThemesDirectory => _paths.ThemesDirectory;
+    public IReadOnlyDictionary<string, BackendDefinition> Backends => _backends.Definitions;
+
+    public string BackendChooserDirectory(string backendId) => _paths.BackendChooserDirectory(backendId);
+
+    public void RegisterBackend(string backendId, string executable)
+    {
+        string normalizedId = backendId.Trim();
+        if (!BackendRegistry.IsBackendId(normalizedId))
+            throw new InvalidOperationException("Backend ID must contain 1-128 ASCII letters, digits, '.', '_', ':', or '-'.");
+        if (string.IsNullOrWhiteSpace(executable))
+            throw new InvalidOperationException("Backend executable must not be empty.");
+
+        string normalizedExecutable = Path.GetFullPath(executable.Trim());
+        if (!File.Exists(normalizedExecutable))
+            throw new InvalidOperationException($"Backend executable was not found: {normalizedExecutable}");
+
+        BackendRegistry current = _backends.RegistrySnapshot();
+        BackendDefinition definition = current.Definitions.TryGetValue(normalizedId, out BackendDefinition? existing)
+            ? existing with { Executable = normalizedExecutable }
+            : new BackendDefinition(
+                normalizedExecutable,
+                Array.Empty<string>(),
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal));
+        BackendRegistry next = current.WithDefinition(normalizedId, definition);
+        next.Save(_paths.BackendRegistryFile);
+        _backends.ReplaceRegistry(next);
+        NotifyUiStateChanged();
+    }
+
+    public void RemoveBackend(string backendId)
+    {
+        string normalizedId = backendId.Trim();
+        if (!BackendRegistry.IsBackendId(normalizedId))
+            throw new InvalidOperationException("Backend ID is invalid.");
+
+        BackendRegistry next = _backends.RegistrySnapshot().WithoutDefinition(normalizedId);
+        next.Save(_paths.BackendRegistryFile);
+        _backends.ReplaceRegistry(next);
+        NotifyUiStateChanged();
+    }
 
     public ShellUiSnapshot GetUiSnapshot()
     {

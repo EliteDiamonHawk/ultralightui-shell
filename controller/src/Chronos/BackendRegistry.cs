@@ -12,22 +12,29 @@ internal sealed record BackendDefinition(
 
 internal sealed class BackendRegistry
 {
+    private static readonly JsonSerializerOptions RegistryJsonOptions = new(ControlCodec.JsonOptions)
+    {
+        DictionaryKeyPolicy = null
+    };
     private readonly Dictionary<string, BackendDefinition> _definitions;
 
     private BackendRegistry(Dictionary<string, BackendDefinition> definitions) => _definitions = definitions;
 
     public IReadOnlyDictionary<string, BackendDefinition> Definitions => _definitions;
 
-    public static BackendRegistry Load(string path, Action<string>? diagnostic = null)
+    public static BackendRegistry Load(string path, Action<string>? diagnostic = null) =>
+        Load(path, ChronosPaths.Resolve().NyxExecutableFile, diagnostic);
+
+    public static BackendRegistry Load(string path, string nyxExecutablePath, Action<string>? diagnostic = null)
     {
         diagnostic ??= _ => { };
         if (!File.Exists(path))
         {
             PersistenceStore.EnsureFile(
                 path,
-                new { schemaVersion = 1, backends = new Dictionary<string, BackendDefinition>(StringComparer.Ordinal) },
+                new { schemaVersion = 1, backends = CreateDefaultDefinitions(nyxExecutablePath) },
                 diagnostic);
-            return new BackendRegistry(new Dictionary<string, BackendDefinition>(StringComparer.Ordinal));
+            return new BackendRegistry(CreateDefaultDefinitions(nyxExecutablePath));
         }
 
         try
@@ -65,6 +72,42 @@ internal sealed class BackendRegistry
     public static BackendRegistry Empty() =>
         new(new Dictionary<string, BackendDefinition>(StringComparer.Ordinal));
 
+    public BackendRegistry Clone() =>
+        new(new Dictionary<string, BackendDefinition>(_definitions, StringComparer.Ordinal));
+
+    public BackendRegistry WithDefinition(string backendId, BackendDefinition definition)
+    {
+        var definitions = new Dictionary<string, BackendDefinition>(_definitions, StringComparer.Ordinal)
+        {
+            [backendId] = definition
+        };
+        return new BackendRegistry(definitions);
+    }
+
+    public BackendRegistry WithoutDefinition(string backendId)
+    {
+        var definitions = new Dictionary<string, BackendDefinition>(_definitions, StringComparer.Ordinal);
+        definitions.Remove(backendId);
+        return new BackendRegistry(definitions);
+    }
+
+    public void Save(string path) =>
+        PersistenceStore.WriteAtomic(path, new { schemaVersion = 1, backends = _definitions }, RegistryJsonOptions);
+
+    public static bool IsBackendId(string value) =>
+        value.Length > 0 && value.Length <= 128 && value.All(character =>
+            character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '.' or '_' or ':' or '-');
+
+    private static Dictionary<string, BackendDefinition> CreateDefaultDefinitions(string nyxExecutablePath) =>
+        new(StringComparer.Ordinal)
+        {
+            ["nyx"] = new BackendDefinition(
+                Path.GetFullPath(nyxExecutablePath),
+                Array.Empty<string>(),
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal))
+        };
+
     private static BackendDefinition? ParseDefinition(JsonElement value)
     {
         string? executable = ControlCodec.GetString(value, "executable");
@@ -97,9 +140,6 @@ internal sealed class BackendRegistry
         return new BackendDefinition(executable, arguments, workingDirectory, environment);
     }
 
-    private static bool IsBackendId(string value) =>
-        value.Length > 0 && value.Length <= 128 && value.All(character =>
-            character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '.' or '_' or ':' or '-');
 }
 
 internal sealed record BackendGrant(
@@ -113,7 +153,7 @@ internal sealed record BackendSnapshot(string BackendId, string State, int Queue
 
 internal sealed class BackendManager : IDisposable
 {
-    private readonly BackendRegistry _registry;
+    private BackendRegistry _registry;
     private readonly string _sid;
     private readonly object _sync = new();
     private readonly Dictionary<string, BackendRuntime> _runtimes = new(StringComparer.Ordinal);
@@ -125,6 +165,42 @@ internal sealed class BackendManager : IDisposable
         _registry = registry;
         _sid = GetCurrentSid();
         _expiryTimer = new System.Threading.Timer(_ => ExpireGrants(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public IReadOnlyDictionary<string, BackendDefinition> Definitions
+    {
+        get
+        {
+            lock (_sync)
+                return new Dictionary<string, BackendDefinition>(_registry.Definitions, StringComparer.Ordinal);
+        }
+    }
+
+    public BackendRegistry RegistrySnapshot()
+    {
+        lock (_sync)
+            return _registry.Clone();
+    }
+
+    public void ReplaceRegistry(BackendRegistry registry)
+    {
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            foreach (BackendRuntime runtime in _runtimes.Values.ToArray())
+            {
+                bool removed = !registry.Definitions.TryGetValue(runtime.BackendId, out BackendDefinition? replacement);
+                bool changed = !removed &&
+                    (!_registry.Definitions.TryGetValue(runtime.BackendId, out BackendDefinition? previous) ||
+                     !Equals(previous, replacement));
+                if (removed || changed)
+                {
+                    StopRuntime(runtime);
+                    _runtimes.Remove(runtime.BackendId);
+                }
+            }
+            _registry = registry;
+        }
     }
 
     public BackendGrant Connect(string backendId, string rendererSid, int rendererPid, string rendererSessionId)

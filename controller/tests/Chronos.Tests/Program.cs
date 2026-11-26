@@ -36,8 +36,10 @@ internal static class Program
             (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
             (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
-            (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
+            (nameof(BackendRegistryCreatesDefaultNyx), BackendRegistryCreatesDefaultNyx),
             (nameof(BackendRegistryLoadsDefinitions), BackendRegistryLoadsDefinitions),
+            (nameof(BackendRegistryUpdatesPreserveLaunchSettings), BackendRegistryUpdatesPreserveLaunchSettings),
+            (nameof(BackendChooserDirectoriesPreferSpecificLocations), BackendChooserDirectoriesPreferSpecificLocations),
             (nameof(WinGestureTrackerDistinguishesTapAndCombo), WinGestureTrackerDistinguishesTapAndCombo),
             (nameof(EscapePanicTrackerTriggersOnlyAfterTenRapidPresses), EscapePanicTrackerTriggersOnlyAfterTenRapidPresses),
             (nameof(EscapePanicTrackerIgnoresPressesOutsideWindow), EscapePanicTrackerIgnoresPressesOutsideWindow)
@@ -236,9 +238,11 @@ internal static class Program
             AssertEqual<string?>(null, persistence.ReadSettings().RendererPath);
             AssertEqual<string?>(null, persistence.ReadSettings().UltralightRoot);
 
-            BackendRegistry registry = BackendRegistry.Load(paths.BackendRegistryFile, diagnostics.Add);
+            BackendRegistry registry = BackendRegistry.Load(paths.BackendRegistryFile, paths.NyxExecutableFile, diagnostics.Add);
             AssertTrue(File.Exists(paths.BackendRegistryFile));
-            AssertEqual(0, registry.Definitions.Count);
+            AssertEqual(1, registry.Definitions.Count);
+            AssertTrue(registry.Definitions.ContainsKey("nyx"));
+            AssertEqual(paths.NyxExecutableFile, registry.Definitions["nyx"].Executable);
             AssertEqual(0, diagnostics.Count);
         }
         finally
@@ -528,10 +532,24 @@ internal static class Program
         public void Dispose() => _events.Add($"dispose:{Name}");
     }
 
-    private static void BackendRegistryTreatsMissingAsEmpty()
+    private static void BackendRegistryCreatesDefaultNyx()
     {
-        BackendRegistry registry = BackendRegistry.Load(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
-        AssertEqual(0, registry.Definitions.Count);
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-backend-default-{Guid.NewGuid():N}");
+        string path = Path.Combine(root, "backend-registry.json");
+        string nyxPath = Path.Combine(root, "Nyx", "installation", "Nyx.exe");
+        try
+        {
+            BackendRegistry registry = BackendRegistry.Load(path, nyxPath);
+            AssertTrue(File.Exists(path));
+            AssertEqual(1, registry.Definitions.Count);
+            AssertEqual(Path.GetFullPath(nyxPath), registry.Definitions["nyx"].Executable);
+            string saved = File.ReadAllText(path);
+            AssertTrue(saved.Contains("\"nyx\"", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static void LogStoreDurablyDeduplicatesBatches()
@@ -568,6 +586,55 @@ internal static class Program
         finally
         {
             if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    private static void BackendRegistryUpdatesPreserveLaunchSettings()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-backend-update-{Guid.NewGuid():N}");
+        string path = Path.Combine(root, "backend-registry.json");
+        try
+        {
+            Directory.CreateDirectory(root);
+            var original = new BackendDefinition(
+                "C:\\old\\backend.exe",
+                new[] { "--test" },
+                "C:\\old",
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["MODE"] = "test" });
+            BackendRegistry registry = BackendRegistry.Empty().WithDefinition("custom", original);
+            registry.Save(path);
+
+            BackendRegistry updated = registry.WithDefinition("custom", original with { Executable = "C:\\new\\backend.exe" });
+            updated.Save(path);
+            BackendRegistry loaded = BackendRegistry.Load(path, Path.Combine(root, "Nyx.exe"));
+            BackendDefinition definition = loaded.Definitions["custom"];
+            AssertEqual("C:\\new\\backend.exe", definition.Executable);
+            AssertEqual("--test", definition.Arguments[0]);
+            AssertEqual("C:\\old", definition.WorkingDirectory);
+            AssertEqual("test", definition.Environment["MODE"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void BackendChooserDirectoriesPreferSpecificLocations()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-backend-chooser-{Guid.NewGuid():N}");
+        var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+        try
+        {
+            AssertEqual(root, paths.BackendChooserDirectory("custom"));
+            Directory.CreateDirectory(paths.BackendsDirectory);
+            AssertEqual(paths.BackendsDirectory, paths.BackendChooserDirectory("custom"));
+            AssertEqual(root, paths.BackendChooserDirectory("nyx"));
+            Directory.CreateDirectory(paths.NyxInstallationDirectory);
+            AssertEqual(paths.NyxInstallationDirectory, paths.BackendChooserDirectory("nyx"));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
 
