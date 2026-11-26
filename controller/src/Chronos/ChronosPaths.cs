@@ -26,6 +26,17 @@ internal sealed record ChronosPaths(
     public string ThemeRegistryFile => Path.Combine(ChronosRoot, "themes.json");
     public string SettingsFile => Path.Combine(ChronosRoot, "settings.json");
     public string ThemesDirectory => Path.Combine(Root, "themes");
+    public string NyxInstallationDirectory => Path.Combine(Root, "Nyx", "installation");
+    public string NyxExecutableFile => Path.Combine(NyxInstallationDirectory, "Nyx.exe");
+    public string BackendsDirectory => Path.Combine(Root, "backends");
+
+    public string BackendChooserDirectory(string backendId)
+    {
+        string preferred = string.Equals(backendId.Trim(), "nyx", StringComparison.OrdinalIgnoreCase)
+            ? NyxInstallationDirectory
+            : BackendsDirectory;
+        return Directory.Exists(preferred) ? preferred : Root;
+    }
 
     public void EnsureDirectories()
     {

@@ -6,12 +6,31 @@ Registry path:
 %LOCALAPPDATA%\KhaosShell\Chronos\backend-registry.json
 ```
 
+If the registry file is missing, Chronos creates it with a default `nyx`
+definition pointing to:
+
+```text
+%LOCALAPPDATA%\KhaosShell\Nyx\installation\Nyx.exe
+```
+
+The WinForms Backends tab can register, update, and remove definitions. New
+definitions require an ID and executable path and are applied immediately.
+When browsing for `nyx`, the chooser opens in Nyx's installation directory.
+Other backend IDs open in `%LOCALAPPDATA%\KhaosShell\backends`; if that
+directory is absent, the chooser opens in `%LOCALAPPDATA%\KhaosShell`.
+
 Version-1 shape:
 
 ```json
 {
   "schemaVersion": 1,
   "backends": {
+    "nyx": {
+      "executable": "C:\\Users\\user\\AppData\\Local\\KhaosShell\\Nyx\\installation\\Nyx.exe",
+      "arguments": [],
+      "workingDirectory": null,
+      "environment": {}
+    },
     "example": {
       "executable": "C:\\Khaos\\ExampleBackend.exe",
       "arguments": [],
