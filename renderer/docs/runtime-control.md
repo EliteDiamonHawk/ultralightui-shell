@@ -67,6 +67,11 @@ Aether.exe --exit
 is running. The `*-all` forms target every group. Chronos owns menu commands
 and policy, using the inherited generic window routes.
 
+Specific-window unload and reload are available through the inherited control
+route as `POST /v1/renderer/windows/{id}/actions` with `{ "action": "unload" }`
+or `{ "action": "reload" }`. Unloaded definitions remain queryable and can be
+reloaded by ID; `show` does not implicitly reload them.
+
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 
 Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection. `show` commands return a JSON object; other successful commands return `OK ...`, and failures return `ERR ...`.

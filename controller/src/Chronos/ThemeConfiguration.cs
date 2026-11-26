@@ -103,6 +103,8 @@ internal static class ThemeConfigurationLoader
     {
         if (element.ValueKind != JsonValueKind.Object)
             throw new InvalidOperationException("'menu' must be an object.");
+        if (TryGet(element, "hidden-behavior", out _))
+            throw new InvalidOperationException("menu hidden-behavior is no longer supported; Chronos controls menu lifecycle explicitly.");
 
         string url = RequiredString(element, "url", "menu");
         string id = OptionalString(element, "id") ?? "menu";
@@ -116,14 +118,6 @@ internal static class ThemeConfigurationLoader
         bool sizeScaled = OptionalBool(element, "size-scaled") ?? false;
         bool transparent = OptionalBool(element, "transparent") ?? true;
         bool autoHide = OptionalBool(element, "auto-hide") ?? true;
-        string hiddenBehavior = OptionalString(element, "hidden-behavior")?.ToLowerInvariant() switch
-        {
-            null or "none" or "retain" => "retain",
-            "pause" or "suspend" => "pause",
-            "unload" => "unload",
-            _ => throw new InvalidOperationException("menu hidden-behavior must be none, retain, pause, suspend, or unload.")
-        };
-
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
@@ -155,9 +149,11 @@ internal static class ThemeConfigurationLoader
             writer.WriteString("z-order", "topmost");
             writer.WriteEndObject();
             writer.WriteStartObject("lifecycle");
-            writer.WriteString("initial-visibility", "visible");
-            writer.WriteString("hidden-behavior", hiddenBehavior);
-            writer.WriteBoolean("suspend-on-fullscreen", false);
+            writer.WriteStartObject("initial");
+            writer.WriteString("visibility", "shown");
+            writer.WriteString("runtime", "active");
+            writer.WriteEndObject();
+            writer.WriteBoolean("pause-on-fullscreen", false);
             writer.WriteEndObject();
             writer.WriteStartObject("input");
             writer.WriteString("mouse", "native");

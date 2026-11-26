@@ -60,9 +60,11 @@ Aether handles `POST /v1/renderer/configure` for managed startup, reload, and
 return-to-idle operations. Managed Chronos creates and controls its menu as a
 generic Aether window with `POST /v1/renderer/windows`,
 `GET|PUT|DELETE /v1/renderer/windows/{id}`, and
-`POST /v1/renderer/windows/{id}/actions`. Aether also emits
+`POST /v1/renderer/windows/{id}/actions`. The action route supports explicit
+`unload` and `reload`; unload retains the definition so the same ID can be
+reloaded. Aether also emits
 `renderer.transport.ready`, `renderer.ready`, and generic window lifecycle,
-visibility, change, and focus events.
+visibility, change, focus, `window.unloaded`, and `window.reloaded` events.
 
 Chronos may send unsolicited cue events to Aether:
 

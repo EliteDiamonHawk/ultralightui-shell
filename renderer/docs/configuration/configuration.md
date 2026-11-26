@@ -133,9 +133,11 @@ small wallpaper/widget adapters:
       "z-order": "topmost-when-focused"
     },
     "lifecycle": {
-      "initial-visibility": "visible",
-      "hidden-behavior": "retain",
-      "suspend-on-fullscreen": true
+      "initial": {
+        "visibility": "shown",
+        "runtime": "active"
+      },
+      "pause-on-fullscreen": true
     },
     "input": { "mouse": "native", "keyboard": "native", "focus": "on-show" },
     "notifications": { "focus": true }
@@ -149,9 +151,13 @@ each unit is `pixels` or `percent`. The coordinate space is `monitor`,
 `work-area`, or `virtual-screen`, and the anchor is one of the nine standard
 positions. `surface.kind` is `desktop` or `top-level`. Surface settings contain
 z-order, transparency, framing, resizing, taskbar visibility, and optional
-work-area reservation. Lifecycle settings contain initial visibility, hidden
-behavior, and fullscreen suspension. Input, notifications, and bridge access
+work-area reservation. Lifecycle settings contain the initial visibility/runtime
+state and fullscreen pause policy. Input, notifications, and bridge access
 remain opt-in capability blocks.
+
+The initial runtime may be `active`, `paused`, or `unloaded`. An unloaded
+definition is registered and queryable but has no native or Ultralight instance;
+`reload` creates it. `runtime: "unloaded"` requires `visibility: "hidden"`.
 
 Generic window fields use exact canonical names and JSON types. Flat fields such
 as `x`, `width`, `placement`, and `initial-visible` are not accepted. Generic
@@ -159,8 +165,8 @@ window URLs must be absolute `http`, `https`, or `file` URLs.
 
 The inherited control pipe exposes `GET|POST|PUT|DELETE /v1/renderer/windows`
 and `POST /v1/renderer/windows/{id}/actions`. Actions are `show`, `hide`,
-`toggle`, `focus`, `blur`, `pause`, `resume`, and `reload` (reload requires a
-group reload). Aether emits generic lifecycle, change, focus, and
+`toggle`, `focus`, `blur`, `pause`, `resume`, `unload`, and `reload`.
+Unloading retains the window definition; reloading recreates it. Aether emits generic lifecycle, change, focus, and
 visibility events. Chronos uses these same operations for its menu; Aether has
 no menu-specific route, command, or runtime model.
 
@@ -174,15 +180,15 @@ backend access:
   "enabled": true,
   "backend-ids": ["nyx"],
   "control-routes": ["/v1/status"],
-  "runtime-commands": ["showWindow", "hideWindow"]
+  "runtime-commands": ["showWindow", "hideWindow", "unloadWindow", "reloadWindow"]
 }
 ```
 
 `backend-ids` limits the backends that the page can request. `control-routes`
 limits routes exposed through the renderer bridge. Each route must begin with
 `/v1/`. `runtime-commands` grants page JavaScript access to these safe generic
-Aether commands: `showWindow`, `hideWindow`, `pause`, `resume`, `status`, and
-`reload`. Permissions default to empty.
+Aether commands: `showWindow`, `hideWindow`, `unloadWindow`, `reloadWindow`,
+`pause`, `resume`, `status`, and group `reload`. Permissions default to empty.
 
 When granted, page JavaScript can call:
 

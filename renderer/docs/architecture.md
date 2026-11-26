@@ -14,7 +14,7 @@ monitors, tray UI, runtime groups, native windows, and the Ultralight app.
 
 ## Runtime groups
 
-Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. Aether dispatches Ultralight calls, window creation, destruction, reloads, and group state changes to that owner thread.
+Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. Aether dispatches Ultralight calls, window creation, destruction, specific-window unload/reload, and group state changes to that owner thread. Unloaded definitions remain in the group catalog without an active native/runtime instance.
 
 `RuntimeGroupContext` runs a 16 ms timer while active. Each tick can:
 
@@ -46,7 +46,7 @@ through `DesktopEmbedder`. The generic placement controller applies frame,
 taskbar, z-order, focus, and work-area policy to top-level windows. Aether
 checks geometry and repairs it on the reconciliation timer.
 
-The host watches monitor topology and foreground-window changes. Fullscreen windows can suspend any window that opts into that policy. Windows opting into focus notifications produce generic `window.focusChanged` events; Chronos uses that event to implement menu auto-hide.
+The host watches monitor topology and foreground-window changes. Fullscreen windows can pause any window that opts into that policy. Windows opting into focus notifications produce generic `window.focusChanged` events; Chronos uses that event to implement menu auto-hide.
 
 ## Reload behavior
 

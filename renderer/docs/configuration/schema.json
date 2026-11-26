@@ -80,6 +80,8 @@
             "enum": [
               "showWindow",
               "hideWindow",
+              "unloadWindow",
+              "reloadWindow",
               "pause",
               "resume",
               "status",
@@ -198,9 +200,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "initial-visibility": { "enum": ["visible", "hidden"] },
-        "hidden-behavior": { "enum": ["retain", "pause", "unload"] },
-        "suspend-on-fullscreen": { "type": "boolean" }
+        "initial": { "$ref": "#/$defs/windowInitial" },
+        "pause-on-fullscreen": { "type": "boolean" }
+      }
+    },
+    "windowInitial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visibility": { "enum": ["shown", "hidden"] },
+        "runtime": { "enum": ["active", "paused", "unloaded"] }
       }
     },
     "geometry": {

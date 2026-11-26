@@ -166,7 +166,8 @@ internal static class KeybindCatalog
             throw new InvalidOperationException("Select an Aether command.");
         if (action.Command == RendererCommandKind.Show && string.IsNullOrWhiteSpace(action.Topic))
             throw new InvalidOperationException("Show command requires topic.");
-        if (action.Command is RendererCommandKind.HideWindow or RendererCommandKind.RevealWindow && string.IsNullOrWhiteSpace(action.TargetId))
+        if (action.Command is (RendererCommandKind.HideWindow or RendererCommandKind.RevealWindow or
+            RendererCommandKind.UnloadWindow or RendererCommandKind.ReloadWindow) && string.IsNullOrWhiteSpace(action.TargetId))
             throw new InvalidOperationException("Window command requires target ID.");
         if (action.Command == RendererCommandKind.ApplyConfig && (action.ConfigPaths == null || action.ConfigPaths.Count == 0))
             throw new InvalidOperationException("ApplyConfig requires at least one config path.");

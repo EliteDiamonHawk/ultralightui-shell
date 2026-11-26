@@ -288,7 +288,7 @@ public sealed class InputRouter : IDisposable
     {
         if (!_windows().Any(current => ReferenceEquals(current.AppWindow, window.AppWindow)) ||
             window.AppWindow.State != AppWindowState.Embedded ||
-            window.AppWindow.RendererSuspended || !NativeMethods.IsWindow(window.AppWindow.Hwnd) ||
+            window.AppWindow.RendererPaused || !NativeMethods.IsWindow(window.AppWindow.Hwnd) ||
             window.AppWindow.UlView == IntPtr.Zero)
         {
             return false;

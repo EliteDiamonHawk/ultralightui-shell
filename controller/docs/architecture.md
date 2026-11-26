@@ -31,8 +31,8 @@ applied after renderer loss starts Aether with its new theme ID and generation.
 
 | Component | Owns |
 | --- | --- |
-| Chronos | Aether process, inherited control session, state/settings/theme register, tray, global keybind hook, Windows Key Override policy, Escape panic shutdown listener, backend grants, durable log intake |
-| Aether | Ultralight runtime groups, native windows, renderer config, existing named command pipe |
+| Chronos | Aether process, inherited control session, state/settings/theme register, tray, global keybind hook, Windows Key Override policy, Escape panic shutdown listener, backend grants, durable log intake, window lifecycle policy |
+| Aether | Ultralight runtime groups, native windows, retained window definitions, explicit window unload/reload mechanics, renderer config, existing named command pipe |
 | Backend | Private backend protocol and data plane after lazy launch |
 
 Control EOF marks the renderer session unavailable and revokes backend grants.

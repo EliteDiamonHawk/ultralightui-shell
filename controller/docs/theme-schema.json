@@ -54,7 +54,6 @@
         "anchor": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/anchor" },
         "transparent": { "type": "boolean" },
         "auto-hide": { "type": "boolean" },
-        "hidden-behavior": { "enum": ["none", "retain", "pause", "suspend", "unload"] },
         "bridge": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/bridge" }
       }
     },

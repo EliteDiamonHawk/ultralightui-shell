@@ -8,6 +8,8 @@ internal static class RuntimeCommandNames
     {
         "showWindow",
         "hideWindow",
+        "unloadWindow",
+        "reloadWindow",
         "pause",
         "resume",
         "status",
@@ -20,6 +22,8 @@ internal static class RuntimeCommandNames
         {
             "showWindow" => RendererCommandKind.RevealWindow,
             "hideWindow" => RendererCommandKind.HideWindow,
+            "unloadWindow" => RendererCommandKind.UnloadWindow,
+            "reloadWindow" => RendererCommandKind.ReloadWindow,
             "pause" => RendererCommandKind.Pause,
             "resume" => RendererCommandKind.Resume,
             "status" => RendererCommandKind.Status,

@@ -161,7 +161,7 @@ public sealed class UltralightRuntime : IDisposable
 
     public bool Pump() => _app != IntPtr.Zero && UltralightNative.ulAppRunOnce(_app, 0);
 
-    public bool TrySetSuspended(AppWindow appWindow, bool suspended)
+    public bool TrySetPaused(AppWindow appWindow, bool paused)
     {
         if (_app == IntPtr.Zero || appWindow.UlView == IntPtr.Zero ||
             appWindow.State is AppWindowState.Closed or AppWindowState.Failed)
@@ -171,12 +171,12 @@ public sealed class UltralightRuntime : IDisposable
 
         try
         {
-            UltralightNative.ulViewSetVisible(appWindow.UlView, !suspended);
+            UltralightNative.ulViewSetVisible(appWindow.UlView, !paused);
             return true;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Suspension] transition failed for {appWindow.LogicalId}: {ex.Message}");
+            Console.Error.WriteLine($"[Pause] transition failed for {appWindow.LogicalId}: {ex.Message}");
             return false;
         }
     }
@@ -190,7 +190,7 @@ public sealed class UltralightRuntime : IDisposable
         appWindow.UlPanel = IntPtr.Zero;
         appWindow.UlView = IntPtr.Zero;
         appWindow.Hwnd = IntPtr.Zero;
-        appWindow.RendererSuspended = false;
+        appWindow.RendererPaused = false;
         appWindow.State = AppWindowState.Closed;
     }
 
@@ -304,8 +304,8 @@ public sealed class AppWindow
     public IntPtr MonitorHostHwnd { get; internal set; }
     public IntPtr MonitorHandle { get; internal set; }
     public bool FullscreenOccluded { get; internal set; }
-    public bool DesiredSuspended { get; internal set; }
-    public bool RendererSuspended { get; internal set; }
+    public bool DesiredPaused { get; internal set; }
+    public bool RendererPaused { get; internal set; }
     public bool IsVisible { get; internal set; }
     public bool Focused { get; internal set; }
     public bool DesiredVisible { get; internal set; } = true;
@@ -347,6 +347,7 @@ public enum AppWindowState
 {
     Pending,
     Embedded,
+    Unloaded,
     Closed,
     Failed
 }

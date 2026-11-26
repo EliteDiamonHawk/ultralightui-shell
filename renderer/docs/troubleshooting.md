@@ -41,10 +41,10 @@ points to a Windows desktop-host or DPI interaction rather than a URL problem.
 
 ## Top-level window does not remain visible
 
-Check the generic window's `initial-visible`, `hidden-behavior`, focus policy,
-and z-order. `pause` suspends a retained view and `unload` destroys it; the
-caller must recreate an unloaded window through the generic window API. When
-Chronos owns a menu, Chronos handles auto-hide and recreation.
+Check the generic window's `lifecycle.initial` state, focus policy, and z-order.
+`pause` pauses a loaded view and `unload` destroys only its active runtime while
+retaining the definition. `reload` recreates that specific window. When Chronos
+owns a menu, Chronos decides when to unload and reload it.
 
 ```powershell
 Aether.exe --show <window-id>

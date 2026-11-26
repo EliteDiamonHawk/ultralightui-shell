@@ -369,6 +369,7 @@ Supported commands:
 | Command | Arguments |
 | --- | --- |
 | `showWindow`, `hideWindow` | Required `targetId`. |
+| `unloadWindow`, `reloadWindow` | Required `targetId`. |
 | `pause`, `resume`, `status`, `reload` | Optional `group` or `all: true`, never both. |
 
 The Promise resolves to `{ command, message }`. Invalid, unauthorized, or

@@ -58,6 +58,8 @@ public sealed class RuntimeGroupHost : IDisposable
     public void InvokeFullscreenMonitor(IntPtr monitor) => Invoke(context => context.SetFullscreenMonitor(monitor));
     public void InvokeHideWindow(string? id) => Invoke(context => context.SetWindowVisible(id, false));
     public void InvokeRevealWindow(string? id) => Invoke(context => context.SetWindowVisible(id, true));
+    public WindowSnapshot InvokeUnloadWindow(string id) => Invoke(context => context.UnloadWindow(id));
+    public WindowSnapshot InvokeReloadWindow(string id) => Invoke(context => context.ReloadWindow(id));
     public WindowSnapshot InvokeCreateWindow(RendererWindowSpec spec) => Invoke(context => context.CreateDynamicWindow(spec));
     public void InvokeDestroyWindow(string id) => Invoke(context => context.DestroyDynamicWindow(id));
     public WindowSnapshot InvokeWindowAction(string id, string action) => Invoke(context => context.ApplyWindowAction(id, action));
@@ -159,6 +161,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly GenericWindowPlacementController _windowController;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly List<AppWindow> _windows = new();
+    private readonly Dictionary<string, RendererWindowSpec> _definitions = new(StringComparer.Ordinal);
     private WindowRegistry _registry = new();
     private List<RendererWindowSpec> _currentSpecs;
     private bool _paused;
@@ -233,26 +236,31 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     public string GetStatus()
     {
         string paused = _paused ? "paused" : "active";
-        string windows = string.Join(", ", SnapshotWindows().Select(window =>
-            $"{window.LogicalId}:{window.State.ToString().ToLowerInvariant()}"));
+        string windows = string.Join(", ", GetWindowSnapshots().Select(window =>
+            $"{window.Id}:{window.State.ToString().ToLowerInvariant()}"));
         return $"{_name}: {paused}; windows=[{windows}]";
     }
 
-    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots() => SnapshotWindows().Select(Snapshot).ToArray();
+    public IReadOnlyList<WindowSnapshot> GetWindowSnapshots()
+    {
+        AppWindow[] active = SnapshotWindows();
+        var activeById = active.ToDictionary(window => window.LogicalId, StringComparer.Ordinal);
+        return _definitions.Values.Select(spec =>
+                activeById.TryGetValue(spec.LogicalId, out AppWindow? window)
+                    ? Snapshot(window)
+                    : SnapshotUnloaded(spec))
+            .ToArray();
+    }
 
     public void SetWindowVisible(string? id, bool visible)
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("Window ID is required.");
-        AppWindow? window = SnapshotWindows().FirstOrDefault(item =>
-            string.Equals(item.LogicalId, id, StringComparison.Ordinal));
-        if (window == null)
+        AppWindow? window = FindWindow(id);
+        if (window == null && !_definitions.ContainsKey(id))
             throw new InvalidOperationException($"Unknown window ID: {id}");
-        if (!visible && window.Spec.HiddenBehavior == WindowHiddenBehavior.Unload)
-        {
-            DestroyDynamicWindow(id);
-            return;
-        }
+        if (window == null)
+            throw new InvalidOperationException($"Window '{id}' is unloaded; reload it before changing visibility.");
         window.DesiredVisible = visible;
         ApplyWindowVisibility(window);
     }
@@ -261,9 +269,22 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         if (!string.Equals(spec.ThreadGroup, _name, StringComparison.Ordinal))
             throw new InvalidOperationException($"Window group does not match runtime group '{_name}'.");
-        if (SnapshotWindows().Any(window => string.Equals(window.LogicalId, spec.LogicalId, StringComparison.Ordinal)))
+        if (_definitions.ContainsKey(spec.LogicalId))
             throw new InvalidOperationException($"Logical window ID is already registered: {spec.LogicalId}");
-        AppWindow window = CreateWindow(spec);
+        _definitions.Add(spec.LogicalId, spec);
+        if (spec.InitialConfiguration.Runtime == WindowInitialRuntime.Unloaded)
+            return SnapshotUnloaded(spec);
+
+        AppWindow window;
+        try
+        {
+            window = CreateWindow(spec);
+        }
+        catch
+        {
+            _definitions.Remove(spec.LogicalId);
+            throw;
+        }
         lock (_windowSync)
         {
             _registry.Add(window);
@@ -274,30 +295,70 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     public void DestroyDynamicWindow(string id)
     {
-        AppWindow? window = SnapshotWindows().FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
-        if (window == null)
+        if (!_definitions.ContainsKey(id))
             throw new InvalidOperationException($"Unknown window ID: {id}");
-        RemoveAndDestroy(window);
+        AppWindow? window = FindWindow(id);
+        if (window != null)
+            RemoveAndDestroy(window);
+        _definitions.Remove(id);
+    }
+
+    public WindowSnapshot UnloadWindow(string id)
+    {
+        if (!_definitions.TryGetValue(id, out RendererWindowSpec? spec))
+            throw new InvalidOperationException($"Unknown window ID: {id}");
+        AppWindow? window = FindWindow(id);
+        if (window != null)
+            RemoveAndDestroy(window);
+        return SnapshotUnloaded(spec);
+    }
+
+    public WindowSnapshot ReloadWindow(string id)
+    {
+        if (!_definitions.TryGetValue(id, out RendererWindowSpec? spec))
+            throw new InvalidOperationException($"Unknown window ID: {id}");
+        AppWindow? oldWindow = FindWindow(id);
+        if (oldWindow != null)
+            RemoveAndDestroy(oldWindow);
+
+        RendererWindowSpec loadSpec = spec;
+        if (loadSpec.InitialConfiguration.Runtime == WindowInitialRuntime.Unloaded)
+        {
+            loadSpec = loadSpec with
+            {
+                Initial = loadSpec.InitialConfiguration with { Runtime = WindowInitialRuntime.Active }
+            };
+        }
+
+        AppWindow window = CreateWindow(loadSpec);
+        lock (_windowSync)
+        {
+            _registry.Add(window);
+            _windows.Add(window);
+        }
+        return Snapshot(window);
     }
 
     public WindowSnapshot ApplyWindowAction(string id, string action)
     {
-        AppWindow? window = SnapshotWindows().FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
-        if (window == null)
+        AppWindow? window = FindWindow(id);
+        if (window == null && !_definitions.ContainsKey(id))
             throw new InvalidOperationException($"Unknown window ID: {id}");
         switch (action.Trim().ToLowerInvariant())
         {
             case "show":
-                window.DesiredVisible = true;
-                ApplyWindowVisibility(window);
+                SetWindowVisible(id, true);
                 break;
             case "hide":
                 SetWindowVisible(id, false);
                 break;
             case "toggle":
+                if (window == null)
+                    throw new InvalidOperationException($"Window '{id}' is unloaded; reload it before toggling visibility.");
                 SetWindowVisible(id, !window.DesiredVisible);
                 break;
             case "focus":
+                window = RequireLoadedWindow(id, window);
                 if (window.Spec.Placement == WindowPlacement.Desktop)
                     throw new InvalidOperationException("Desktop windows require forwarded input focus.");
                 window.DesiredVisible = true;
@@ -306,22 +367,27 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                     throw new InvalidOperationException($"Could not focus window: {id}");
                 break;
             case "blur":
+                window = RequireLoadedWindow(id, window);
                 _windowController.Blur(window);
                 break;
             case "pause":
-                _runtime.TrySetSuspended(window, true);
-                window.RendererSuspended = true;
+                window = RequireLoadedWindow(id, window);
+                window.DesiredPaused = true;
+                ApplyPause(window);
                 break;
             case "resume":
-                _runtime.TrySetSuspended(window, false);
-                window.RendererSuspended = false;
+                window = RequireLoadedWindow(id, window);
+                window.DesiredPaused = false;
+                ApplyPause(window);
                 break;
             case "reload":
-                throw new InvalidOperationException("Window reload requires group reload.");
+                return ReloadWindow(id);
+            case "unload":
+                return UnloadWindow(id);
             default:
                 throw new InvalidOperationException($"Unknown window action: {action}");
         }
-        return Snapshot(window);
+        return Snapshot(window!);
     }
 
     public IReadOnlyList<WindowSnapshot> UpdateFocus(IntPtr foreground)
@@ -349,7 +415,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             if (window.State is AppWindowState.Closed or AppWindowState.Failed)
                 continue;
-            ApplySuspension(window);
+            ApplyPause(window);
             ApplyWindowVisibility(window, keepVisibleWhenPaused: true);
         }
         _timer.Interval = paused ? 1000 : 16;
@@ -361,11 +427,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         foreach (AppWindow window in _windows.ToArray())
         {
             window.FullscreenOccluded = monitor != IntPtr.Zero && window.MonitorHandle == monitor;
-            if (window.Spec.SuspendOnFullscreen)
-                ApplySuspension(window);
+            if (window.Spec.PauseOnFullscreen)
+                ApplyPause(window);
         }
         if (!_paused)
-            _timer.Interval = _windows.Any(window => !window.RendererSuspended) ? 16 : 1000;
+            _timer.Interval = _windows.Any(window => !window.RendererPaused) ? 16 : 1000;
     }
 
     public void Reload()
@@ -431,7 +497,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         try
         {
             foreach (RendererWindowSpec spec in specs)
-                created.Add(CreateWindow(spec));
+            {
+                if (spec.InitialConfiguration.Runtime != WindowInitialRuntime.Unloaded)
+                    created.Add(CreateWindow(spec));
+            }
         }
         catch
         {
@@ -446,6 +515,9 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             _windows.Clear();
             _registry = new WindowRegistry();
+            _definitions.Clear();
+            foreach (RendererWindowSpec spec in specs)
+                _definitions.Add(spec.LogicalId, spec);
             _windows.AddRange(created);
             foreach (AppWindow window in created)
                 _registry.Add(window);
@@ -467,22 +539,24 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         window.MonitorHandle = NativeMethods.MonitorFromPoint(center, NativeMethods.MONITOR_DEFAULTTONEAREST);
         try
         {
-            window.DesiredVisible = spec.InitialVisible;
+            WindowInitialConfiguration initial = spec.InitialConfiguration;
+            window.DesiredVisible = initial.Visibility == WindowInitialVisibility.Shown;
+            window.DesiredPaused = initial.Runtime == WindowInitialRuntime.Paused;
             if (spec.Placement == WindowPlacement.Desktop)
             {
                 _embedder.Embed(window);
-                window.IsVisible = spec.InitialVisible;
+                window.IsVisible = window.DesiredVisible;
             }
             else
             {
-                window.IsVisible = spec.InitialVisible;
+                window.IsVisible = window.DesiredVisible;
                 _windowController.Reconcile(window);
                 if (window.IsVisible)
                     _windowController.Show(window, spec.ActivateOnShow || spec.EffectiveInput.Focus == WindowFocusMode.OnShow);
             }
             _runtime.ShowWhenReady(window, _options.StartupTimeout);
             window.State = AppWindowState.Embedded;
-            ApplySuspension(window);
+            ApplyPause(window);
             return window;
         }
         catch
@@ -496,7 +570,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         if (window.DesiredVisible && (!_paused || keepVisibleWhenPaused))
         {
-            ApplySuspension(window);
+            ApplyPause(window);
             if (window.Spec.Placement == WindowPlacement.Desktop)
             {
                 NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
@@ -517,11 +591,6 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             else
             {
                 _windowController.Hide(window);
-            }
-            if (window.Spec.HiddenBehavior == WindowHiddenBehavior.Pause && !_paused)
-            {
-                _runtime.TrySetSuspended(window, true);
-                window.RendererSuspended = true;
             }
         }
     }
@@ -546,17 +615,34 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         window.Spec.MonitorNumber,
         window.IsVisible,
         window.Focused,
-        window.RendererSuspended,
+        window.RendererPaused,
+        window.State == AppWindowState.Embedded,
         window.State,
         window.Spec.Placement,
         window.Spec.ZOrder);
 
-    private void ApplySuspension(AppWindow window)
+    private WindowSnapshot SnapshotUnloaded(RendererWindowSpec spec) => new(
+        spec.LogicalId,
+        spec.Url,
+        _name,
+        spec.Kind,
+        spec.Bounds,
+        spec.Bounds,
+        spec.MonitorNumber,
+        false,
+        false,
+        false,
+        false,
+        AppWindowState.Unloaded,
+        spec.Placement,
+        spec.ZOrder);
+
+    private void ApplyPause(AppWindow window)
     {
-        bool viewSuspended = window.Spec.SuspendOnFullscreen && window.FullscreenOccluded;
-        window.DesiredSuspended = _paused || viewSuspended;
-        if (_runtime.TrySetSuspended(window, _paused || viewSuspended))
-            window.RendererSuspended = _paused || viewSuspended;
+        bool viewPaused = window.Spec.PauseOnFullscreen && window.FullscreenOccluded;
+        bool paused = window.DesiredPaused || _paused || viewPaused;
+        if (_runtime.TrySetPaused(window, paused))
+            window.RendererPaused = paused;
     }
 
     private void RemoveAndDestroy(AppWindow window)
@@ -573,6 +659,16 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         if (window.State != AppWindowState.Closed)
             _runtime.DestroyWindow(window);
+    }
+
+    private AppWindow? FindWindow(string id) =>
+        SnapshotWindows().FirstOrDefault(item => string.Equals(item.LogicalId, id, StringComparison.Ordinal));
+
+    private static AppWindow RequireLoadedWindow(string id, AppWindow? window)
+    {
+        if (window == null)
+            throw new InvalidOperationException($"Window '{id}' is unloaded; reload it first.");
+        return window;
     }
 
     private bool InvokeOwner(Action action)

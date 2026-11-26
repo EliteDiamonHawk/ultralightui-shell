@@ -28,11 +28,24 @@ public enum WindowZOrder
     TopmostWhenFocused
 }
 
-public enum WindowHiddenBehavior
+public enum WindowInitialVisibility
 {
-    Retain,
-    Pause,
-    Unload
+    Shown,
+    Hidden
+}
+
+public enum WindowInitialRuntime
+{
+    Active,
+    Paused,
+    Unloaded
+}
+
+public sealed record WindowInitialConfiguration(
+    WindowInitialVisibility Visibility = WindowInitialVisibility.Shown,
+    WindowInitialRuntime Runtime = WindowInitialRuntime.Active)
+{
+    public static WindowInitialConfiguration Default { get; } = new();
 }
 
 public enum WindowInputMode
@@ -76,7 +89,7 @@ public sealed record RendererWindowSpec(
     WindowKind Kind,
     bool Transparent = true,
     int MonitorNumber = 0,
-    WindowHiddenBehavior HiddenBehavior = WindowHiddenBehavior.Retain,
+    WindowInitialConfiguration? Initial = null,
     BridgePolicy? Bridge = null,
     IReadOnlyDictionary<string, JsonElement>? Variables = null,
     IReadOnlyList<string>? Cues = null,
@@ -86,13 +99,13 @@ public sealed record RendererWindowSpec(
     bool Resizable = false,
     bool ShowInTaskbar = false,
     bool ActivateOnShow = false,
-    bool SuspendOnFullscreen = true,
+    bool PauseOnFullscreen = true,
     string? Title = null,
     WindowInputPolicy? Input = null,
     WindowNotificationPolicy? Notifications = null,
-    WorkAreaReservation? WorkArea = null,
-    bool InitialVisible = true)
+    WorkAreaReservation? WorkArea = null)
 {
+    public WindowInitialConfiguration InitialConfiguration => Initial ?? WindowInitialConfiguration.Default;
     public WindowInputPolicy EffectiveInput => Input ?? new();
     public WindowNotificationPolicy EffectiveNotifications => Notifications ?? new();
     public WorkAreaReservation EffectiveWorkArea => WorkArea ?? new();
@@ -109,7 +122,8 @@ public sealed record WindowSnapshot(
     int Monitor,
     bool Visible,
     bool Focused,
-    bool Suspended,
+    bool Paused,
+    bool Loaded,
     AppWindowState State,
     WindowPlacement Placement = WindowPlacement.TopLevel,
     WindowZOrder ZOrder = WindowZOrder.Normal);

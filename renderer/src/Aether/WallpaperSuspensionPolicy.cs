@@ -1,11 +1,11 @@
 namespace Aether;
 
-internal static class WallpaperSuspensionPolicy
+internal static class WallpaperPausePolicy
 {
-    public static bool ShouldSuspend(
-        bool manualSuspendEnabled,
+    public static bool ShouldPause(
+        bool manualPauseEnabled,
         bool pauseWhenFullscreenEnabled,
         bool fullscreenOccluded) =>
-        manualSuspendEnabled || (pauseWhenFullscreenEnabled && fullscreenOccluded);
+        manualPauseEnabled || (pauseWhenFullscreenEnabled && fullscreenOccluded);
 }
 

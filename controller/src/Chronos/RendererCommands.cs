@@ -72,9 +72,9 @@ internal sealed class AetherCommandClient
     }
 }
 
-internal sealed record RendererWindowCapability(string Id, string? Group, string? Kind, bool? Visible);
+internal sealed record RendererWindowCapability(string Id, string? Group, string? Kind, bool? Visible, bool? Loaded = null);
 
-internal sealed record RendererMenuVisibility(string Id, bool Visible);
+internal sealed record RendererMenuVisibility(string Id, bool Visible, bool Loaded);
 
 internal sealed record RendererCapabilities(
     IReadOnlyList<string> ConfigFiles,
@@ -154,6 +154,12 @@ internal sealed class RendererCommandService
 
     public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible, CancellationToken cancellationToken = default) =>
         SendAsync(new(visible ? AetherCommandKind.RevealWindow : AetherCommandKind.HideWindow, TargetId: id), cancellationToken);
+
+    public Task<AetherCommandResult> UnloadWindowAsync(string id, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.UnloadWindow, TargetId: id), cancellationToken);
+
+    public Task<AetherCommandResult> ReloadWindowAsync(string id, CancellationToken cancellationToken = default) =>
+        SendAsync(new(AetherCommandKind.ReloadWindow, TargetId: id), cancellationToken);
 
     public void SetManagedMenu(string id, bool visible)
     {
@@ -301,7 +307,8 @@ internal sealed class RendererCommandService
                     id,
                     ControlCodec.GetString(item, "group"),
                     kind,
-                    item.TryGetProperty("visible", out JsonElement visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null));
+                    item.TryGetProperty("visible", out JsonElement visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null,
+                    item.TryGetProperty("loaded", out JsonElement loaded) && loaded.ValueKind is JsonValueKind.True or JsonValueKind.False ? loaded.GetBoolean() : null));
             }
         }
 

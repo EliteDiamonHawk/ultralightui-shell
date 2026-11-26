@@ -177,6 +177,8 @@ public sealed class RendererHostContext : ApplicationContext
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.HideWindow => SetWindowVisibility(command.TargetId, false),
                 RendererCommandKind.RevealWindow => SetWindowVisibility(command.TargetId, true),
+                RendererCommandKind.UnloadWindow => SetWindowLifecycle(command.TargetId, reload: false),
+                RendererCommandKind.ReloadWindow => SetWindowLifecycle(command.TargetId, reload: true),
                 RendererCommandKind.Show => ShowTopic(command.Topic),
                 RendererCommandKind.Exit => RequestExit(),
                 RendererCommandKind.Pause => ApplyPause(command, true),
@@ -406,6 +408,21 @@ public sealed class RendererHostContext : ApplicationContext
         return $"OK {(visible ? "revealed" : "hid")} {id}";
     }
 
+    private string SetWindowLifecycle(string? id, bool reload)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return "ERR Window ID is required.";
+        RuntimeGroupHost? host = FindGroupForWindow(id);
+        if (host == null)
+            return $"ERR Unknown window ID: {id}";
+        WindowSnapshot snapshot = reload
+            ? host.InvokeReloadWindow(id)
+            : host.InvokeUnloadWindow(id);
+        EmitWindowEvent(reload ? "window.reloaded" : "window.unloaded", snapshot);
+        EmitWindowEvent("window.changed", snapshot);
+        return $"OK {(reload ? "reloaded" : "unloaded")} {id}";
+    }
+
     private string ShowTopic(string? topic)
     {
         return topic switch
@@ -541,6 +558,10 @@ public sealed class RendererHostContext : ApplicationContext
                 EmitWindowEvent("window.changed", snapshot);
                 if (snapshot.State == AppWindowState.Closed)
                     EmitWindowEvent("window.destroyed", new { id });
+                if (action.Trim().Equals("unload", StringComparison.OrdinalIgnoreCase))
+                    EmitWindowEvent("window.unloaded", snapshot);
+                else if (action.Trim().Equals("reload", StringComparison.OrdinalIgnoreCase))
+                    EmitWindowEvent("window.reloaded", snapshot);
                 if (action.Trim().Equals("show", StringComparison.OrdinalIgnoreCase) ||
                     action.Trim().Equals("hide", StringComparison.OrdinalIgnoreCase) ||
                     action.Trim().Equals("toggle", StringComparison.OrdinalIgnoreCase))

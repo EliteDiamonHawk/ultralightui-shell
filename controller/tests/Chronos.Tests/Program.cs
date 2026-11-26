@@ -34,6 +34,7 @@ internal static class Program
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
             (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
+            (nameof(ThemeConfigurationRejectsMenuHiddenBehavior), ThemeConfigurationRejectsMenuHiddenBehavior),
             (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
@@ -438,8 +439,7 @@ internal static class Program
                     "monitor": 1,
                     "anchor": "center",
                     "url": "file:///menu.html",
-                    "auto-hide": false,
-                    "hidden-behavior": "pause"
+                    "auto-hide": false
                   }
                 }
                 """);
@@ -452,8 +452,27 @@ internal static class Program
             AssertEqual("shell-menu", menu.RootElement.GetProperty("id").GetString());
             AssertEqual("top-level", menu.RootElement.GetProperty("surface").GetProperty("kind").GetString());
             AssertEqual("topmost", menu.RootElement.GetProperty("surface").GetProperty("z-order").GetString());
-            AssertEqual("pause", menu.RootElement.GetProperty("lifecycle").GetProperty("hidden-behavior").GetString());
+            JsonElement lifecycle = menu.RootElement.GetProperty("lifecycle");
+            AssertEqual("shown", lifecycle.GetProperty("initial").GetProperty("visibility").GetString());
+            AssertEqual("active", lifecycle.GetProperty("initial").GetProperty("runtime").GetString());
+            AssertFalse(lifecycle.GetProperty("pause-on-fullscreen").GetBoolean());
             AssertTrue(menu.RootElement.GetProperty("notifications").GetProperty("focus").GetBoolean());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeConfigurationRejectsMenuHiddenBehavior()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-menu-lifecycle-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "theme.json");
+            File.WriteAllText(path, "{\"menu\":{\"url\":\"file:///menu.html\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"hidden-behavior\":\"pause\"}}");
+            AssertThrows<InvalidOperationException>(() => ThemeConfigurationLoader.Load(new[] { path }));
         }
         finally
         {

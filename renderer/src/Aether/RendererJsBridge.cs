@@ -1221,7 +1221,8 @@ internal sealed class RendererJsBridge : IDisposable
             return false;
         }
 
-        if (kind is RendererCommandKind.RevealWindow or RendererCommandKind.HideWindow)
+        if (kind is RendererCommandKind.RevealWindow or RendererCommandKind.HideWindow or
+            RendererCommandKind.UnloadWindow or RendererCommandKind.ReloadWindow)
         {
             if (targetId == null)
             {

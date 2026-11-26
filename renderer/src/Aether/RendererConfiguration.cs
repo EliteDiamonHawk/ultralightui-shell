@@ -255,10 +255,10 @@ public sealed class RendererConfiguration
         IReadOnlyDictionary<string, JsonElement> variables,
         IReadOnlyList<string> cues) => new(
             id, url, bounds, virtualBounds, group, kind, transparent, monitor,
-            WindowHiddenBehavior.Retain, bridge, variables, cues, WindowPlacement.Desktop,
+            WindowInitialConfiguration.Default, bridge, variables, cues, WindowPlacement.Desktop,
             WindowZOrder.Bottom, false, false, false, false, true, null,
             new(WindowInputMode.Forwarded, WindowInputMode.Forwarded, WindowFocusMode.OnClick),
-            new(), new(), true);
+            new(), new());
 
     private static GenericWindowDefinition ParseGenericWindow(JsonElement element, int index)
     {
@@ -326,17 +326,16 @@ public sealed class RendererConfiguration
 
         JsonElement lifecycle = TryGetExact(element, "lifecycle", out JsonElement lifecycleValue)
             ? lifecycleValue : default;
-        bool initialVisible = true;
-        WindowHiddenBehavior hidden = WindowHiddenBehavior.Retain;
-        bool suspendOnFullscreen = true;
+        WindowInitialConfiguration initial = WindowInitialConfiguration.Default;
+        bool pauseOnFullscreen = true;
         if (lifecycle.ValueKind != JsonValueKind.Undefined)
         {
             RequireKind(lifecycle, JsonValueKind.Object, $"{prefix} lifecycle");
             ValidatePropertiesExact(lifecycle, $"{prefix} lifecycle",
-                "initial-visibility", "hidden-behavior", "suspend-on-fullscreen");
-            initialVisible = ParseInitialVisibility(GetOptionalStringExact(lifecycle, "initial-visibility"), prefix);
-            hidden = ParseStrictHiddenBehavior(GetOptionalStringExact(lifecycle, "hidden-behavior"), prefix);
-            suspendOnFullscreen = GetOptionalBoolExact(lifecycle, "suspend-on-fullscreen") ?? true;
+                "initial", "pause-on-fullscreen");
+            if (TryGetExact(lifecycle, "initial", out JsonElement initialValue))
+                initial = ParseInitialConfiguration(initialValue, prefix);
+            pauseOnFullscreen = GetOptionalBoolExact(lifecycle, "pause-on-fullscreen") ?? true;
         }
 
         WindowInputPolicy input = ParseStrictInputPolicy(element, prefix);
@@ -353,7 +352,7 @@ public sealed class RendererConfiguration
         return new GenericWindowDefinition(
             id, url, GetStrictGroup(element, "runtime-group", "windows", prefix), title, x, y, width, height, monitor, coordinateSpace, anchor,
             positionUnit, positionUnit, sizeUnit, sizeUnit, placement, zOrder, framed, transparent, resizable,
-            showInTaskbar, initialVisible, hidden, suspendOnFullscreen, input, notifications, workArea,
+            showInTaskbar, initial, pauseOnFullscreen, input, notifications, workArea,
             ParseStrictBridgePolicy(element, prefix));
     }
 
@@ -365,22 +364,27 @@ public sealed class RendererConfiguration
             _ => throw new RendererConfigurationException($"{prefix} surface kind must be desktop or top-level.")
         };
 
-    private static bool ParseInitialVisibility(string? value, string prefix) =>
-        (value ?? "visible").Trim().ToLowerInvariant() switch
+    private static WindowInitialConfiguration ParseInitialConfiguration(JsonElement value, string prefix)
+    {
+        RequireKind(value, JsonValueKind.Object, $"{prefix} lifecycle initial");
+        ValidatePropertiesExact(value, $"{prefix} lifecycle initial", "visibility", "runtime");
+        WindowInitialVisibility visibility = (GetOptionalStringExact(value, "visibility") ?? "shown").Trim().ToLowerInvariant() switch
         {
-            "visible" => true,
-            "hidden" => false,
-            _ => throw new RendererConfigurationException($"{prefix} lifecycle initial-visibility must be visible or hidden.")
+            "shown" => WindowInitialVisibility.Shown,
+            "hidden" => WindowInitialVisibility.Hidden,
+            _ => throw new RendererConfigurationException($"{prefix} lifecycle initial visibility must be shown or hidden.")
         };
-
-    private static WindowHiddenBehavior ParseStrictHiddenBehavior(string? value, string prefix) =>
-        (value ?? "retain").Trim().ToLowerInvariant() switch
+        WindowInitialRuntime runtime = (GetOptionalStringExact(value, "runtime") ?? "active").Trim().ToLowerInvariant() switch
         {
-            "retain" => WindowHiddenBehavior.Retain,
-            "pause" => WindowHiddenBehavior.Pause,
-            "unload" => WindowHiddenBehavior.Unload,
-            _ => throw new RendererConfigurationException($"{prefix} lifecycle hidden-behavior must be retain, pause, or unload.")
+            "active" => WindowInitialRuntime.Active,
+            "paused" => WindowInitialRuntime.Paused,
+            "unloaded" => WindowInitialRuntime.Unloaded,
+            _ => throw new RendererConfigurationException($"{prefix} lifecycle initial runtime must be active, paused, or unloaded.")
         };
+        if (runtime == WindowInitialRuntime.Unloaded && visibility != WindowInitialVisibility.Hidden)
+            throw new RendererConfigurationException($"{prefix} lifecycle initial unloaded windows must be hidden.");
+        return new(visibility, runtime);
+    }
 
     private static WindowZOrder ParseStrictZOrder(string? value, string prefix) =>
         (value ?? "normal").Trim().ToLowerInvariant() switch
@@ -633,15 +637,6 @@ public sealed class RendererConfiguration
             "topmost" => WindowZOrder.Topmost,
             "topmost-when-focused" or "focus" => WindowZOrder.TopmostWhenFocused,
             _ => throw new RendererConfigurationException($"{prefix} z-order is invalid.")
-        };
-
-    private static WindowHiddenBehavior ParseHiddenBehavior(string? value) =>
-        (value ?? "retain").Trim().ToLowerInvariant() switch
-        {
-            "retain" or "none" => WindowHiddenBehavior.Retain,
-            "pause" or "suspend" => WindowHiddenBehavior.Pause,
-            "unload" => WindowHiddenBehavior.Unload,
-            _ => throw new RendererConfigurationException("hidden-behavior must be retain, pause, suspend, or unload.")
         };
 
     private static WindowInputMode ParseInputMode(string? value, string prefix) =>
@@ -981,9 +976,8 @@ public sealed record GenericWindowDefinition(
     bool Transparent,
     bool Resizable,
     bool ShowInTaskbar,
-    bool InitialVisible,
-    WindowHiddenBehavior HiddenBehavior,
-    bool SuspendOnFullscreen,
+    WindowInitialConfiguration Initial,
+    bool PauseOnFullscreen,
     WindowInputPolicy Input,
     WindowNotificationPolicy Notifications,
     WorkAreaReservation WorkArea,
@@ -1000,9 +994,8 @@ public sealed record GenericWindowDefinition(
             : CoordinateSpace == "work-area" ? screens[Monitor - 1].WorkingArea : monitorBounds;
         Rectangle bounds = GenericWindowGeometry.Resolve(this, reference);
         return new(Id, Url, bounds, virtualBounds, ThreadGroup, WindowKind.Generic, Transparent, Monitor,
-            HiddenBehavior, Bridge, variables, cues, Placement, ZOrder, Framed, Resizable, ShowInTaskbar,
-            Input.Focus is WindowFocusMode.OnShow, SuspendOnFullscreen, Title, Input, Notifications, WorkArea,
-            InitialVisible);
+            Initial, Bridge, variables, cues, Placement, ZOrder, Framed, Resizable, ShowInTaskbar,
+            Input.Focus is WindowFocusMode.OnShow, PauseOnFullscreen, Title, Input, Notifications, WorkArea);
     }
 }
 

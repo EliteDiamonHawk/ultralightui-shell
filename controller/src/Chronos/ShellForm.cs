@@ -584,6 +584,8 @@ internal sealed class ShellForm : Form
                     break;
                 case RendererCommandKind.HideWindow:
                 case RendererCommandKind.RevealWindow:
+                case RendererCommandKind.UnloadWindow:
+                case RendererCommandKind.ReloadWindow:
                     _keybindTarget.Enabled = editable;
                     _keybindOptionsPanel.Controls.Add(EditorField("Target ID", _keybindTarget));
                     break;

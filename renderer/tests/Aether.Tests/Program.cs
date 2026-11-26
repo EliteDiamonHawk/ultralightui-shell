@@ -34,6 +34,7 @@ internal static class Program
             (nameof(ConfigurationParsesGenericWindowPolicies), ConfigurationParsesGenericWindowPolicies),
             (nameof(ConfigurationRejectsLegacyGenericWindowShape), ConfigurationRejectsLegacyGenericWindowShape),
             (nameof(ConfigurationAppliesGenericWindowDefaults), ConfigurationAppliesGenericWindowDefaults),
+            (nameof(ConfigurationParsesInitialLifecycleStates), ConfigurationParsesInitialLifecycleStates),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
             (nameof(ConfigurationRejectsMenuSection), ConfigurationRejectsMenuSection),
@@ -282,7 +283,7 @@ internal static class Program
               "geometry":{"position":{"x":10,"y":20,"unit":"percent"},"size":{"width":40,"height":50,"unit":"percent"}},
               "surface":{"kind":"top-level","z-order":"topmost-when-focused","framed":true,"resizable":true,
                 "show-in-taskbar":true,"work-area":{"enabled":true,"edge":"top","thickness":32}},
-              "lifecycle":{"hidden-behavior":"pause"},
+              "lifecycle":{"initial":{"visibility":"hidden","runtime":"paused"},"pause-on-fullscreen":false},
               "input":{"mouse":"native","keyboard":"none","focus":"on-show"},
               "notifications":{"focus":true,"visibility":true}}]}
             """);
@@ -292,7 +293,9 @@ internal static class Program
         AssertEqual(WindowZOrder.TopmostWhenFocused, window.ZOrder);
         AssertTrue(window.Framed);
         AssertTrue(window.Resizable);
-        AssertEqual(WindowHiddenBehavior.Pause, window.HiddenBehavior);
+        AssertEqual(WindowInitialVisibility.Hidden, window.Initial.Visibility);
+        AssertEqual(WindowInitialRuntime.Paused, window.Initial.Runtime);
+        AssertFalse(window.PauseOnFullscreen);
         AssertEqual(WindowInputMode.None, window.Input.Keyboard);
         AssertEqual(WindowFocusMode.OnShow, window.Input.Focus);
         AssertTrue(window.Notifications.Focus);
@@ -308,10 +311,13 @@ internal static class Program
             "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"surface\":{\"placement\":\"top-level\"}}]}" );
         using JsonDocument stringNumber = JsonDocument.Parse(
             "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":\"0\",\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}}}]}" );
+        using JsonDocument legacyLifecycle = JsonDocument.Parse(
+            "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"lifecycle\":{\"initial-visibility\":\"hidden\",\"hidden-behavior\":\"unload\"}}]}" );
 
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(flat.RootElement));
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(alias.RootElement));
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(stringNumber.RootElement));
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(legacyLifecycle.RootElement));
     }
 
     private static void ConfigurationAppliesGenericWindowDefaults()
@@ -324,10 +330,29 @@ internal static class Program
         AssertEqual("windows", window.ThreadGroup);
         AssertEqual(WindowPlacement.TopLevel, window.Placement);
         AssertEqual(WindowZOrder.Normal, window.ZOrder);
-        AssertTrue(window.InitialVisible);
-        AssertEqual(WindowHiddenBehavior.Retain, window.HiddenBehavior);
-        AssertTrue(window.SuspendOnFullscreen);
+        AssertEqual(WindowInitialVisibility.Shown, window.Initial.Visibility);
+        AssertEqual(WindowInitialRuntime.Active, window.Initial.Runtime);
+        AssertTrue(window.PauseOnFullscreen);
         AssertFalse(window.Transparent);
+    }
+
+    private static void ConfigurationParsesInitialLifecycleStates()
+    {
+        using JsonDocument document = JsonDocument.Parse("""
+            {"windows":[
+              {"id":"paused","url":"https://example.test/","geometry":{"position":{"x":0,"y":0,"unit":"pixels"},"size":{"width":100,"height":100,"unit":"pixels"}},"lifecycle":{"initial":{"visibility":"shown","runtime":"paused"}}},
+              {"id":"unloaded","url":"https://example.test/","geometry":{"position":{"x":0,"y":0,"unit":"pixels"},"size":{"width":100,"height":100,"unit":"pixels"}},"lifecycle":{"initial":{"visibility":"hidden","runtime":"unloaded"}}}
+            ]}
+            """);
+        IReadOnlyList<GenericWindowDefinition> windows = RendererConfiguration.LoadJson(document.RootElement).Windows;
+        AssertEqual(WindowInitialRuntime.Paused, windows[0].Initial.Runtime);
+        AssertEqual(WindowInitialVisibility.Shown, windows[0].Initial.Visibility);
+        AssertEqual(WindowInitialRuntime.Unloaded, windows[1].Initial.Runtime);
+
+        using JsonDocument invalid = JsonDocument.Parse("""
+            {"windows":[{"id":"invalid","url":"https://example.test/","geometry":{"position":{"x":0,"y":0,"unit":"pixels"},"size":{"width":100,"height":100,"unit":"pixels"}},"lifecycle":{"initial":{"visibility":"shown","runtime":"unloaded"}}}]}
+            """);
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(invalid.RootElement));
     }
 
     private static void ConfigurationRejectsUnknownFields()
@@ -365,6 +390,14 @@ internal static class Program
         AssertTrue(RendererJsBridge.TryParseRuntimeCommand(window.RootElement, out _, out RendererCommand hide, out _));
         AssertEqual(RendererCommandKind.HideWindow, hide.Kind);
         AssertEqual("widget-1", hide.TargetId);
+
+        using JsonDocument unload = JsonDocument.Parse("{\"command\":\"unloadWindow\",\"targetId\":\"widget-1\"}");
+        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(unload.RootElement, out _, out RendererCommand unloadCommand, out _));
+        AssertEqual(RendererCommandKind.UnloadWindow, unloadCommand.Kind);
+
+        using JsonDocument reloadWindow = JsonDocument.Parse("{\"command\":\"reloadWindow\",\"targetId\":\"widget-1\"}");
+        AssertTrue(RendererJsBridge.TryParseRuntimeCommand(reloadWindow.RootElement, out _, out RendererCommand reloadWindowCommand, out _));
+        AssertEqual(RendererCommandKind.ReloadWindow, reloadWindowCommand.Kind);
 
         using JsonDocument group = JsonDocument.Parse("{\"command\":\"pause\",\"all\":true}");
         AssertTrue(RendererJsBridge.TryParseRuntimeCommand(group.RootElement, out _, out RendererCommand pause, out _));
