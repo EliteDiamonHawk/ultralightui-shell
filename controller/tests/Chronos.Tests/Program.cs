@@ -26,6 +26,7 @@ internal static class Program
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
+            (nameof(PersistenceFallbackRoundTrips), PersistenceFallbackRoundTrips),
             (nameof(PersistenceMigratesLegacySettings), PersistenceMigratesLegacySettings),
             (nameof(KeybindValidationAndNormalization), KeybindValidationAndNormalization),
             (nameof(KeybindCommandPayloads), KeybindCommandPayloads),
@@ -34,6 +35,8 @@ internal static class Program
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
             (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
+            (nameof(ThemeConfigurationRejectsUnknownMenuFields), ThemeConfigurationRejectsUnknownMenuFields),
+            (nameof(ThemeConfigurationRejectsInvalidMenuTypes), ThemeConfigurationRejectsInvalidMenuTypes),
             (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryTreatsMissingAsEmpty), BackendRegistryTreatsMissingAsEmpty),
@@ -209,6 +212,28 @@ internal static class Program
             AssertTrue(settings.Keybinds!.Any(binding => binding.SystemBinding && binding.Enabled));
             AssertTrue(paths.StateFile.StartsWith(paths.ChronosRoot, StringComparison.OrdinalIgnoreCase));
             AssertFalse(File.Exists(Path.Combine(root, "state.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void PersistenceFallbackRoundTrips()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-fallback-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new ChronosPaths(root, Path.Combine(root, "Chronos"), Path.Combine(root, "Chronos", "state.json"), Path.Combine(root, "Chronos", "backend-registry.json"), Path.Combine(root, "logs"));
+            var persistence = new PersistenceStore(paths);
+            Guid fallbackId = Guid.NewGuid();
+            string fallback = Path.Combine(root, "previous.json");
+            persistence.WriteState(Array.Empty<string>(), null, new[] { fallback }, fallbackId, "idle");
+            PersistentState state = persistence.ReadState();
+            AssertEqual("idle", state.RuntimeState);
+            AssertEqual(fallbackId, state.FallbackThemeId);
+            AssertEqual(fallback, state.FallbackFiles.Single());
+            AssertEqual(0, state.Files.Count);
         }
         finally
         {
@@ -454,6 +479,38 @@ internal static class Program
             AssertEqual("topmost", menu.RootElement.GetProperty("surface").GetProperty("z-order").GetString());
             AssertEqual("pause", menu.RootElement.GetProperty("lifecycle").GetProperty("hidden-behavior").GetString());
             AssertTrue(menu.RootElement.GetProperty("notifications").GetProperty("focus").GetBoolean());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeConfigurationRejectsUnknownMenuFields()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-menu-invalid-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "theme.json");
+            File.WriteAllText(path, "{\"menu\":{\"url\":\"file:///menu.html\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"unexpected\":true}}");
+            AssertThrows<InvalidOperationException>(() => ThemeConfigurationLoader.Load(new[] { path }));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeConfigurationRejectsInvalidMenuTypes()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-menu-types-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "theme.json");
+            File.WriteAllText(path, "{\"menu\":{\"url\":\"file:///menu.html\",\"x\":0,\"y\":0,\"width\":\"100\",\"height\":100}}");
+            AssertThrows<InvalidOperationException>(() => ThemeConfigurationLoader.Load(new[] { path }));
         }
         finally
         {

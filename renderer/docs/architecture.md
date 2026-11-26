@@ -54,8 +54,10 @@ Reload parses and resolves a candidate configuration before it changes active
 windows. If validation fails, Aether keeps the current configuration. Applying
 a theme creates a fresh logical runtime inside the same Aether process, disposes
 prior windows and bridge instances, rotates backend scope, and keeps the
-inherited control channel and command pipe alive. Configuration changes emit the
-new theme activation generation so Chronos can reject stale events.
+inherited control channel and command pipe alive. Chronos supplies the opaque
+renderer session identity used for backend scope; the command pipe remains the
+standalone/direct CLI transport. Configuration changes emit the new theme
+activation generation so Chronos can reject stale events.
 
 Control EOF marks Aether unavailable to Chronos and fails pending requests.
 Backend EOF closes that backend session; the next page request creates a fresh

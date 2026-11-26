@@ -17,7 +17,8 @@ requested otherwise.
 ## Runtime model
 
 Chronos owns one controller instance and launches one Aether process with two
-inherited anonymous pipe handles. Aether runtime commands continue to use the
+inherited anonymous pipe handles. Chronos-managed renderer commands use the
+inherited channel; standalone/direct Aether CLI commands continue to use the
 same-user `Aether.Commands` named pipe. Chronos uses the inherited channel for
 control requests, renderer logs, and backend grants.
 

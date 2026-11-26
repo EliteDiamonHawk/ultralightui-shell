@@ -362,6 +362,12 @@ internal static class Program
         AssertTrue(snapshotJson.Contains("\"surfaceKind\"", StringComparison.Ordinal));
         AssertFalse(snapshotJson.Contains("\"group\"", StringComparison.Ordinal));
         AssertFalse(snapshotJson.Contains("\"placement\"", StringComparison.Ordinal));
+
+        RendererWindowContract contract = RendererContractMapper.ToContract(snapshot);
+        string contractJson = JsonSerializer.Serialize(contract, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        AssertTrue(contractJson.Contains("\"kind\":\"generic\"", StringComparison.Ordinal));
+        AssertTrue(contractJson.Contains("\"state\":\"embedded\"", StringComparison.Ordinal));
+        AssertFalse(contractJson.Contains("\"kind\":0", StringComparison.Ordinal));
     }
 
     private static void ConfigurationRejectsUnknownFields()

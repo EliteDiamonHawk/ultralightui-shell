@@ -22,7 +22,8 @@ disconnected.
 Managed startup begins with transport. Aether parses only the two handle
 options, acquires its single-instance lease, starts this channel, and emits
 `renderer.transport.ready`. Chronos then sends `POST /v1/renderer/configure`.
-That request carries `ultralightRoot`, `noTray`, optional theme identity, and
+That request carries `ultralightRoot`, `noTray`, optional theme identity,
+`themeActivationId`, `themeGeneration`, and an opaque `rendererSessionId`, and
 one config source:
 
 ```json
@@ -57,7 +58,11 @@ Chronos handles:
 - `POST /v1/logs`: durable, redacted renderer event batches.
 
 Aether handles `POST /v1/renderer/configure` for managed startup, reload, and
-return-to-idle operations. Managed Chronos creates and controls its menu as a
+return-to-idle operations. Chronos sends managed runtime commands through
+`POST /v1/renderer/command`; inspection uses `GET /v1/renderer/config`,
+`GET /v1/renderer/windows`, and `GET /v1/pipes`. Responses use stable shared
+renderer/config/window contracts rather than Aether's internal enum values.
+Managed Chronos creates and controls its menu as a
 generic Aether window with `POST /v1/renderer/windows`,
 `GET|PUT|DELETE /v1/renderer/windows/{id}`, and
 `POST /v1/renderer/windows/{id}/actions`. Aether also emits
@@ -77,8 +82,9 @@ Chronos sends `PUT /v1/logging/batch-limits` after startup. Request IDs act as
 idempotency keys for five minutes or 256 entries. Duplicate content replays;
 different content returns `409 request_id_reused`.
 
-The existing Aether named pipe carries direct renderer runtime commands.
-Chronos does not expose a second command pipe.
+The existing Aether named pipe carries direct standalone renderer runtime
+commands. Chronos does not use that pipe for managed theme or policy changes,
+and does not expose a second command pipe.
 
 Backend pipe EOF fails pending page requests and removes the stale connection.
 The next request reconnects through the current grant. Chronos disposes an

@@ -85,7 +85,8 @@ internal sealed record RendererCapabilities(
     IReadOnlyList<string> Cues,
     Guid? ThemeId = null,
     Guid? ThemeActivationId = null,
-    long? ThemeGeneration = null)
+    long? ThemeGeneration = null,
+    string? RendererSessionId = null)
 {
     public static RendererCapabilities Empty { get; } = new(
         Array.Empty<string>(),
@@ -102,6 +103,7 @@ internal sealed class RendererCommandService
     private readonly object _sync = new();
     private RendererCapabilities _capabilities = RendererCapabilities.Empty;
     private RendererWindowCapability? _managedMenu;
+    private ControlChannel? _managedControl;
     private bool _connected;
     private bool _transportAvailable;
 
@@ -125,6 +127,20 @@ internal sealed class RendererCommandService
     public void BeginConnection()
     {
         lock (_sync) _transportAvailable = true;
+    }
+
+    public void UseManagedControl(ControlChannel control)
+    {
+        lock (_sync)
+        {
+            _managedControl = control;
+            _transportAvailable = true;
+        }
+    }
+
+    public void ClearManagedControl()
+    {
+        lock (_sync) _managedControl = null;
     }
 
     public async Task<RendererCapabilities> RefreshAsync(CancellationToken cancellationToken = default)
@@ -189,13 +205,15 @@ internal sealed class RendererCommandService
         long? generation = null,
         string? configJson = null,
         IReadOnlyList<string>? sourcePaths = null,
+        string? rendererSessionId = null,
         CancellationToken cancellationToken = default)
     {
         Guid activationId = Guid.NewGuid();
         AetherCommandResult result = await SendAsync(
             new(AetherCommandKind.ApplyConfig, ConfigPaths: paths, ThemeId: themeId,
                 ThemeActivationId: activationId, ThemeGeneration: generation,
-                ConfigJson: configJson, ConfigSourcePaths: sourcePaths),
+                ConfigJson: configJson, ConfigSourcePaths: sourcePaths,
+                RendererSessionId: rendererSessionId),
             cancellationToken).ConfigureAwait(false);
         if (result.Success)
         {
@@ -204,7 +222,8 @@ internal sealed class RendererCommandService
                 {
                     ThemeId = themeId ?? _capabilities.ThemeId,
                     ThemeActivationId = activationId,
-                    ThemeGeneration = generation ?? (_capabilities.ThemeGeneration ?? 0) + 1
+                    ThemeGeneration = generation ?? (_capabilities.ThemeGeneration ?? 0) + 1,
+                    RendererSessionId = rendererSessionId ?? _capabilities.RendererSessionId
                 };
         }
         return result;
@@ -248,6 +267,7 @@ internal sealed class RendererCommandService
         }
 
         RendererCommand request;
+        ControlChannel? managedControl;
         lock (_sync)
         {
             RendererCapabilities current = _capabilities;
@@ -255,68 +275,96 @@ internal sealed class RendererCommandService
             {
                 ThemeId = command.ThemeId ?? current.ThemeId,
                 ThemeActivationId = command.ThemeActivationId ?? current.ThemeActivationId,
-                ThemeGeneration = command.ThemeGeneration ?? current.ThemeGeneration
+                ThemeGeneration = command.ThemeGeneration ?? current.ThemeGeneration,
+                RendererSessionId = command.RendererSessionId ?? current.RendererSessionId
             };
+            managedControl = _managedControl;
         }
 
-        AetherCommandResult result = await _client.SendAsync(request, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+        AetherCommandResult result = managedControl == null
+            ? await _client.SendAsync(request, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false)
+            : await SendManagedAsync(managedControl, request, cancellationToken).ConfigureAwait(false);
         if (!result.Success && result.TransportFailure)
             MarkDisconnected();
         return result;
     }
 
-    private static RendererCapabilities ParseCapabilities(string configJson, string windowsJson, string pipesJson)
+    private static async Task<AetherCommandResult> SendManagedAsync(
+        ControlChannel control,
+        RendererCommand command,
+        CancellationToken cancellationToken)
     {
-        using JsonDocument config = JsonDocument.Parse(configJson);
-        using JsonDocument windows = JsonDocument.Parse(windowsJson);
-        using JsonDocument pipes = JsonDocument.Parse(pipesJson);
-        JsonElement configRoot = config.RootElement;
-        JsonElement windowsRoot = windows.RootElement;
-        JsonElement pipesRoot = pipes.RootElement;
-
-        var files = new List<string>();
-        if (configRoot.TryGetProperty("files", out JsonElement fileValues) && fileValues.ValueKind == JsonValueKind.Array)
-            files.AddRange(fileValues.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).Where(item => item != null));
-
-        var cues = new List<string>();
-        if (configRoot.TryGetProperty("cues", out JsonElement cueValues) && cueValues.ValueKind == JsonValueKind.Array)
-            cues.AddRange(cueValues.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).Where(item => item != null));
-
-        var windowValues = new List<RendererWindowCapability>();
-        if (windowsRoot.TryGetProperty("windows", out JsonElement windowsArray) && windowsArray.ValueKind == JsonValueKind.Array)
+        try
         {
-            foreach (JsonElement item in windowsArray.EnumerateArray())
+            ControlResponse response;
+            if (command.Kind == RendererCommandKind.Show && command.Topic is "config" or "windows" or "pipes")
             {
-                string? id = ControlCodec.GetString(item, "id");
-                if (string.IsNullOrWhiteSpace(id))
-                    continue;
-                string? kind = item.TryGetProperty("kind", out JsonElement kindElement)
-                    ? kindElement.ValueKind == JsonValueKind.String
-                        ? kindElement.GetString()
-                        : kindElement.ValueKind == JsonValueKind.Number && kindElement.TryGetInt32(out int kindNumber)
-                            ? kindNumber switch { 0 => "generic", 1 => "wallpaper", 2 => "widget", _ => null }
-                            : null
-                    : null;
-                windowValues.Add(new RendererWindowCapability(
-                    id,
-                    ControlCodec.GetString(item, "group"),
-                    kind,
-                    item.TryGetProperty("visible", out JsonElement visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null));
+                string path = command.Topic switch
+                {
+                    "config" => "/v1/renderer/config",
+                    "windows" => "/v1/renderer/windows",
+                    _ => "/v1/pipes"
+                };
+                response = await control.SendAsync("GET", path, null, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+                if (response.Status is >= 200 and < 300 && response.Body is { } body)
+                    return new AetherCommandResult(true, body.GetRawText(), body.GetRawText());
             }
-        }
+            else
+            {
+                response = await control.SendAsync(
+                    "POST",
+                    "/v1/renderer/command",
+                    command,
+                    TimeSpan.FromSeconds(30),
+                    cancellationToken).ConfigureAwait(false);
+                if (response.Status is >= 200 and < 300 && response.Body is { } body &&
+                    body.ValueKind == JsonValueKind.Object &&
+                    body.TryGetProperty("response", out JsonElement responseValue) &&
+                    responseValue.ValueKind == JsonValueKind.String)
+                    return AetherCommandClient.ParseResponse(command, responseValue.GetString() ?? "");
+            }
 
-        var groups = windowValues.Select(item => item.Group).Where(item => item != null).Distinct(StringComparer.Ordinal).Cast<string>().ToArray();
-        bool hasMenu = false;
-        string pipeState = ControlCodec.GetString(pipesRoot, "control") ?? "unknown";
-        Guid? themeId = TryGetGuid(configRoot, "themeId");
-        Guid? activationId = TryGetGuid(configRoot, "themeActivationId");
-        long? generation = configRoot.TryGetProperty("themeGeneration", out JsonElement generationValue) &&
-            generationValue.ValueKind == JsonValueKind.Number &&
-            generationValue.TryGetInt64(out long parsedGeneration) ? parsedGeneration : null;
-        return new RendererCapabilities(files, windowValues, groups, hasMenu, pipeState, cues, themeId, activationId, generation);
+            string message = response.Error?.Message ?? $"Aether control request failed with status {response.Status}.";
+            return new AetherCommandResult(false, $"ERR {message}", message);
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+        {
+            return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message, true);
+        }
     }
 
-    private static Guid? TryGetGuid(JsonElement root, string name) =>
-        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String &&
-        Guid.TryParse(value.GetString(), out Guid parsed) ? parsed : null;
+    private static RendererCapabilities ParseCapabilities(string configJson, string windowsJson, string pipesJson)
+    {
+        RendererConfigContract config = JsonSerializer.Deserialize<RendererConfigContract>(configJson, JsonOptions)
+            ?? throw new InvalidOperationException("Aether returned an invalid renderer configuration payload.");
+        RendererWindowListContract windows = JsonSerializer.Deserialize<RendererWindowListContract>(windowsJson, JsonOptions)
+            ?? throw new InvalidOperationException("Aether returned an invalid renderer window payload.");
+        using JsonDocument pipes = JsonDocument.Parse(pipesJson);
+        JsonElement pipesRoot = pipes.RootElement;
+
+        RendererWindowCapability[] windowValues = windows.Windows
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .Select(item => new RendererWindowCapability(item.Id, item.RuntimeGroup, item.Kind, item.Visible))
+            .ToArray();
+
+        var groups = windowValues.Select(item => item.Group).Where(item => item != null).Distinct(StringComparer.Ordinal).Cast<string>().ToArray();
+        string pipeState = ControlCodec.GetString(pipesRoot, "control") ?? "unknown";
+        return new RendererCapabilities(
+            config.Files,
+            windowValues,
+            groups,
+            false,
+            pipeState,
+            config.Cues,
+            config.ThemeId,
+            config.ThemeActivationId,
+            config.ThemeGeneration,
+            config.RendererSessionId);
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
 }

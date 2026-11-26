@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Text.Json;
+using KhaosShell.Contracts;
 
 namespace Aether;
 
@@ -138,6 +139,36 @@ public sealed record WindowSnapshot(
     AppWindowState State,
     WindowSurfaceKind SurfaceKind = WindowSurfaceKind.TopLevel,
     WindowZOrder ZOrder = WindowZOrder.Normal);
+
+internal static class RendererContractMapper
+{
+    public static RendererWindowContract ToContract(WindowSnapshot snapshot) => new(
+        snapshot.Id,
+        snapshot.Url,
+        snapshot.RuntimeGroup,
+        snapshot.Kind switch
+        {
+            WindowKind.Wallpaper => "wallpaper",
+            WindowKind.Widget => "widget",
+            _ => "generic"
+        },
+        ToContract(snapshot.ConfiguredBounds),
+        ToContract(snapshot.CurrentBounds),
+        snapshot.Monitor,
+        snapshot.Visible,
+        snapshot.Focused,
+        snapshot.Suspended,
+        snapshot.State.ToString().ToLowerInvariant(),
+        snapshot.SurfaceKind switch
+        {
+            WindowSurfaceKind.Desktop => "desktop",
+            _ => "top-level"
+        },
+        snapshot.ZOrder.ToString().ToLowerInvariant());
+
+    private static RendererBoundsContract ToContract(Rectangle bounds) =>
+        new(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+}
 
 public sealed record BridgePolicy(
     bool? Enabled,
