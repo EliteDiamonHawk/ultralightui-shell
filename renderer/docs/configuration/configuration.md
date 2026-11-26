@@ -237,8 +237,8 @@ Cue-only subscriptions use `window.aether.onCue(callback)` and receive
 available for stream payloads. Chronos sends cue payloads; future keybind
 producers can use them.
 
-## Thread groups and reload
+## Runtime groups and reload
 
-Windows with equal `thread-group` values share one Ultralight runtime and one STA thread. Different groups run in separate groups. The loader requires unique logical IDs across resolved windows.
+Generic windows with equal `runtime-group` values share one Ultralight runtime and one STA thread. Different groups run in separate groups. The loader requires unique logical IDs across resolved windows.
 
 `--reload <group>` reparses all config files and reloads one existing group. If the edit changes group membership, use `--reload-all`. That command creates new groups and disposes removed groups.

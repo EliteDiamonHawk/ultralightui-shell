@@ -38,6 +38,8 @@ internal sealed class BackendConnectionManager : IDisposable
 
     public event Action<BackendEvent>? StreamEventReceived;
 
+    public string SessionId => _sessionId;
+
     public async Task<BackendPipeConnection> GetOrConnectAsync(string backendId, CancellationToken cancellationToken = default)
     {
         if (_connections.TryGetValue(backendId, out BackendPipeConnection? existing) && existing.IsUsable)
@@ -179,15 +181,15 @@ internal sealed class BackendConnectionManager : IDisposable
         .Select(connection => new BackendPipeSnapshot(connection.BackendId, connection.State, connection.QueueDepth))
         .ToArray();
 
-    public void RotateThemeScope(Guid? themeId = null, long? themeGeneration = null)
+    public void RotateThemeScope(Guid? themeId = null, long? themeGeneration = null, string? rendererSessionId = null)
     {
         if (Volatile.Read(ref _disposed) != 0)
             return;
 
-        RotateThemeScopeCore(themeId, themeGeneration);
+        RotateThemeScopeCore(themeId, themeGeneration, rendererSessionId);
     }
 
-    private void RotateThemeScopeCore(Guid? themeId = null, long? themeGeneration = null)
+    private void RotateThemeScopeCore(Guid? themeId = null, long? themeGeneration = null, string? rendererSessionId = null)
     {
 
         foreach (KeyValuePair<string, BackendPipeConnection> pair in _connections.ToArray())
@@ -212,7 +214,9 @@ internal sealed class BackendConnectionManager : IDisposable
 
         _schemas.Clear();
         _latestStreamData.Clear();
-        _sessionId = Guid.NewGuid().ToString("D");
+        _sessionId = string.IsNullOrWhiteSpace(rendererSessionId)
+            ? Guid.NewGuid().ToString("D")
+            : rendererSessionId.Trim();
         _themeId = themeId;
         _themeGeneration = themeGeneration;
     }

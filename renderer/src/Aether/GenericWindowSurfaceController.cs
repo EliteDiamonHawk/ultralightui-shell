@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Aether;
 
-internal sealed class GenericWindowPlacementController
+internal sealed class GenericWindowSurfaceController
 {
     private const uint BaseFlags = NativeMethods.SWP_NOOWNERZORDER | NativeMethods.SWP_NOSENDCHANGING;
 
@@ -13,7 +13,7 @@ internal sealed class GenericWindowPlacementController
         ApplyStyles(window);
         IntPtr insertAfter = ResolveInsertAfter(window);
         uint flags = BaseFlags | NativeMethods.SWP_NOACTIVATE;
-        if (window.Spec.ZOrder == WindowZOrder.Normal)
+        if (window.Spec.EffectiveSurface.ZOrder == WindowZOrder.Normal)
             flags |= NativeMethods.SWP_NOZORDER;
         if (window.IsVisible)
             flags |= NativeMethods.SWP_SHOWWINDOW;
@@ -31,8 +31,8 @@ internal sealed class GenericWindowPlacementController
         window.IsVisible = true;
         Reconcile(window);
         NativeWindowApi.ShowWindow(window.Hwnd,
-            focus || window.Spec.ActivateOnShow ? NativeWindowApi.SW_SHOW : NativeWindowApi.SW_SHOWNOACTIVATE);
-        if (focus || window.Spec.ActivateOnShow)
+            focus || window.Spec.EffectiveInput.Focus == WindowFocusMode.OnShow ? NativeWindowApi.SW_SHOW : NativeWindowApi.SW_SHOWNOACTIVATE);
+        if (focus || window.Spec.EffectiveInput.Focus == WindowFocusMode.OnShow)
             Focus(window);
     }
 
@@ -64,11 +64,11 @@ internal sealed class GenericWindowPlacementController
     {
         long currentStyle = NativeMethods.GetWindowLongPtrW(window.Hwnd, NativeMethods.GWL_STYLE).ToInt64();
         long desiredStyle = currentStyle;
-        if (window.Spec.Framed)
+        if (window.Spec.EffectiveSurface.Framed)
         {
             desiredStyle &= ~NativeMethods.WS_POPUP;
             desiredStyle |= NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME | NativeMethods.WS_SYSMENU;
-            if (window.Spec.Resizable)
+            if (window.Spec.EffectiveSurface.Resizable)
                 desiredStyle |= NativeMethods.WS_MINIMIZEBOX | NativeMethods.WS_MAXIMIZEBOX;
         }
         else
@@ -80,7 +80,7 @@ internal sealed class GenericWindowPlacementController
 
         long currentExStyle = NativeMethods.GetWindowLongPtrW(window.Hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
         long desiredExStyle = currentExStyle;
-        if (window.Spec.ShowInTaskbar)
+        if (window.Spec.EffectiveSurface.ShowInTaskbar)
         {
             desiredExStyle &= ~NativeMethods.WS_EX_TOOLWINDOW;
             desiredExStyle |= NativeMethods.WS_EX_APPWINDOW;
@@ -111,7 +111,7 @@ internal sealed class GenericWindowPlacementController
                 NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_FRAMECHANGED);
     }
 
-    private static IntPtr ResolveInsertAfter(AppWindow window) => window.Spec.ZOrder switch
+    private static IntPtr ResolveInsertAfter(AppWindow window) => window.Spec.EffectiveSurface.ZOrder switch
     {
         WindowZOrder.Bottom => NativeMethods.HWND_BOTTOM,
         WindowZOrder.Top or WindowZOrder.TopmostWhenFocused when !window.Focused => NativeMethods.HWND_TOP,

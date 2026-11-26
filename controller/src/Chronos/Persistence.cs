@@ -4,11 +4,15 @@ using System.Text.Json.Serialization;
 namespace Chronos;
 
 internal sealed record PersistentState(
-    int SchemaVersion = 2,
+    int SchemaVersion = 3,
     IReadOnlyList<string> LastAcceptedConfigFiles = null!,
-    Guid? ActiveThemeId = null)
+    Guid? ActiveThemeId = null,
+    IReadOnlyList<string> FallbackConfigFiles = null!,
+    Guid? FallbackThemeId = null,
+    string RuntimeState = "idle")
 {
     public IReadOnlyList<string> Files => LastAcceptedConfigFiles ?? Array.Empty<string>();
+    public IReadOnlyList<string> FallbackFiles => FallbackConfigFiles ?? Array.Empty<string>();
 }
 
 internal sealed record ThemeDefinition(
@@ -47,7 +51,7 @@ internal sealed record PersistentSettings(
 
 internal sealed class PersistenceStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private const int CurrentSettingsSchemaVersion = 4;
     private readonly ChronosPaths _paths;
     private readonly Action<string> _diagnostic;
@@ -68,15 +72,26 @@ internal sealed class PersistenceStore
         return state?.SchemaVersion switch
         {
             CurrentSchemaVersion => state,
-            1 => new PersistentState(CurrentSchemaVersion, state.Files),
+            2 => new PersistentState(CurrentSchemaVersion, state.Files, state.ActiveThemeId,
+                Array.Empty<string>(), null, state.Files.Count == 0 ? "idle" : "active"),
+            1 => new PersistentState(CurrentSchemaVersion, state.Files, state.ActiveThemeId,
+                Array.Empty<string>(), null, state.Files.Count == 0 ? "idle" : "active"),
             _ => new PersistentState(CurrentSchemaVersion, Array.Empty<string>())
         };
     }
 
-    public void WriteState(IReadOnlyList<string> files, Guid? activeThemeId = null)
+    public void WriteState(
+        IReadOnlyList<string> files,
+        Guid? activeThemeId = null,
+        IReadOnlyList<string>? fallbackFiles = null,
+        Guid? fallbackThemeId = null,
+        string? runtimeState = null)
     {
         string[] normalized = files.Select(Path.GetFullPath).ToArray();
-        WriteAtomic(_paths.StateFile, new PersistentState(CurrentSchemaVersion, normalized, activeThemeId));
+        string[] normalizedFallback = (fallbackFiles ?? Array.Empty<string>()).Select(Path.GetFullPath).ToArray();
+        string state = runtimeState ?? (normalized.Length == 0 ? "idle" : "active");
+        WriteAtomic(_paths.StateFile, new PersistentState(CurrentSchemaVersion, normalized, activeThemeId,
+            normalizedFallback, fallbackThemeId, state));
     }
 
     public PersistentSettings ReadSettings()

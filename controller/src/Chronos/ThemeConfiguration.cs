@@ -106,6 +106,9 @@ internal static class ThemeConfigurationLoader
         if (TryGet(element, "hidden-behavior", out _))
             throw new InvalidOperationException("menu hidden-behavior is no longer supported; Chronos controls menu lifecycle explicitly.");
 
+        ValidateMenuProperties(element);
+        ValidateMenuNumbers(element);
+
         string url = RequiredString(element, "url", "menu");
         string id = OptionalString(element, "id") ?? "menu";
         string group = OptionalString(element, "thread-group") ?? "menu";
@@ -118,6 +121,17 @@ internal static class ThemeConfigurationLoader
         bool sizeScaled = OptionalBool(element, "size-scaled") ?? false;
         bool transparent = OptionalBool(element, "transparent") ?? true;
         bool autoHide = OptionalBool(element, "auto-hide") ?? true;
+        if (width <= 0 || height <= 0)
+            throw new InvalidOperationException("menu width and height must be positive finite numbers.");
+        if (monitor <= 0)
+            throw new InvalidOperationException("menu monitor must be positive.");
+        if (positionScaled && (x < -100 || x > 100 || y < -100 || y > 100))
+            throw new InvalidOperationException("menu pos-scaled x and y must be between -100 and 100.");
+        if (sizeScaled && (width > 100 || height > 100))
+            throw new InvalidOperationException("menu size-scaled width and height must be between 0 and 100.");
+        string anchor = (OptionalString(element, "anchor") ?? "top-left").Trim().ToLowerInvariant();
+        if (anchor is not ("top-left" or "top" or "top-right" or "left" or "center" or "right" or "bottom-left" or "bottom" or "bottom-right"))
+            throw new InvalidOperationException($"menu anchor '{anchor}' is invalid.");
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
@@ -128,7 +142,7 @@ internal static class ThemeConfigurationLoader
             writer.WriteStartObject("geometry");
             writer.WriteNumber("monitor", monitor);
             writer.WriteString("coordinate-space", "monitor");
-            writer.WriteString("anchor", OptionalString(element, "anchor") ?? "top-left");
+            writer.WriteString("anchor", anchor);
             writer.WriteStartObject("position");
             writer.WriteNumber("x", x);
             writer.WriteNumber("y", y);
@@ -174,6 +188,33 @@ internal static class ThemeConfigurationLoader
         return (Encoding.UTF8.GetString(stream.ToArray()), autoHide);
     }
 
+    private static void ValidateMenuProperties(JsonElement element)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "id", "url", "thread-group", "x", "y", "width", "w", "height", "h", "monitor",
+            "pos-scaled", "size-scaled", "anchor", "transparent", "auto-hide", "hidden-behavior", "bridge"
+        };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            if (!seen.Add(property.Name))
+                throw new InvalidOperationException($"'menu' contains duplicate field '{property.Name}'.");
+            if (!allowed.Contains(property.Name))
+                throw new InvalidOperationException($"'menu' contains unknown field '{property.Name}'.");
+        }
+    }
+
+    private static void ValidateMenuNumbers(JsonElement element)
+    {
+        foreach (string name in new[] { "x", "y", "width", "w", "height", "h" })
+        {
+            if (TryGet(element, name, out JsonElement value) &&
+                (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double number) || !double.IsFinite(number)))
+                throw new InvalidOperationException($"menu {name} must be a finite number.");
+        }
+    }
+
     private static string RequiredString(JsonElement element, string name, string prefix)
     {
         string? value = OptionalString(element, name);
@@ -187,34 +228,38 @@ internal static class ThemeConfigurationLoader
         if (!TryGet(element, name, out JsonElement value) && alias != null)
             TryGet(element, alias, out value);
         double number = 0;
-        bool valid = value.ValueKind == JsonValueKind.Number
-            ? value.TryGetDouble(out number)
-            : value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out number);
+        bool valid = value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out number);
         if (!valid || !double.IsFinite(number))
             throw new InvalidOperationException($"{prefix} {name} must be a finite number.");
         return number;
     }
 
-    private static string? OptionalString(JsonElement element, string name) =>
-        TryGet(element, name, out JsonElement value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+    private static string? OptionalString(JsonElement element, string name)
+    {
+        if (!TryGet(element, name, out JsonElement value))
+            return null;
+        if (value.ValueKind != JsonValueKind.String)
+            throw new InvalidOperationException($"menu {name} must be a string.");
+        return value.GetString();
+    }
 
-    private static int? OptionalInt(JsonElement element, string name) =>
-        TryGet(element, name, out JsonElement value) &&
-        ((value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number)) ||
-         (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number)))
-            ? number
-            : null;
+    private static int? OptionalInt(JsonElement element, string name)
+    {
+        if (!TryGet(element, name, out JsonElement value))
+            return null;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number))
+            return number;
+        throw new InvalidOperationException($"menu {name} must be an integer.");
+    }
 
-    private static bool? OptionalBool(JsonElement element, string name) =>
-        TryGet(element, name, out JsonElement value) &&
-        (value.ValueKind is JsonValueKind.True or JsonValueKind.False
-            ? true
-            : value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out _))
-            ? value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : bool.Parse(value.GetString()!)
-            : null;
+    private static bool? OptionalBool(JsonElement element, string name)
+    {
+        if (!TryGet(element, name, out JsonElement value))
+            return null;
+        if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            return value.GetBoolean();
+        throw new InvalidOperationException($"menu {name} must be boolean.");
+    }
 
     private static JsonElement ReadRoot(string path)
     {

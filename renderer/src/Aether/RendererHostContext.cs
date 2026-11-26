@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
+using KhaosShell.Contracts;
 
 namespace Aether;
 
@@ -117,7 +118,7 @@ public sealed class RendererHostContext : ApplicationContext
         IReadOnlyList<RendererWindowSpec> snapshot = specs.ToArray();
         try
         {
-            foreach (string groupName in snapshot.Select(spec => spec.ThreadGroup).Distinct(StringComparer.Ordinal))
+            foreach (string groupName in snapshot.Select(spec => spec.RuntimeGroup).Distinct(StringComparer.Ordinal))
             {
                 var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger, _backendManager, _controlChannel, HandleCommand);
                 group.Start();
@@ -173,7 +174,8 @@ public sealed class RendererHostContext : ApplicationContext
                     command.ThemeActivationId,
                     command.ThemeGeneration,
                     command.ConfigJson,
-                    command.ConfigSourcePaths),
+                    command.ConfigSourcePaths,
+                    command.RendererSessionId),
                 RendererCommandKind.SystemTray => SetSystemTrayVisibility(command.TrayAction),
                 RendererCommandKind.HideWindow => SetWindowVisibility(command.TargetId, false),
                 RendererCommandKind.RevealWindow => SetWindowVisibility(command.TargetId, true),
@@ -210,6 +212,12 @@ public sealed class RendererHostContext : ApplicationContext
 
     private string? ValidateThemeIdentity(RendererCommand command)
     {
+        if (command.Kind != RendererCommandKind.ApplyConfig &&
+            command.RendererSessionId is { } rendererSessionId &&
+            _backendManager != null &&
+            !string.Equals(rendererSessionId, _backendManager.SessionId, StringComparison.Ordinal))
+            return "ERR Renderer session is stale.";
+
         if (_themeGeneration == 0 || command.ThemeGeneration == null)
             return null;
 
@@ -233,11 +241,12 @@ public sealed class RendererHostContext : ApplicationContext
         Guid? activationId = null,
         long? generation = null,
         string? configJson = null,
-        IReadOnlyList<string>? sourcePaths = null)
+        IReadOnlyList<string>? sourcePaths = null,
+        string? rendererSessionId = null)
     {
         lock (_configurationSync)
         {
-            return ApplyConfigurationCore(paths, themeId, activationId, generation, configJson, sourcePaths);
+            return ApplyConfigurationCore(paths, themeId, activationId, generation, configJson, sourcePaths, rendererSessionId);
         }
     }
 
@@ -247,7 +256,8 @@ public sealed class RendererHostContext : ApplicationContext
         Guid? activationId = null,
         long? generation = null,
         string? configJson = null,
-        IReadOnlyList<string>? sourcePaths = null)
+        IReadOnlyList<string>? sourcePaths = null,
+        string? rendererSessionId = null)
     {
         if (paths.Count > 0 && !string.IsNullOrWhiteSpace(configJson))
             return "ERR Configuration paths and inline JSON cannot be combined.";
@@ -276,6 +286,7 @@ public sealed class RendererHostContext : ApplicationContext
         Guid? oldThemeId;
         Guid oldActivationId;
         long oldGeneration;
+        string? oldRendererSessionId;
         lock (_sync)
         {
             oldSpecs = _specs.ToArray();
@@ -285,11 +296,12 @@ public sealed class RendererHostContext : ApplicationContext
             oldThemeId = _themeId;
             oldActivationId = _themeActivationId;
             oldGeneration = _themeGeneration;
+            oldRendererSessionId = _backendManager?.SessionId;
         }
 
         StopGroups();
         long candidateGeneration = generation ?? checked(_themeGeneration + 1);
-        _backendManager?.RotateThemeScope(themeId, candidateGeneration);
+        _backendManager?.RotateThemeScope(themeId, candidateGeneration, rendererSessionId);
         Dictionary<string, RuntimeGroupHost> candidateGroups;
         try
         {
@@ -299,7 +311,7 @@ public sealed class RendererHostContext : ApplicationContext
         {
             try
             {
-                _backendManager?.RotateThemeScope(oldThemeId, oldGeneration == 0 ? null : oldGeneration);
+                _backendManager?.RotateThemeScope(oldThemeId, oldGeneration == 0 ? null : oldGeneration, oldRendererSessionId);
                 Dictionary<string, RuntimeGroupHost> restoredGroups = CreateGroups(oldSpecs);
                 lock (_sync)
                 {
@@ -343,7 +355,8 @@ public sealed class RendererHostContext : ApplicationContext
             files = _configPaths,
             themeId = _themeId,
             themeActivationId = ActiveThemeActivationId,
-            themeGeneration = ActiveThemeGeneration
+            themeGeneration = ActiveThemeGeneration,
+            rendererSessionId = _backendManager?.SessionId
         });
         return "OK configuration applied";
     }
@@ -361,7 +374,8 @@ public sealed class RendererHostContext : ApplicationContext
                     _themeActivationId,
                     _themeGeneration,
                     _configJson,
-                    _configPaths);
+                    _configPaths,
+                    _backendManager?.SessionId);
 
             IReadOnlyList<RuntimeGroupHost> targets = ResolveTargets(command);
             foreach (RuntimeGroupHost group in targets)
@@ -403,7 +417,8 @@ public sealed class RendererHostContext : ApplicationContext
             visible,
             themeId = _themeId,
             themeActivationId = ActiveThemeActivationId,
-            themeGeneration = ActiveThemeGeneration
+            themeGeneration = ActiveThemeGeneration,
+            rendererSessionId = _backendManager?.SessionId
         });
         return $"OK {(visible ? "revealed" : "hid")} {id}";
     }
@@ -428,7 +443,10 @@ public sealed class RendererHostContext : ApplicationContext
         return topic switch
         {
             "config" => ControlPipeCodec.SerializeJson(BuildConfigPayload()),
-            "windows" => ControlPipeCodec.SerializeJson(new { windows = GetWindowSnapshots() }),
+            "windows" => ControlPipeCodec.SerializeJson(new RendererWindowListContract
+            {
+                Windows = GetWindowSnapshots().Select(RendererContractMapper.ToContract).ToArray()
+            }),
             "paths" => ControlPipeCodec.SerializeJson(RendererPaths.Resolve(_options.UltralightRoot)),
             "pipes" => ControlPipeCodec.SerializeJson(new
             {
@@ -436,7 +454,8 @@ public sealed class RendererHostContext : ApplicationContext
                 backends = _backendManager?.Snapshot() ?? Array.Empty<BackendPipeSnapshot>(),
                 themeId = _themeId,
                 themeActivationId = ActiveThemeActivationId,
-                themeGeneration = ActiveThemeGeneration
+                themeGeneration = ActiveThemeGeneration,
+                rendererSessionId = _backendManager?.SessionId
             }),
             _ => "ERR Show topic must be pipes, config, windows, or paths."
         };
@@ -460,6 +479,10 @@ public sealed class RendererHostContext : ApplicationContext
     {
         if (request.Method == "POST" && request.Path == "/v1/renderer/configure")
             return ConfigureManagedRenderer(request);
+        if (request.Method == "POST" && request.Path == "/v1/renderer/command")
+            return HandleManagedCommand(request);
+        if (request.Method == "GET" && request.Path == "/v1/renderer/config")
+            return new ControlResponse(request.Id, 200, BuildConfigPayload());
         if (request.Path == "/v1/renderer/windows" || request.Path.StartsWith("/v1/renderer/windows/", StringComparison.Ordinal))
             return HandleWindowRequest(request);
         if (request.Method == "GET" && request.Path == "/v1/pipes")
@@ -481,6 +504,18 @@ public sealed class RendererHostContext : ApplicationContext
         return new ControlResponse(request.Id, 404, Error: new ControlError("route_not_found", "Unknown control route."));
     }
 
+    private ControlResponse HandleManagedCommand(ControlRequest request)
+    {
+        if (request.Body is not { } body || !RendererCommandCodec.TryParse(body.GetRawText(), out RendererCommand? command) || command == null)
+            return new ControlResponse(request.Id, 400,
+                Error: new ControlError("command_invalid", "Managed renderer command is invalid."));
+
+        string response = HandleCommand(command);
+        return response.StartsWith("ERR ", StringComparison.Ordinal)
+            ? new ControlResponse(request.Id, 409, Error: new ControlError("command_failed", response[4..]))
+            : new ControlResponse(request.Id, 200, new { response });
+    }
+
     private ControlResponse HandleWindowRequest(ControlRequest request)
     {
         const string prefix = "/v1/renderer/windows";
@@ -493,11 +528,14 @@ public sealed class RendererHostContext : ApplicationContext
         if (request.Method == "GET")
         {
             if (id == null)
-                return new ControlResponse(request.Id, 200, new { windows = GetWindowSnapshots() });
+                return new ControlResponse(request.Id, 200, new RendererWindowListContract
+                {
+                    Windows = GetWindowSnapshots().Select(RendererContractMapper.ToContract).ToArray()
+                });
             WindowSnapshot? snapshot = GetWindowSnapshots().FirstOrDefault(window => window.Id == id);
             return snapshot == null
                 ? new ControlResponse(request.Id, 404, Error: new ControlError("window_not_found", $"Unknown window ID: {id}"))
-                : new ControlResponse(request.Id, 200, snapshot);
+                : new ControlResponse(request.Id, 200, RendererContractMapper.ToContract(snapshot));
         }
 
         if (request.Method == "POST" && id == null)
@@ -506,10 +544,10 @@ public sealed class RendererHostContext : ApplicationContext
                 return new ControlResponse(request.Id, 400, Error: new ControlError("window_definition_invalid", error));
             try
             {
-                RuntimeGroupHost host = EnsureGroup(spec!.ThreadGroup);
+                RuntimeGroupHost host = EnsureGroup(spec!.RuntimeGroup);
                 WindowSnapshot snapshot = host.InvokeCreateWindow(spec);
                 EmitWindowEvent("window.created", snapshot);
-                return new ControlResponse(request.Id, 201, snapshot);
+                return new ControlResponse(request.Id, 201, RendererContractMapper.ToContract(snapshot));
             }
             catch (Exception ex)
             {
@@ -538,10 +576,10 @@ public sealed class RendererHostContext : ApplicationContext
                 return new ControlResponse(request.Id, 400, Error: new ControlError("window_id_mismatch", "Definition ID must match the URL ID."));
             if (group != null)
                 group.InvokeDestroyWindow(id);
-            RuntimeGroupHost replacementGroup = EnsureGroup(replacement.ThreadGroup);
+            RuntimeGroupHost replacementGroup = EnsureGroup(replacement.RuntimeGroup);
             WindowSnapshot snapshot = replacementGroup.InvokeCreateWindow(replacement);
             EmitWindowEvent("window.updated", snapshot);
-            return new ControlResponse(request.Id, 200, snapshot);
+            return new ControlResponse(request.Id, 200, RendererContractMapper.ToContract(snapshot));
         }
 
         if (request.Method == "POST" && actionRoute)
@@ -566,7 +604,7 @@ public sealed class RendererHostContext : ApplicationContext
                     action.Trim().Equals("hide", StringComparison.OrdinalIgnoreCase) ||
                     action.Trim().Equals("toggle", StringComparison.OrdinalIgnoreCase))
                     EmitWindowEvent("window.visibilityChanged", snapshot);
-                return new ControlResponse(request.Id, 200, snapshot);
+                return new ControlResponse(request.Id, 200, RendererContractMapper.ToContract(snapshot));
             }
             catch (Exception ex)
             {
@@ -633,21 +671,22 @@ public sealed class RendererHostContext : ApplicationContext
 
     private void EmitWindowEvent(string name, object body) => _controlChannel?.TrySendEvent(name, new
     {
-        window = body,
+        window = body is WindowSnapshot snapshot ? RendererContractMapper.ToContract(snapshot) : body,
         themeId = _themeId,
         themeActivationId = ActiveThemeActivationId,
-        themeGeneration = ActiveThemeGeneration
+        themeGeneration = ActiveThemeGeneration,
+        rendererSessionId = _backendManager?.SessionId
     });
 
-    private object BuildConfigPayload() => new
+    private object BuildConfigPayload() => new RendererConfigContract
     {
-        files = _configPaths,
-        cues = _configuration.Cues,
-        sections = new { windows = _configuration.Windows, wallpaper = _configuration.Wallpapers, widgets = _configuration.Widgets },
-        resolvedWindows = _specs,
-        themeId = _themeId,
-        themeActivationId = ActiveThemeActivationId,
-        themeGeneration = ActiveThemeGeneration
+        Files = _configPaths,
+        Cues = _configuration.Cues,
+        Windows = GetWindowSnapshots().Select(RendererContractMapper.ToContract).ToArray(),
+        ThemeId = _themeId,
+        ThemeActivationId = ActiveThemeActivationId,
+        ThemeGeneration = ActiveThemeGeneration,
+        RendererSessionId = _backendManager?.SessionId
     };
 
     private Guid? ActiveThemeActivationId => _themeGeneration == 0 ? null : _themeActivationId;
@@ -671,7 +710,9 @@ public sealed class RendererHostContext : ApplicationContext
         bool noTray = !body.TryGetProperty("noTray", out JsonElement noTrayElement) ||
                       noTrayElement.ValueKind != JsonValueKind.False;
         Guid? themeId = TryGetGuid(body, "themeId");
+        Guid? themeActivationId = TryGetGuid(body, "themeActivationId");
         long? themeGeneration = TryGetLong(body, "themeGeneration");
+        string? rendererSessionId = GetOptionalString(body, "rendererSessionId");
         JsonElement? configDocument = null;
         string[] configPaths = Array.Empty<string>();
         string[] sourcePaths = Array.Empty<string>();
@@ -714,7 +755,9 @@ public sealed class RendererHostContext : ApplicationContext
                 configDocument,
                 sourcePaths,
                 themeId,
+                themeActivationId,
                 themeGeneration,
+                rendererSessionId,
                 request.Id));
             if (response.Status is >= 200 and < 300)
                 _controlChannel?.TrySendEvent("renderer.ready", new
@@ -722,7 +765,9 @@ public sealed class RendererHostContext : ApplicationContext
                     configuredWindows = _specs.Count,
                     files = _configPaths,
                     themeId = _themeId,
-                    themeGeneration = ActiveThemeGeneration
+                    themeActivationId = ActiveThemeActivationId,
+                    themeGeneration = ActiveThemeGeneration,
+                    rendererSessionId = _backendManager?.SessionId
                 });
             return response;
         }
@@ -750,7 +795,9 @@ public sealed class RendererHostContext : ApplicationContext
         JsonElement? configDocument,
         IReadOnlyList<string> sourcePaths,
         Guid? themeId,
+        Guid? themeActivationId,
         long? themeGeneration,
+        string? rendererSessionId,
         string requestId)
     {
         lock (_configurationSync)
@@ -762,7 +809,9 @@ public sealed class RendererHostContext : ApplicationContext
                 configDocument,
                 sourcePaths,
                 themeId,
+                themeActivationId,
                 themeGeneration,
+                rendererSessionId,
                 requestId);
         }
     }
@@ -774,7 +823,9 @@ public sealed class RendererHostContext : ApplicationContext
         JsonElement? configDocument,
         IReadOnlyList<string> sourcePaths,
         Guid? themeId,
+        Guid? themeActivationId,
         long? themeGeneration,
+        string? rendererSessionId,
         string requestId)
     {
         _options = _options.WithManagedRuntime(ultralightRoot, noTray);
@@ -783,7 +834,7 @@ public sealed class RendererHostContext : ApplicationContext
         if (configPaths.Count == 0 && configDocument == null)
         {
             StopGroups();
-            _backendManager?.RotateThemeScope();
+            _backendManager?.RotateThemeScope(null, null, rendererSessionId);
             lock (_sync)
             {
                 _configuration = RendererConfiguration.Empty;
@@ -791,6 +842,7 @@ public sealed class RendererHostContext : ApplicationContext
                 _configPaths = Array.Empty<string>();
                 _configJson = null;
                 _themeId = themeId;
+                _themeActivationId = themeActivationId ?? Guid.Empty;
                 _themeGeneration = themeGeneration ?? 0;
             }
             _startupConfigured = true;
@@ -806,16 +858,18 @@ public sealed class RendererHostContext : ApplicationContext
             string result = ApplyConfiguration(
                 configPaths,
                 themeId,
-                null,
+                themeActivationId,
                 themeGeneration,
                 configDocument is { } inline ? inline.GetRawText() : null,
-                sourcePaths.Count == 0 ? configPaths : sourcePaths);
+                sourcePaths.Count == 0 ? configPaths : sourcePaths,
+                rendererSessionId);
             if (result.StartsWith("ERR ", StringComparison.Ordinal))
                 return new ControlResponse(requestId, 422,
                     Error: new ControlError("configuration_invalid", result[4..]));
             return new ControlResponse(requestId, 200, new { state = "ready", files = _configPaths, windows = _specs.Count });
         }
 
+        _backendManager?.RotateThemeScope(themeId, themeGeneration, rendererSessionId);
         Dictionary<string, RuntimeGroupHost> groups = CreateGroups(candidateSpecs);
         lock (_sync)
         {
@@ -826,6 +880,7 @@ public sealed class RendererHostContext : ApplicationContext
             _configPaths = (sourcePaths.Count == 0 ? configPaths : sourcePaths).ToArray();
             _configJson = configDocument?.GetRawText();
             _themeId = themeId;
+            _themeActivationId = themeActivationId ?? Guid.NewGuid();
             _themeGeneration = themeGeneration ?? 0;
         }
         _startupConfigured = true;

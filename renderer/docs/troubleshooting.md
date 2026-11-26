@@ -41,10 +41,11 @@ points to a Windows desktop-host or DPI interaction rather than a URL problem.
 
 ## Top-level window does not remain visible
 
-Check the generic window's `lifecycle.initial` state, focus policy, and z-order.
-`pause` pauses a loaded view and `unload` destroys only its active runtime while
-retaining the definition. `reload` recreates that specific window. When Chronos
-owns a menu, Chronos decides when to unload and reload it.
+Check the generic window's `lifecycle.initial` or `lifecycle.initial-visibility` state,
+focus policy, and z-order. `pause` pauses a retained view and `unload` destroys
+only its active runtime while retaining the definition; `reload` recreates that
+specific window. When Chronos owns a menu, Chronos decides when to unload and
+reload it.
 
 ```powershell
 Aether.exe --show <window-id>
@@ -55,4 +56,4 @@ Aether.exe --status-all
 
 Reload validates the complete candidate configuration before changing active
 windows. Fix the reported configuration error. If the edit adds or removes a
-`thread-group`, use `--reload-all`.
+`runtime-group`, use `--reload-all`.

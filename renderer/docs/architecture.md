@@ -14,7 +14,7 @@ monitors, tray UI, runtime groups, native windows, and the Ultralight app.
 
 ## Runtime groups
 
-Each distinct `thread-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. Aether dispatches Ultralight calls, window creation, destruction, specific-window unload/reload, and group state changes to that owner thread. Unloaded definitions remain in the group catalog without an active native/runtime instance.
+Each distinct generic-window `runtime-group` maps to one `RuntimeGroupHost`. The host owns a background STA thread with a `RuntimeGroupContext` and a WinForms message loop. Aether dispatches Ultralight calls, window creation, destruction, specific-window unload/reload, and group state changes to that owner thread. Unloaded definitions remain in the group catalog without an active native/runtime instance.
 
 `RuntimeGroupContext` runs a 16 ms timer while active. Each tick can:
 
@@ -31,8 +31,8 @@ Configuration swaps use one host lock. Control-pipe and command-pipe requests ca
 
 `RendererConfiguration.ResolveWindowSpecs` converts configuration into `RendererWindowSpec` values:
 
-- Generic windows: explicit monitor/work-area/virtual-screen geometry, placement,
-  z-order, input/focus, lifecycle, notification, and bridge policies.
+- Generic windows: explicit geometry, surface kind/z-order, input/focus,
+  lifecycle, notification, and bridge policies.
 - Wallpaper: virtual-screen (`span`), per-monitor (`all`), or one selected monitor (`single`) desktop adapter.
 - Widget: monitor-relative geometry resolved from anchor, position scaling, and size scaling desktop adapter.
 
@@ -41,8 +41,8 @@ each URL, then shows each window when ready.
 
 ## Native placement
 
-Aether embeds desktop-placement windows below the Windows desktop worker window
-through `DesktopEmbedder`. The generic placement controller applies frame,
+Aether embeds desktop-surface windows below the Windows desktop worker window
+through `DesktopEmbedder`. The generic surface controller applies frame,
 taskbar, z-order, focus, and work-area policy to top-level windows. Aether
 checks geometry and repairs it on the reconciliation timer.
 
@@ -54,8 +54,10 @@ Reload parses and resolves a candidate configuration before it changes active
 windows. If validation fails, Aether keeps the current configuration. Applying
 a theme creates a fresh logical runtime inside the same Aether process, disposes
 prior windows and bridge instances, rotates backend scope, and keeps the
-inherited control channel and command pipe alive. Configuration changes emit the
-new theme activation generation so Chronos can reject stale events.
+inherited control channel and command pipe alive. Chronos supplies the opaque
+renderer session identity used for backend scope; the command pipe remains the
+standalone/direct CLI transport. Configuration changes emit the new theme
+activation generation so Chronos can reject stale events.
 
 Control EOF marks Aether unavailable to Chronos and fails pending requests.
 Backend EOF closes that backend session; the next page request creates a fresh

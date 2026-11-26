@@ -41,7 +41,8 @@ public sealed record RendererCommand(
     int Version = RendererCommandCodec.Version,
     Guid? ThemeId = null,
     Guid? ThemeActivationId = null,
-    long? ThemeGeneration = null);
+    long? ThemeGeneration = null,
+    string? RendererSessionId = null);
 
 public static class RendererCommandCodec
 {

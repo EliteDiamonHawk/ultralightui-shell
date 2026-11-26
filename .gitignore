@@ -201,7 +201,7 @@ BenchmarkDotNet.Artifacts/
 Thumbs.db
 [Dd]esktop.ini
 
-.agents/skills/
+.agents/
 experimental/
 
 # The widget workspace owns versioned shared packages under this path.

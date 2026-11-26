@@ -35,6 +35,7 @@ internal static class Program
             (nameof(ConfigurationRejectsLegacyGenericWindowShape), ConfigurationRejectsLegacyGenericWindowShape),
             (nameof(ConfigurationAppliesGenericWindowDefaults), ConfigurationAppliesGenericWindowDefaults),
             (nameof(ConfigurationParsesInitialLifecycleStates), ConfigurationParsesInitialLifecycleStates),
+            (nameof(ConfigurationInspectionUsesNestedTerminology), ConfigurationInspectionUsesNestedTerminology),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
             (nameof(ConfigurationRejectsMenuSection), ConfigurationRejectsMenuSection),
@@ -259,8 +260,8 @@ internal static class Program
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
-            AssertEqual("widgets", configuration.Widgets[0].ThreadGroup);
-            AssertEqual("windows", configuration.Windows[0].ThreadGroup);
+            AssertEqual("widgets", configuration.Widgets[0].RuntimeGroup);
+            AssertEqual("windows", configuration.Windows[0].RuntimeGroup);
         }
         finally { Delete(path); }
     }
@@ -271,7 +272,7 @@ internal static class Program
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
-            AssertEqual("desktop", configuration.Wallpapers[0].ThreadGroup);
+            AssertEqual("desktop", configuration.Wallpapers[0].RuntimeGroup);
         }
         finally { Delete(path); }
     }
@@ -283,24 +284,25 @@ internal static class Program
               "geometry":{"position":{"x":10,"y":20,"unit":"percent"},"size":{"width":40,"height":50,"unit":"percent"}},
               "surface":{"kind":"top-level","z-order":"topmost-when-focused","framed":true,"resizable":true,
                 "show-in-taskbar":true,"work-area":{"enabled":true,"edge":"top","thickness":32}},
-              "lifecycle":{"initial":{"visibility":"hidden","runtime":"paused"},"pause-on-fullscreen":false},
+              "lifecycle":{"initial":{"visibility":"hidden","runtime":"paused"},"hidden-behavior":"pause","pause-on-fullscreen":false},
               "input":{"mouse":"native","keyboard":"none","focus":"on-show"},
               "notifications":{"focus":true,"visibility":true}}]}
             """);
         GenericWindowDefinition window = RendererConfiguration.LoadJson(document.RootElement).Windows.Single();
         AssertEqual("panel", window.Id);
-        AssertEqual(WindowPlacement.TopLevel, window.Placement);
-        AssertEqual(WindowZOrder.TopmostWhenFocused, window.ZOrder);
-        AssertTrue(window.Framed);
-        AssertTrue(window.Resizable);
-        AssertEqual(WindowInitialVisibility.Hidden, window.Initial.Visibility);
-        AssertEqual(WindowInitialRuntime.Paused, window.Initial.Runtime);
-        AssertFalse(window.PauseOnFullscreen);
+        AssertEqual(WindowSurfaceKind.TopLevel, window.Surface.Kind);
+        AssertEqual(WindowZOrder.TopmostWhenFocused, window.Surface.ZOrder);
+        AssertTrue(window.Surface.Framed);
+        AssertTrue(window.Surface.Resizable);
+        AssertEqual(WindowHiddenBehavior.Pause, window.Lifecycle.HiddenBehavior);
+        AssertEqual(WindowInitialVisibility.Hidden, window.Lifecycle.InitialVisibility);
+        AssertEqual(WindowInitialRuntime.Paused, window.Lifecycle.InitialRuntime);
+        AssertFalse(window.Lifecycle.SuspendOnFullscreen);
         AssertEqual(WindowInputMode.None, window.Input.Keyboard);
         AssertEqual(WindowFocusMode.OnShow, window.Input.Focus);
         AssertTrue(window.Notifications.Focus);
-        AssertTrue(window.WorkArea.Enabled);
-        AssertEqual(32, window.WorkArea.Thickness);
+        AssertTrue(window.Surface.WorkArea!.Enabled);
+        AssertEqual(32, window.Surface.WorkArea.Thickness);
     }
 
     private static void ConfigurationRejectsLegacyGenericWindowShape()
@@ -311,13 +313,10 @@ internal static class Program
             "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"surface\":{\"placement\":\"top-level\"}}]}" );
         using JsonDocument stringNumber = JsonDocument.Parse(
             "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":\"0\",\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}}}]}" );
-        using JsonDocument legacyLifecycle = JsonDocument.Parse(
-            "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"lifecycle\":{\"initial-visibility\":\"hidden\",\"hidden-behavior\":\"unload\"}}]}" );
 
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(flat.RootElement));
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(alias.RootElement));
         AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(stringNumber.RootElement));
-        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(legacyLifecycle.RootElement));
     }
 
     private static void ConfigurationAppliesGenericWindowDefaults()
@@ -327,13 +326,53 @@ internal static class Program
               "position":{"x":0,"y":0,"unit":"pixels"},"size":{"width":320,"height":180,"unit":"pixels"}}}]}
             """);
         GenericWindowDefinition window = RendererConfiguration.LoadJson(document.RootElement).Windows.Single();
-        AssertEqual("windows", window.ThreadGroup);
-        AssertEqual(WindowPlacement.TopLevel, window.Placement);
-        AssertEqual(WindowZOrder.Normal, window.ZOrder);
-        AssertEqual(WindowInitialVisibility.Shown, window.Initial.Visibility);
-        AssertEqual(WindowInitialRuntime.Active, window.Initial.Runtime);
-        AssertTrue(window.PauseOnFullscreen);
-        AssertFalse(window.Transparent);
+        AssertEqual("windows", window.RuntimeGroup);
+        AssertEqual(WindowSurfaceKind.TopLevel, window.Surface.Kind);
+        AssertEqual(WindowZOrder.Normal, window.Surface.ZOrder);
+        AssertEqual(WindowInitialVisibility.Visible, window.Lifecycle.InitialVisibility);
+        AssertEqual(WindowHiddenBehavior.Retain, window.Lifecycle.HiddenBehavior);
+        AssertEqual(WindowInitialRuntime.Active, window.Lifecycle.InitialRuntime);
+        AssertTrue(window.Lifecycle.SuspendOnFullscreen);
+        AssertFalse(window.Surface.Transparent);
+    }
+
+    private static void ConfigurationInspectionUsesNestedTerminology()
+    {
+        var spec = new RendererWindowSpec(
+            "inspection",
+            "https://example.test/",
+            new Rectangle(10, 20, 300, 200),
+            new Rectangle(0, 0, 1920, 1080),
+            "runtime",
+            WindowKind.Generic,
+            new WindowGeometry(10, 20, 300, 200, 1, "monitor", WidgetAnchor.TopLeft, "pixels", "pixels"),
+            new WindowSurface(WindowSurfaceKind.TopLevel, "Inspection", WindowZOrder.Normal),
+            new WindowLifecycle(WindowInitialVisibility.Visible, WindowHiddenBehavior.Retain, true),
+            1,
+            Input: new WindowInputPolicy());
+        string specJson = ControlPipeCodec.SerializeJson(spec);
+        AssertTrue(specJson.Contains("\"runtimeGroup\"", StringComparison.Ordinal));
+        AssertTrue(specJson.Contains("\"geometry\"", StringComparison.Ordinal));
+        AssertTrue(specJson.Contains("\"surface\"", StringComparison.Ordinal));
+        AssertTrue(specJson.Contains("\"lifecycle\"", StringComparison.Ordinal));
+        AssertFalse(specJson.Contains("\"threadGroup\"", StringComparison.Ordinal));
+        AssertFalse(specJson.Contains("\"placement\"", StringComparison.Ordinal));
+
+        var snapshot = new WindowSnapshot(
+            "inspection", "https://example.test/", "runtime", WindowKind.Generic,
+            new Rectangle(10, 20, 300, 200), new Rectangle(10, 20, 300, 200), 1,
+            true, false, false, false, AppWindowState.Embedded, WindowSurfaceKind.TopLevel, WindowZOrder.Normal);
+        string snapshotJson = ControlPipeCodec.SerializeJson(snapshot);
+        AssertTrue(snapshotJson.Contains("\"runtimeGroup\"", StringComparison.Ordinal));
+        AssertTrue(snapshotJson.Contains("\"surfaceKind\"", StringComparison.Ordinal));
+        AssertFalse(snapshotJson.Contains("\"group\"", StringComparison.Ordinal));
+        AssertFalse(snapshotJson.Contains("\"placement\"", StringComparison.Ordinal));
+
+        RendererWindowContract contract = RendererContractMapper.ToContract(snapshot);
+        string contractJson = JsonSerializer.Serialize(contract, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        AssertTrue(contractJson.Contains("\"kind\":\"generic\"", StringComparison.Ordinal));
+        AssertTrue(contractJson.Contains("\"state\":\"embedded\"", StringComparison.Ordinal));
+        AssertFalse(contractJson.Contains("\"kind\":0", StringComparison.Ordinal));
     }
 
     private static void ConfigurationParsesInitialLifecycleStates()

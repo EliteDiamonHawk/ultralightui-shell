@@ -16,7 +16,9 @@ initialization succeeds.
 
 Chronos owns the product tray. The `--tray <true|false>` option controls its
 creation. Chronos persists paths only after Aether reports
-the matching active configuration.
+the matching active configuration. A failed post-configuration menu activation
+returns Aether to idle; the previous accepted theme may remain as a distinct
+last-known-good fallback for a later recovery/startup attempt.
 
 Theme changes keep Aether and both Chronos-to-Aether transports alive. Aether
 swaps its disposable theme runtime while keeping its process, inherited control
@@ -43,9 +45,12 @@ configuration events and requests without replacing transport handles.
 ## Command service
 
 Chronos has no public command pipe. Tray, keybind, and WinForms code use one
-typed internal service. Keybind cues and Win-key menu policy use the inherited
-control channel; typed Aether commands use the existing named command pipe.
-Config inspection returns active-theme cue names for Chronos keybind editing.
+typed internal service. Keybind cues, Win-key menu policy, and typed Aether
+commands use the inherited control channel for managed sessions.
+Managed commands and config inspection use the inherited control channel and
+return shared, stable renderer contracts. The named pipe remains available for
+standalone/direct Aether CLI commands. Config inspection returns active-theme
+cue names for Chronos keybind editing.
 Before it creates an action, the service reads valid renderer IDs, groups, menu
 presence, and connection state from Aether inspection output. Inherited events
 update WinForms status; optional timer polling supplements them, and

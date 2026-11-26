@@ -1,11 +1,13 @@
 using System.Drawing;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using KhaosShell.Contracts;
 
 namespace Aether;
 
 // WindowKind identifies the compatibility adapter which produced a window. The
-// runtime never uses it to select native behavior; placement and input policy
-// do that instead.
+// runtime never uses it to select native behavior; surface and input policy do
+// that instead.
 public enum WindowKind
 {
     Generic,
@@ -13,10 +15,31 @@ public enum WindowKind
     Widget
 }
 
-public enum WindowPlacement
+public enum WindowSurfaceKind
 {
     Desktop,
     TopLevel
+}
+
+public enum WindowInitialVisibility
+{
+    Visible = 0,
+    Shown = 0,
+    Hidden
+}
+
+public enum WindowInitialRuntime
+{
+    Active,
+    Paused,
+    Unloaded
+}
+
+public enum WindowHiddenBehavior
+{
+    Retain,
+    Pause,
+    Unload
 }
 
 public enum WindowZOrder
@@ -28,21 +51,8 @@ public enum WindowZOrder
     TopmostWhenFocused
 }
 
-public enum WindowInitialVisibility
-{
-    Shown,
-    Hidden
-}
-
-public enum WindowInitialRuntime
-{
-    Active,
-    Paused,
-    Unloaded
-}
-
 public sealed record WindowInitialConfiguration(
-    WindowInitialVisibility Visibility = WindowInitialVisibility.Shown,
+    WindowInitialVisibility Visibility = WindowInitialVisibility.Visible,
     WindowInitialRuntime Runtime = WindowInitialRuntime.Active)
 {
     public static WindowInitialConfiguration Default { get; } = new();
@@ -80,42 +90,99 @@ public sealed record WorkAreaReservation(
     string Edge = "bottom",
     int Thickness = 0);
 
+public sealed record WindowGeometry(
+    double X,
+    double Y,
+    double Width,
+    double Height,
+    int Monitor = 1,
+    string CoordinateSpace = "monitor",
+    WidgetAnchor Anchor = WidgetAnchor.TopLeft,
+    string PositionUnit = "pixels",
+    string SizeUnit = "pixels");
+
+public sealed record WindowSurface(
+    WindowSurfaceKind Kind = WindowSurfaceKind.TopLevel,
+    string? Title = null,
+    WindowZOrder ZOrder = WindowZOrder.Normal,
+    bool Transparent = false,
+    bool Framed = false,
+    bool Resizable = false,
+    bool ShowInTaskbar = false,
+    WorkAreaReservation? WorkArea = null);
+
+public sealed record WindowLifecycle(
+    WindowInitialVisibility InitialVisibility = WindowInitialVisibility.Visible,
+    WindowHiddenBehavior HiddenBehavior = WindowHiddenBehavior.Retain,
+    bool SuspendOnFullscreen = true,
+    WindowInitialRuntime InitialRuntime = WindowInitialRuntime.Active)
+{
+    public WindowInitialConfiguration InitialConfiguration => new(InitialVisibility, InitialRuntime);
+}
+
+public enum WindowPlacement
+{
+    Desktop,
+    TopLevel
+}
+
 public sealed record RendererWindowSpec(
     string LogicalId,
     string Url,
     Rectangle Bounds,
     Rectangle VirtualBounds,
-    string ThreadGroup,
+    string RuntimeGroup,
     WindowKind Kind,
-    bool Transparent = true,
-    int MonitorNumber = 0,
-    WindowInitialConfiguration? Initial = null,
+    WindowGeometry? Geometry = null,
+    WindowSurface? Surface = null,
+    WindowLifecycle? Lifecycle = null,
+    int Monitor = 0,
     BridgePolicy? Bridge = null,
     IReadOnlyDictionary<string, JsonElement>? Variables = null,
     IReadOnlyList<string>? Cues = null,
-    WindowPlacement Placement = WindowPlacement.TopLevel,
-    WindowZOrder ZOrder = WindowZOrder.Normal,
-    bool Framed = false,
-    bool Resizable = false,
-    bool ShowInTaskbar = false,
-    bool ActivateOnShow = false,
-    bool PauseOnFullscreen = true,
-    string? Title = null,
     WindowInputPolicy? Input = null,
-    WindowNotificationPolicy? Notifications = null,
-    WorkAreaReservation? WorkArea = null)
+    WindowNotificationPolicy? Notifications = null)
 {
-    public WindowInitialConfiguration InitialConfiguration => Initial ?? WindowInitialConfiguration.Default;
+    public WindowSurface EffectiveSurface => Surface ?? new();
+    public WindowLifecycle EffectiveLifecycle => Lifecycle ?? new();
+    [JsonIgnore]
+    public WindowInitialConfiguration InitialConfiguration => EffectiveLifecycle.InitialConfiguration;
+    [JsonIgnore]
+    public string ThreadGroup => RuntimeGroup;
+    [JsonIgnore]
+    public int MonitorNumber => Monitor;
+    [JsonIgnore]
+    public WindowInitialConfiguration Initial => InitialConfiguration;
+    [JsonIgnore]
+    public WindowPlacement Placement => EffectiveSurface.Kind == WindowSurfaceKind.Desktop ? WindowPlacement.Desktop : WindowPlacement.TopLevel;
+    [JsonIgnore]
+    public WindowZOrder ZOrder => EffectiveSurface.ZOrder;
+    [JsonIgnore]
+    public bool Framed => EffectiveSurface.Framed;
+    [JsonIgnore]
+    public bool Transparent => EffectiveSurface.Transparent;
+    [JsonIgnore]
+    public bool Resizable => EffectiveSurface.Resizable;
+    [JsonIgnore]
+    public bool ShowInTaskbar => EffectiveSurface.ShowInTaskbar;
+    [JsonIgnore]
+    public bool ActivateOnShow => EffectiveInput.Focus == WindowFocusMode.OnShow;
+    [JsonIgnore]
+    public bool PauseOnFullscreen => EffectiveLifecycle.SuspendOnFullscreen;
+    [JsonIgnore]
+    public string? Title => EffectiveSurface.Title;
+    [JsonIgnore]
+    public WorkAreaReservation? WorkArea => EffectiveSurface.WorkArea;
     public WindowInputPolicy EffectiveInput => Input ?? new();
     public WindowNotificationPolicy EffectiveNotifications => Notifications ?? new();
-    public WorkAreaReservation EffectiveWorkArea => WorkArea ?? new();
-    public string EffectiveTitle => string.IsNullOrWhiteSpace(Title) ? $"Aether - {LogicalId}" : Title!;
+    public WorkAreaReservation EffectiveWorkArea => EffectiveSurface.WorkArea ?? new();
+    public string EffectiveTitle => string.IsNullOrWhiteSpace(EffectiveSurface.Title) ? $"Aether - {LogicalId}" : EffectiveSurface.Title!;
 }
 
 public sealed record WindowSnapshot(
     string Id,
     string Url,
-    string Group,
+    string RuntimeGroup,
     WindowKind Kind,
     Rectangle ConfiguredBounds,
     Rectangle CurrentBounds,
@@ -125,8 +192,42 @@ public sealed record WindowSnapshot(
     bool Paused,
     bool Loaded,
     AppWindowState State,
-    WindowPlacement Placement = WindowPlacement.TopLevel,
-    WindowZOrder ZOrder = WindowZOrder.Normal);
+    WindowSurfaceKind SurfaceKind = WindowSurfaceKind.TopLevel,
+    WindowZOrder ZOrder = WindowZOrder.Normal)
+{
+    [JsonIgnore]
+    public bool Suspended => Paused;
+}
+
+internal static class RendererContractMapper
+{
+    public static RendererWindowContract ToContract(WindowSnapshot snapshot) => new(
+        snapshot.Id,
+        snapshot.Url,
+        snapshot.RuntimeGroup,
+        snapshot.Kind switch
+        {
+            WindowKind.Wallpaper => "wallpaper",
+            WindowKind.Widget => "widget",
+            _ => "generic"
+        },
+        ToContract(snapshot.ConfiguredBounds),
+        ToContract(snapshot.CurrentBounds),
+        snapshot.Monitor,
+        snapshot.Visible,
+        snapshot.Focused,
+        snapshot.Paused,
+        snapshot.State.ToString().ToLowerInvariant(),
+        snapshot.SurfaceKind switch
+        {
+            WindowSurfaceKind.Desktop => "desktop",
+            _ => "top-level"
+        },
+        snapshot.ZOrder.ToString().ToLowerInvariant());
+
+    private static RendererBoundsContract ToContract(Rectangle bounds) =>
+        new(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+}
 
 public sealed record BridgePolicy(
     bool? Enabled,

@@ -77,6 +77,7 @@ reloaded by ID; `show` does not implicitly reload them.
 Standard runtime commands use the user-scoped named pipe `\\.\pipe\Aether.Commands`. CLI flags wrap that command transport. The server accepts one newline-delimited serialized `RendererCommand` per connection. `show` commands return a JSON object; other successful commands return `OK ...`, and failures return `ERR ...`.
 
 The inherited controller channel supports `POST /v1/renderer/configure`,
+`POST /v1/renderer/command`, `GET /v1/renderer/config`,
 `GET|POST|PUT|DELETE /v1/renderer/windows`,
 `POST /v1/renderer/windows/{id}/actions`, `GET /v1/pipes`, and
 `PUT /v1/logging/batch-limits`. Aether has no menu-specific route; Chronos
@@ -85,6 +86,9 @@ Managed Aether emits
 `renderer.transport.ready` before configuration and `renderer.ready` after
 successful configuration. Other `/v1/*` routes return `404` from Aether.
 Chronos handles backend routes and log intake on its side of the channel.
+Managed Chronos commands use the inherited channel; the named pipe remains the
+standalone/direct CLI compatibility transport. Renderer config and window
+inspection responses use stable string-valued shared contracts.
 
 The tray menu exposes the same common actions.
 

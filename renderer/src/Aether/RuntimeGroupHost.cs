@@ -158,7 +158,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly object _windowSync = new();
     private readonly UltralightRuntime _runtime;
     private readonly DesktopEmbedder _embedder;
-    private readonly GenericWindowPlacementController _windowController;
+    private readonly GenericWindowSurfaceController _windowController;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly List<AppWindow> _windows = new();
     private readonly Dictionary<string, RendererWindowSpec> _definitions = new(StringComparer.Ordinal);
@@ -187,11 +187,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         _backends = backends;
         _control = control;
         _runtimeCommandExecutor = runtimeCommandExecutor;
-        _currentSpecs = specFactory().Where(spec => spec.ThreadGroup == name).ToList();
+        _currentSpecs = specFactory().Where(spec => spec.RuntimeGroup == name).ToList();
         _dispatcher.CreateControl();
         _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control, _runtimeCommandExecutor);
         _embedder = new DesktopEmbedder(options.Verbose);
-        _windowController = new GenericWindowPlacementController();
+        _windowController = new GenericWindowSurfaceController();
         _timer = new System.Windows.Forms.Timer { Interval = 16 };
         _timer.Tick += (_, _) => Tick();
 
@@ -200,7 +200,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     }
 
     public IReadOnlyList<WallpaperWindow> GetDesktopWindows() =>
-        SnapshotWindows().Where(window => window.Spec.Placement == WindowPlacement.Desktop)
+        SnapshotWindows().Where(window => window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
             .Select(window => new WallpaperWindow(window))
             .ToArray();
 
@@ -261,13 +261,20 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             throw new InvalidOperationException($"Unknown window ID: {id}");
         if (window == null)
             throw new InvalidOperationException($"Window '{id}' is unloaded; reload it before changing visibility.");
+        if (!visible && window.Spec.EffectiveLifecycle.HiddenBehavior == WindowHiddenBehavior.Unload)
+        {
+            UnloadWindow(id);
+            return;
+        }
+        if (visible && window.Spec.EffectiveLifecycle.HiddenBehavior == WindowHiddenBehavior.Pause)
+            window.DesiredPaused = false;
         window.DesiredVisible = visible;
         ApplyWindowVisibility(window);
     }
 
     public WindowSnapshot CreateDynamicWindow(RendererWindowSpec spec)
     {
-        if (!string.Equals(spec.ThreadGroup, _name, StringComparison.Ordinal))
+        if (!string.Equals(spec.RuntimeGroup, _name, StringComparison.Ordinal))
             throw new InvalidOperationException($"Window group does not match runtime group '{_name}'.");
         if (_definitions.ContainsKey(spec.LogicalId))
             throw new InvalidOperationException($"Logical window ID is already registered: {spec.LogicalId}");
@@ -326,7 +333,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         {
             loadSpec = loadSpec with
             {
-                Initial = loadSpec.InitialConfiguration with { Runtime = WindowInitialRuntime.Active }
+                Lifecycle = loadSpec.EffectiveLifecycle with { InitialRuntime = WindowInitialRuntime.Active }
             };
         }
 
@@ -359,7 +366,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 break;
             case "focus":
                 window = RequireLoadedWindow(id, window);
-                if (window.Spec.Placement == WindowPlacement.Desktop)
+                if (window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
                     throw new InvalidOperationException("Desktop windows require forwarded input focus.");
                 window.DesiredVisible = true;
                 ApplyWindowVisibility(window);
@@ -402,7 +409,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             window.Focused = focused;
             if (window.Spec.Notifications?.Focus == true || window.Spec.EffectiveNotifications.Focus)
                 changed.Add(Snapshot(window));
-            if (window.Spec.ZOrder == WindowZOrder.TopmostWhenFocused && window.Spec.Placement == WindowPlacement.TopLevel)
+            if (window.Spec.EffectiveSurface.ZOrder == WindowZOrder.TopmostWhenFocused && window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.TopLevel)
                 _windowController.Reconcile(window);
         }
         return changed;
@@ -427,7 +434,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         foreach (AppWindow window in _windows.ToArray())
         {
             window.FullscreenOccluded = monitor != IntPtr.Zero && window.MonitorHandle == monitor;
-            if (window.Spec.PauseOnFullscreen)
+            if (window.Spec.EffectiveLifecycle.SuspendOnFullscreen)
                 ApplyPause(window);
         }
         if (!_paused)
@@ -441,7 +448,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     public void Reload(IReadOnlyList<RendererWindowSpec> specs)
     {
-        List<RendererWindowSpec> candidateSpecs = specs.Where(spec => spec.ThreadGroup == _name).ToList();
+        List<RendererWindowSpec> candidateSpecs = specs.Where(spec => spec.RuntimeGroup == _name).ToList();
         ReplaceWindows(candidateSpecs);
         _currentSpecs = candidateSpecs;
     }
@@ -474,7 +481,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                     return;
                 }
 
-                if (window.Spec.Placement == WindowPlacement.Desktop)
+                if (window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
                     _embedder.Reconcile(window);
                 else
                     _windowController.Reconcile(window);
@@ -540,9 +547,9 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         try
         {
             WindowInitialConfiguration initial = spec.InitialConfiguration;
-            window.DesiredVisible = initial.Visibility == WindowInitialVisibility.Shown;
+            window.DesiredVisible = initial.Visibility == WindowInitialVisibility.Visible;
             window.DesiredPaused = initial.Runtime == WindowInitialRuntime.Paused;
-            if (spec.Placement == WindowPlacement.Desktop)
+            if (spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
             {
                 _embedder.Embed(window);
                 window.IsVisible = window.DesiredVisible;
@@ -552,7 +559,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 window.IsVisible = window.DesiredVisible;
                 _windowController.Reconcile(window);
                 if (window.IsVisible)
-                    _windowController.Show(window, spec.ActivateOnShow || spec.EffectiveInput.Focus == WindowFocusMode.OnShow);
+                    _windowController.Show(window, spec.EffectiveInput.Focus == WindowFocusMode.OnShow);
             }
             _runtime.ShowWhenReady(window, _options.StartupTimeout);
             window.State = AppWindowState.Embedded;
@@ -571,7 +578,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         if (window.DesiredVisible && (!_paused || keepVisibleWhenPaused))
         {
             ApplyPause(window);
-            if (window.Spec.Placement == WindowPlacement.Desktop)
+            if (window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
             {
                 NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_SHOW);
                 window.IsVisible = true;
@@ -583,7 +590,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         }
         else
         {
-            if (window.Spec.Placement == WindowPlacement.Desktop)
+            if (window.Spec.EffectiveSurface.Kind == WindowSurfaceKind.Desktop)
             {
                 NativeWindowApi.ShowWindow(window.Hwnd, NativeWindowApi.SW_HIDE);
                 window.IsVisible = false;
@@ -591,6 +598,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             else
             {
                 _windowController.Hide(window);
+            }
+            if (window.Spec.EffectiveLifecycle.HiddenBehavior == WindowHiddenBehavior.Pause && !_paused)
+            {
+                window.DesiredPaused = true;
+                ApplyPause(window);
             }
         }
     }
@@ -612,14 +624,14 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         window.Kind,
         window.Spec.Bounds,
         GetCurrentBounds(window),
-        window.Spec.MonitorNumber,
+        window.Spec.Monitor,
         window.IsVisible,
         window.Focused,
         window.RendererPaused,
         window.State == AppWindowState.Embedded,
         window.State,
-        window.Spec.Placement,
-        window.Spec.ZOrder);
+        window.Spec.EffectiveSurface.Kind,
+        window.Spec.EffectiveSurface.ZOrder);
 
     private WindowSnapshot SnapshotUnloaded(RendererWindowSpec spec) => new(
         spec.LogicalId,
@@ -628,14 +640,14 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         spec.Kind,
         spec.Bounds,
         spec.Bounds,
-        spec.MonitorNumber,
+        spec.Monitor,
         false,
         false,
         false,
         false,
         AppWindowState.Unloaded,
-        spec.Placement,
-        spec.ZOrder);
+        spec.EffectiveSurface.Kind,
+        spec.EffectiveSurface.ZOrder);
 
     private void ApplyPause(AppWindow window)
     {
