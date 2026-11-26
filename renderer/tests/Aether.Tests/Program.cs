@@ -32,6 +32,8 @@ internal static class Program
             (nameof(ConfigurationRejectsDuplicateSections), ConfigurationRejectsDuplicateSections),
             (nameof(ConfigurationAppliesDefaultGroups), ConfigurationAppliesDefaultGroups),
             (nameof(ConfigurationParsesGenericWindowPolicies), ConfigurationParsesGenericWindowPolicies),
+            (nameof(ConfigurationRejectsLegacyGenericWindowShape), ConfigurationRejectsLegacyGenericWindowShape),
+            (nameof(ConfigurationAppliesGenericWindowDefaults), ConfigurationAppliesGenericWindowDefaults),
             (nameof(ConfigurationSupportsExplicitGroups), ConfigurationSupportsExplicitGroups),
             (nameof(ConfigurationRejectsUnknownFields), ConfigurationRejectsUnknownFields),
             (nameof(ConfigurationRejectsMenuSection), ConfigurationRejectsMenuSection),
@@ -252,7 +254,7 @@ internal static class Program
 
     private static void ConfigurationAppliesDefaultGroups()
     {
-        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"windows\":[{\"id\":\"generic\",\"x\":0,\"y\":0,\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}]}");
+        string path = WriteTemp("{\"widgets\":[{\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}],\"windows\":[{\"id\":\"generic\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"url\":\"https://example.test/\"}]}");
         try
         {
             RendererConfiguration configuration = RendererConfiguration.Load(new[] { path });
@@ -276,11 +278,13 @@ internal static class Program
     private static void ConfigurationParsesGenericWindowPolicies()
     {
         using JsonDocument document = JsonDocument.Parse("""
-            {"windows":[{"id":"panel","url":"file:///panel.html","x":10,"y":20,"width":40,"height":50,
-              "x-unit":"percent","y-unit":"percent","width-unit":"percent","height-unit":"percent",
-              "placement":"top-level","z-order":"topmost-when-focused","framed":true,"resizable":true,
-              "show-in-taskbar":true,"hidden-behavior":"pause","input":{"mouse":"native","keyboard":"none","focus":"on-show"},
-              "notifications":{"focus":true,"visibility":true},"work-area":{"enabled":true,"edge":"top","thickness":32}}]}
+            {"windows":[{"id":"panel","url":"file:///panel.html",
+              "geometry":{"position":{"x":10,"y":20,"unit":"percent"},"size":{"width":40,"height":50,"unit":"percent"}},
+              "surface":{"kind":"top-level","z-order":"topmost-when-focused","framed":true,"resizable":true,
+                "show-in-taskbar":true,"work-area":{"enabled":true,"edge":"top","thickness":32}},
+              "lifecycle":{"hidden-behavior":"pause"},
+              "input":{"mouse":"native","keyboard":"none","focus":"on-show"},
+              "notifications":{"focus":true,"visibility":true}}]}
             """);
         GenericWindowDefinition window = RendererConfiguration.LoadJson(document.RootElement).Windows.Single();
         AssertEqual("panel", window.Id);
@@ -294,6 +298,36 @@ internal static class Program
         AssertTrue(window.Notifications.Focus);
         AssertTrue(window.WorkArea.Enabled);
         AssertEqual(32, window.WorkArea.Thickness);
+    }
+
+    private static void ConfigurationRejectsLegacyGenericWindowShape()
+    {
+        using JsonDocument flat = JsonDocument.Parse(
+            "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"x\":0,\"y\":0,\"width\":100,\"height\":100}]}" );
+        using JsonDocument alias = JsonDocument.Parse(
+            "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":0,\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}},\"surface\":{\"placement\":\"top-level\"}}]}" );
+        using JsonDocument stringNumber = JsonDocument.Parse(
+            "{\"windows\":[{\"id\":\"one\",\"url\":\"file:///one.html\",\"geometry\":{\"position\":{\"x\":\"0\",\"y\":0,\"unit\":\"pixels\"},\"size\":{\"width\":100,\"height\":100,\"unit\":\"pixels\"}}}]}" );
+
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(flat.RootElement));
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(alias.RootElement));
+        AssertThrows<RendererConfigurationException>(() => RendererConfiguration.LoadJson(stringNumber.RootElement));
+    }
+
+    private static void ConfigurationAppliesGenericWindowDefaults()
+    {
+        using JsonDocument document = JsonDocument.Parse("""
+            {"windows":[{"id":"defaulted","url":"https://example.test/","geometry":{
+              "position":{"x":0,"y":0,"unit":"pixels"},"size":{"width":320,"height":180,"unit":"pixels"}}}]}
+            """);
+        GenericWindowDefinition window = RendererConfiguration.LoadJson(document.RootElement).Windows.Single();
+        AssertEqual("windows", window.ThreadGroup);
+        AssertEqual(WindowPlacement.TopLevel, window.Placement);
+        AssertEqual(WindowZOrder.Normal, window.ZOrder);
+        AssertTrue(window.InitialVisible);
+        AssertEqual(WindowHiddenBehavior.Retain, window.HiddenBehavior);
+        AssertTrue(window.SuspendOnFullscreen);
+        AssertFalse(window.Transparent);
     }
 
     private static void ConfigurationRejectsUnknownFields()

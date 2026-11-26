@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "theme-schema.json",
+  "title": "Chronos managed theme",
+  "description": "JSON Schema for theme files loaded by Chronos. Aether-owned definitions are shared with the standalone renderer schema.",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": false,
+  "properties": {
+    "windows": {
+      "type": "array",
+      "items": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/genericWindow" }
+    },
+    "wallpaper": {
+      "type": "array",
+      "items": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/wallpaper" }
+    },
+    "widgets": {
+      "type": "array",
+      "items": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/widget" }
+    },
+    "variables": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+      "additionalProperties": true
+    },
+    "cues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
+    },
+    "menu": { "$ref": "#/$defs/menu" },
+    "before": { "$ref": "#/$defs/hooks" },
+    "after": { "$ref": "#/$defs/hooks" }
+  },
+  "$defs": {
+    "menu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "x", "y", "width", "height"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "thread-group": { "type": "string", "minLength": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "w": { "type": "number", "exclusiveMinimum": 0 },
+        "h": { "type": "number", "exclusiveMinimum": 0 },
+        "monitor": { "type": "integer", "minimum": 1 },
+        "pos-scaled": { "type": "boolean" },
+        "size-scaled": { "type": "boolean" },
+        "anchor": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/anchor" },
+        "transparent": { "type": "boolean" },
+        "auto-hide": { "type": "boolean" },
+        "hidden-behavior": { "enum": ["none", "retain", "pause", "suspend", "unload"] },
+        "bridge": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/bridge" }
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          { "$ref": "#/$defs/hook" }
+        ]
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable"],
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "array", "items": { "type": "string" } },
+        "waitForExit": { "type": "boolean" },
+        "stall": { "type": "boolean" },
+        "exitAfter": { "type": "boolean" }
+      }
+    }
+  }
+}

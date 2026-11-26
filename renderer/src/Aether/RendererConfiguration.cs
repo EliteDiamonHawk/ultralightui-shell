@@ -264,49 +264,83 @@ public sealed class RendererConfiguration
     {
         string prefix = $"Window {index}";
         RequireKind(element, JsonValueKind.Object, prefix);
-        ValidateProperties(element, prefix,
-            "id", "url", "thread-group", "title", "x", "y", "width", "height", "monitor",
-            "coordinate-space", "anchor", "x-unit", "y-unit", "width-unit", "height-unit",
-            "framed", "transparent", "resizable", "show-in-taskbar", "placement", "z-order",
-            "initial-visible", "hidden-behavior", "suspend-on-fullscreen", "input", "notifications",
-            "work-area", "bridge");
+        ValidatePropertiesExact(element, prefix,
+            "id", "url", "runtime-group", "geometry", "surface", "lifecycle", "input", "notifications", "bridge");
 
-        string id = GetRequiredString(element, "id", prefix).Trim();
+        string id = GetRequiredStringExact(element, "id", prefix).Trim();
         ValidateLogicalId(id, $"{prefix} id");
-        string url = NormalizeUrl(GetRequiredString(element, "url", prefix), prefix);
-        double x = GetOptionalDouble(element, "x") ?? 0;
-        double y = GetOptionalDouble(element, "y") ?? 0;
-        double width = GetRequiredDouble(element, "width", prefix);
-        double height = GetRequiredDouble(element, "height", prefix);
-        int monitor = GetOptionalInt(element, "monitor") ?? 1;
+        string url = NormalizeStrictUrl(GetRequiredStringExact(element, "url", prefix), prefix);
+
+        JsonElement geometry = GetRequiredObjectExact(element, "geometry", prefix);
+        ValidatePropertiesExact(geometry, $"{prefix} geometry",
+            "coordinate-space", "monitor", "anchor", "position", "size");
+        JsonElement position = GetRequiredObjectExact(geometry, "position", $"{prefix} geometry");
+        JsonElement size = GetRequiredObjectExact(geometry, "size", $"{prefix} geometry");
+        ValidatePropertiesExact(position, $"{prefix} geometry position", "x", "y", "unit");
+        ValidatePropertiesExact(size, $"{prefix} geometry size", "width", "height", "unit");
+
+        double x = GetRequiredNumberExact(position, "x", $"{prefix} geometry position");
+        double y = GetRequiredNumberExact(position, "y", $"{prefix} geometry position");
+        double width = GetRequiredNumberExact(size, "width", $"{prefix} geometry size");
+        double height = GetRequiredNumberExact(size, "height", $"{prefix} geometry size");
+        int monitor = GetOptionalIntExact(geometry, "monitor") ?? 1;
         if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0)
             throw new RendererConfigurationException($"{prefix} geometry must contain finite positive dimensions.");
         if (monitor <= 0)
             throw new RendererConfigurationException($"{prefix} monitor must be positive.");
 
-        string coordinateSpace = (GetOptionalString(element, "coordinate-space") ?? "monitor").Trim().ToLowerInvariant();
+        string coordinateSpace = (GetOptionalStringExact(geometry, "coordinate-space") ?? "monitor").Trim().ToLowerInvariant();
         if (coordinateSpace is not ("monitor" or "work-area" or "virtual-screen"))
             throw new RendererConfigurationException($"{prefix} coordinate-space must be monitor, work-area, or virtual-screen.");
-        string anchorText = GetOptionalString(element, "anchor") ?? "top-left";
+        string anchorText = GetOptionalStringExact(geometry, "anchor") ?? "top-left";
         if (!TryParseAnchor(anchorText, out WidgetAnchor anchor))
             throw new RendererConfigurationException($"{prefix} anchor '{anchorText}' is invalid.");
 
-        string xUnit = ParseUnit(element, "x-unit", prefix);
-        string yUnit = ParseUnit(element, "y-unit", prefix);
-        string widthUnit = ParseUnit(element, "width-unit", prefix);
-        string heightUnit = ParseUnit(element, "height-unit", prefix);
-        WindowPlacement placement = ParsePlacement(GetOptionalString(element, "placement"), prefix);
-        WindowZOrder zOrder = ParseZOrder(GetOptionalString(element, "z-order"), prefix);
-        WindowHiddenBehavior hidden = ParseHiddenBehavior(GetOptionalString(element, "hidden-behavior"));
-        WindowInputPolicy input = ParseInputPolicy(element, prefix);
-        WindowNotificationPolicy notifications = ParseNotifications(element, prefix);
-        WorkAreaReservation workArea = ParseWorkArea(element, prefix);
-        bool framed = GetOptionalBool(element, "framed") ?? false;
-        bool transparent = GetOptionalBool(element, "transparent") ?? false;
-        bool resizable = GetOptionalBool(element, "resizable") ?? false;
-        bool showInTaskbar = GetOptionalBool(element, "show-in-taskbar") ?? false;
-        bool initialVisible = GetOptionalBool(element, "initial-visible") ?? true;
-        bool suspendOnFullscreen = GetOptionalBool(element, "suspend-on-fullscreen") ?? true;
+        string positionUnit = ParseStrictUnit(GetRequiredStringExact(position, "unit", $"{prefix} geometry position"), $"{prefix} geometry position unit");
+        string sizeUnit = ParseStrictUnit(GetRequiredStringExact(size, "unit", $"{prefix} geometry size"), $"{prefix} geometry size unit");
+
+        JsonElement surface = TryGetExact(element, "surface", out JsonElement surfaceValue)
+            ? surfaceValue : default;
+        WindowPlacement placement = WindowPlacement.TopLevel;
+        WindowZOrder zOrder = WindowZOrder.Normal;
+        string? title = null;
+        bool framed = false;
+        bool transparent = false;
+        bool resizable = false;
+        bool showInTaskbar = false;
+        WorkAreaReservation workArea = new();
+        if (surface.ValueKind != JsonValueKind.Undefined)
+        {
+            RequireKind(surface, JsonValueKind.Object, $"{prefix} surface");
+            ValidatePropertiesExact(surface, $"{prefix} surface",
+                "kind", "title", "z-order", "transparent", "framed", "resizable", "show-in-taskbar", "work-area");
+            placement = ParseSurfaceKind(GetOptionalStringExact(surface, "kind"), prefix);
+            zOrder = ParseStrictZOrder(GetOptionalStringExact(surface, "z-order"), prefix);
+            title = GetOptionalStringExact(surface, "title");
+            transparent = GetOptionalBoolExact(surface, "transparent") ?? false;
+            framed = GetOptionalBoolExact(surface, "framed") ?? false;
+            resizable = GetOptionalBoolExact(surface, "resizable") ?? false;
+            showInTaskbar = GetOptionalBoolExact(surface, "show-in-taskbar") ?? false;
+            workArea = ParseStrictWorkArea(surface, prefix);
+        }
+
+        JsonElement lifecycle = TryGetExact(element, "lifecycle", out JsonElement lifecycleValue)
+            ? lifecycleValue : default;
+        bool initialVisible = true;
+        WindowHiddenBehavior hidden = WindowHiddenBehavior.Retain;
+        bool suspendOnFullscreen = true;
+        if (lifecycle.ValueKind != JsonValueKind.Undefined)
+        {
+            RequireKind(lifecycle, JsonValueKind.Object, $"{prefix} lifecycle");
+            ValidatePropertiesExact(lifecycle, $"{prefix} lifecycle",
+                "initial-visibility", "hidden-behavior", "suspend-on-fullscreen");
+            initialVisible = ParseInitialVisibility(GetOptionalStringExact(lifecycle, "initial-visibility"), prefix);
+            hidden = ParseStrictHiddenBehavior(GetOptionalStringExact(lifecycle, "hidden-behavior"), prefix);
+            suspendOnFullscreen = GetOptionalBoolExact(lifecycle, "suspend-on-fullscreen") ?? true;
+        }
+
+        WindowInputPolicy input = ParseStrictInputPolicy(element, prefix);
+        WindowNotificationPolicy notifications = ParseStrictNotifications(element, prefix);
 
         if (placement == WindowPlacement.Desktop &&
             (framed || showInTaskbar || workArea.Enabled || zOrder is WindowZOrder.Topmost or WindowZOrder.TopmostWhenFocused))
@@ -317,11 +351,150 @@ public sealed class RendererConfiguration
             throw new RendererConfigurationException($"{prefix} focus policy requires an input permission.");
 
         return new GenericWindowDefinition(
-            id, url, GetOptionalString(element, "thread-group")?.Trim() is { Length: > 0 } group ? group : "windows",
-            GetOptionalString(element, "title"), x, y, width, height, monitor, coordinateSpace, anchor,
-            xUnit, yUnit, widthUnit, heightUnit, placement, zOrder, framed, transparent, resizable,
+            id, url, GetStrictGroup(element, "runtime-group", "windows", prefix), title, x, y, width, height, monitor, coordinateSpace, anchor,
+            positionUnit, positionUnit, sizeUnit, sizeUnit, placement, zOrder, framed, transparent, resizable,
             showInTaskbar, initialVisible, hidden, suspendOnFullscreen, input, notifications, workArea,
-            ParseBridgePolicy(element, prefix));
+            ParseStrictBridgePolicy(element, prefix));
+    }
+
+    private static WindowPlacement ParseSurfaceKind(string? value, string prefix) =>
+        (value ?? "top-level").Trim().ToLowerInvariant() switch
+        {
+            "desktop" => WindowPlacement.Desktop,
+            "top-level" => WindowPlacement.TopLevel,
+            _ => throw new RendererConfigurationException($"{prefix} surface kind must be desktop or top-level.")
+        };
+
+    private static bool ParseInitialVisibility(string? value, string prefix) =>
+        (value ?? "visible").Trim().ToLowerInvariant() switch
+        {
+            "visible" => true,
+            "hidden" => false,
+            _ => throw new RendererConfigurationException($"{prefix} lifecycle initial-visibility must be visible or hidden.")
+        };
+
+    private static WindowHiddenBehavior ParseStrictHiddenBehavior(string? value, string prefix) =>
+        (value ?? "retain").Trim().ToLowerInvariant() switch
+        {
+            "retain" => WindowHiddenBehavior.Retain,
+            "pause" => WindowHiddenBehavior.Pause,
+            "unload" => WindowHiddenBehavior.Unload,
+            _ => throw new RendererConfigurationException($"{prefix} lifecycle hidden-behavior must be retain, pause, or unload.")
+        };
+
+    private static WindowZOrder ParseStrictZOrder(string? value, string prefix) =>
+        (value ?? "normal").Trim().ToLowerInvariant() switch
+        {
+            "bottom" => WindowZOrder.Bottom,
+            "normal" => WindowZOrder.Normal,
+            "top" => WindowZOrder.Top,
+            "topmost" => WindowZOrder.Topmost,
+            "topmost-when-focused" => WindowZOrder.TopmostWhenFocused,
+            _ => throw new RendererConfigurationException($"{prefix} surface z-order is invalid.")
+        };
+
+    private static WindowInputPolicy ParseStrictInputPolicy(JsonElement element, string prefix)
+    {
+        if (!TryGetExact(element, "input", out JsonElement value))
+            return new(WindowInputMode.Native, WindowInputMode.Native, WindowFocusMode.Never);
+        RequireKind(value, JsonValueKind.Object, $"{prefix} input");
+        ValidatePropertiesExact(value, $"{prefix} input", "mouse", "keyboard", "focus", "click-through");
+        return new(
+            ParseStrictInputMode(GetOptionalStringExact(value, "mouse"), $"{prefix} input mouse"),
+            ParseStrictInputMode(GetOptionalStringExact(value, "keyboard"), $"{prefix} input keyboard"),
+            ParseStrictFocusMode(GetOptionalStringExact(value, "focus"), $"{prefix} input focus"),
+            GetOptionalBoolExact(value, "click-through") ?? false);
+    }
+
+    private static WindowNotificationPolicy ParseStrictNotifications(JsonElement element, string prefix)
+    {
+        if (!TryGetExact(element, "notifications", out JsonElement value))
+            return new();
+        RequireKind(value, JsonValueKind.Object, $"{prefix} notifications");
+        ValidatePropertiesExact(value, $"{prefix} notifications", "focus", "visibility", "geometry", "lifecycle");
+        return new(
+            GetOptionalBoolExact(value, "focus") ?? false,
+            GetOptionalBoolExact(value, "visibility") ?? false,
+            GetOptionalBoolExact(value, "geometry") ?? false,
+            GetOptionalBoolExact(value, "lifecycle") ?? false);
+    }
+
+    private static WorkAreaReservation ParseStrictWorkArea(JsonElement surface, string prefix)
+    {
+        if (!TryGetExact(surface, "work-area", out JsonElement value))
+            return new();
+        RequireKind(value, JsonValueKind.Object, $"{prefix} surface work-area");
+        ValidatePropertiesExact(value, $"{prefix} surface work-area", "enabled", "edge", "thickness");
+        bool enabled = GetOptionalBoolExact(value, "enabled") ?? false;
+        string edge = (GetOptionalStringExact(value, "edge") ?? "bottom").Trim().ToLowerInvariant();
+        if (edge is not ("top" or "bottom" or "left" or "right"))
+            throw new RendererConfigurationException($"{prefix} surface work-area edge must be top, bottom, left, or right.");
+        int thickness = GetOptionalIntExact(value, "thickness") ?? 0;
+        if (enabled && thickness <= 0)
+            throw new RendererConfigurationException($"{prefix} surface work-area thickness must be positive when enabled.");
+        return new(enabled, edge, thickness);
+    }
+
+    private static string ParseStrictUnit(string value, string prefix) => value.Trim().ToLowerInvariant() switch
+    {
+        "pixels" or "percent" => value.Trim().ToLowerInvariant(),
+        _ => throw new RendererConfigurationException($"{prefix} must be pixels or percent.")
+    };
+
+    private static WindowInputMode ParseStrictInputMode(string? value, string prefix) =>
+        (value ?? "native").Trim().ToLowerInvariant() switch
+        {
+            "none" => WindowInputMode.None,
+            "native" => WindowInputMode.Native,
+            "forwarded" => WindowInputMode.Forwarded,
+            _ => throw new RendererConfigurationException($"{prefix} must be none, native, or forwarded.")
+        };
+
+    private static WindowFocusMode ParseStrictFocusMode(string? value, string prefix) =>
+        (value ?? "never").Trim().ToLowerInvariant() switch
+        {
+            "never" => WindowFocusMode.Never,
+            "on-show" => WindowFocusMode.OnShow,
+            "on-reveal" => WindowFocusMode.OnReveal,
+            "on-click" => WindowFocusMode.OnClick,
+            _ => throw new RendererConfigurationException($"{prefix} must be never, on-show, on-reveal, or on-click.")
+        };
+
+    private static BridgePolicy ParseStrictBridgePolicy(JsonElement element, string prefix)
+    {
+        if (!TryGetExact(element, "bridge", out JsonElement bridge))
+            return BridgePolicy.Default;
+        RequireKind(bridge, JsonValueKind.Object, $"{prefix} bridge");
+        ValidatePropertiesExact(bridge, $"{prefix} bridge", "enabled", "backend-ids", "control-routes", "runtime-commands");
+        bool? enabled = GetOptionalBoolExact(bridge, "enabled");
+        var backendIds = ParseStrictStringArray(bridge, "backend-ids", $"{prefix} bridge");
+        var controlRoutes = ParseStrictStringArray(bridge, "control-routes", $"{prefix} bridge")
+            .Select(route =>
+            {
+                if (!route.StartsWith("/v1/", StringComparison.Ordinal))
+                    throw new RendererConfigurationException($"{prefix} bridge control-routes contains an invalid route.");
+                return route;
+            }).ToArray();
+        var runtimeCommands = ParseStrictStringArray(bridge, "runtime-commands", $"{prefix} bridge");
+        foreach (string command in runtimeCommands)
+            if (!RuntimeCommandNames.TryMap(command, out _))
+                throw new RendererConfigurationException($"{prefix} bridge runtime-commands contains an invalid command.");
+        return new(enabled, backendIds, controlRoutes, runtimeCommands);
+    }
+
+    private static string[] ParseStrictStringArray(JsonElement element, string name, string prefix)
+    {
+        if (!TryGetExact(element, name, out JsonElement value))
+            return Array.Empty<string>();
+        RequireKind(value, JsonValueKind.Array, $"{prefix} {name}");
+        var values = new List<string>();
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            string text = GetStrictString(item, $"{prefix} {name}").Trim();
+            if (text.Length == 0 || !values.AddUnique(text))
+                throw new RendererConfigurationException($"{prefix} {name} contains an invalid or duplicate value.");
+        }
+        return values.ToArray();
     }
 
     private static WallpaperProfile ParseWallpaper(JsonElement element, int index)
@@ -588,6 +761,19 @@ public sealed class RendererConfiguration
         }
     }
 
+    private static void ValidatePropertiesExact(JsonElement element, string prefix, params string[] allowed)
+    {
+        var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            if (!seen.Add(property.Name))
+                throw new RendererConfigurationException($"{prefix} contains duplicate field '{property.Name}'.");
+            if (!allowedSet.Contains(property.Name))
+                throw new RendererConfigurationException($"{prefix} contains unknown field '{property.Name}'.");
+        }
+    }
+
     private static void ValidateLogicalId(string id, string prefix)
     {
         if (id.Length == 0 || id.Length > 128 || id.Any(character =>
@@ -606,6 +792,64 @@ public sealed class RendererConfiguration
             }
         value = default;
         return false;
+    }
+
+    private static bool TryGetExact(JsonElement element, string name, out JsonElement value) =>
+        element.TryGetProperty(name, out value);
+
+    private static string GetStrictGroup(JsonElement element, string name, string defaultValue, string prefix)
+    {
+        string group = GetOptionalStringExact(element, name)?.Trim() ?? defaultValue;
+        if (group.Length == 0)
+            throw new RendererConfigurationException($"{prefix} {name} must not be empty.");
+        return group;
+    }
+
+    private static JsonElement GetRequiredObjectExact(JsonElement element, string name, string prefix)
+    {
+        if (!TryGetExact(element, name, out JsonElement value))
+            throw new RendererConfigurationException($"{prefix} requires '{name}'.");
+        RequireKind(value, JsonValueKind.Object, $"{prefix} {name}");
+        return value;
+    }
+
+    private static string? GetOptionalStringExact(JsonElement element, string name) =>
+        TryGetExact(element, name, out JsonElement value) ? GetStrictString(value, name) : null;
+
+    private static string GetRequiredStringExact(JsonElement element, string name, string prefix) =>
+        GetOptionalStringExact(element, name) is { } value && !string.IsNullOrWhiteSpace(value)
+            ? value : throw new RendererConfigurationException($"{prefix} requires '{name}'.");
+
+    private static string GetStrictString(JsonElement value, string prefix) =>
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : throw new RendererConfigurationException($"{prefix} must be a string.");
+
+    private static double GetRequiredNumberExact(JsonElement element, string name, string prefix)
+    {
+        if (!TryGetExact(element, name, out JsonElement value) || value.ValueKind != JsonValueKind.Number ||
+            !value.TryGetDouble(out double number) || !double.IsFinite(number))
+            throw new RendererConfigurationException($"{prefix} requires '{name}' to be a finite number.");
+        return number;
+    }
+
+    private static int? GetOptionalIntExact(JsonElement element, string name)
+    {
+        if (!TryGetExact(element, name, out JsonElement value))
+            return null;
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double number) ||
+            !double.IsFinite(number) || number != Math.Truncate(number) || number < int.MinValue || number > int.MaxValue)
+            throw new RendererConfigurationException($"{name} must be an integer.");
+        return (int)number;
+    }
+
+    private static bool? GetOptionalBoolExact(JsonElement element, string name)
+    {
+        if (!TryGetExact(element, name, out JsonElement value))
+            return null;
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new RendererConfigurationException($"{name} must be boolean.");
+        return value.GetBoolean();
     }
 
     private static string? GetOptionalString(JsonElement element, string name) =>
@@ -685,6 +929,15 @@ public sealed class RendererConfiguration
         try { return UrlBuilder.Normalize(value); }
         catch (Exception ex) when (ex is FormatException or UriFormatException or RendererConfigurationException)
         { throw new RendererConfigurationException($"{prefix} has an invalid URL: {value}", ex); }
+    }
+
+    private static string NormalizeStrictUrl(string value, string prefix)
+    {
+        string url = value.Trim();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFile))
+            throw new RendererConfigurationException($"{prefix} has an invalid absolute URL: {value}");
+        return uri.AbsoluteUri;
     }
 
     private static bool TryParseAnchor(string value, out WidgetAnchor anchor)

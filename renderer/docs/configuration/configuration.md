@@ -120,30 +120,42 @@ small wallpaper/widget adapters:
   "windows": [{
     "id": "clock",
     "url": "file:///C:/Shell/clock/index.html",
-    "thread-group": "utility",
-    "x": 50,
-    "y": 24,
-    "width": 320,
-    "height": 100,
-    "monitor": 1,
-    "anchor": "top-right",
-    "placement": "top-level",
-    "z-order": "topmost-when-focused",
-    "initial-visible": true,
+    "runtime-group": "utility",
+    "geometry": {
+      "coordinate-space": "monitor",
+      "monitor": 1,
+      "anchor": "top-right",
+      "position": { "x": 24, "y": 24, "unit": "pixels" },
+      "size": { "width": 320, "height": 100, "unit": "pixels" }
+    },
+    "surface": {
+      "kind": "top-level",
+      "z-order": "topmost-when-focused"
+    },
+    "lifecycle": {
+      "initial-visibility": "visible",
+      "hidden-behavior": "retain",
+      "suspend-on-fullscreen": true
+    },
     "input": { "mouse": "native", "keyboard": "native", "focus": "on-show" },
     "notifications": { "focus": true }
   }]
 }
 ```
 
-Generic definitions support `pixels` or `percent` units independently for
-position and size, `monitor`, `work-area`, or `virtual-screen` coordinate
-spaces, all nine anchors, framed/resizable/taskbar-visible styles, desktop or
-top-level placement, `bottom`/`normal`/`top`/`topmost`/
-`topmost-when-focused` z-order, `retain`/`pause`/`unload` hidden behavior,
-fullscreen suspension, native/forwarded/disabled mouse and keyboard input,
-focus-on-show/reveal/click, notification opt-ins, work-area reservation, and
-the existing backend/control/runtime bridge permissions.
+Generic definitions require `id`, `url`, `geometry.position`, and
+`geometry.size`. Geometry uses one unit for position and one unit for size;
+each unit is `pixels` or `percent`. The coordinate space is `monitor`,
+`work-area`, or `virtual-screen`, and the anchor is one of the nine standard
+positions. `surface.kind` is `desktop` or `top-level`. Surface settings contain
+z-order, transparency, framing, resizing, taskbar visibility, and optional
+work-area reservation. Lifecycle settings contain initial visibility, hidden
+behavior, and fullscreen suspension. Input, notifications, and bridge access
+remain opt-in capability blocks.
+
+Generic window fields use exact canonical names and JSON types. Flat fields such
+as `x`, `width`, `placement`, and `initial-visible` are not accepted. Generic
+window URLs must be absolute `http`, `https`, or `file` URLs.
 
 The inherited control pipe exposes `GET|POST|PUT|DELETE /v1/renderer/windows`
 and `POST /v1/renderer/windows/{id}/actions`. Actions are `show`, `hide`,

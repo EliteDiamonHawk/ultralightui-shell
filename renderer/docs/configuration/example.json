@@ -34,17 +34,18 @@
   "windows": [
     {
       "id": "clock",
-      "x": 50,
-      "y": 8,
-      "x-unit": "percent",
-      "y-unit": "percent",
-      "anchor": "top",
-      "width": 520,
-      "height": 180,
-      "monitor": 1,
       "url": "https://example.com/window",
-      "placement": "top-level",
-      "z-order": "normal",
+      "geometry": {
+        "coordinate-space": "monitor",
+        "monitor": 1,
+        "anchor": "top",
+        "position": { "x": 50, "y": 8, "unit": "percent" },
+        "size": { "width": 520, "height": 180, "unit": "pixels" }
+      },
+      "surface": {
+        "kind": "top-level",
+        "z-order": "normal"
+      },
       "input": { "mouse": "native", "keyboard": "native", "focus": "on-click" },
       "notifications": { "focus": true }
     }

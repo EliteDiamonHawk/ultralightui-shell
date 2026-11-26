@@ -450,9 +450,9 @@ internal static class Program
             AssertFalse(prepared.AetherJson.Contains("menu", StringComparison.OrdinalIgnoreCase));
             using JsonDocument menu = JsonDocument.Parse(prepared.MenuJson!);
             AssertEqual("shell-menu", menu.RootElement.GetProperty("id").GetString());
-            AssertEqual("top-level", menu.RootElement.GetProperty("placement").GetString());
-            AssertEqual("topmost", menu.RootElement.GetProperty("z-order").GetString());
-            AssertEqual("pause", menu.RootElement.GetProperty("hidden-behavior").GetString());
+            AssertEqual("top-level", menu.RootElement.GetProperty("surface").GetProperty("kind").GetString());
+            AssertEqual("topmost", menu.RootElement.GetProperty("surface").GetProperty("z-order").GetString());
+            AssertEqual("pause", menu.RootElement.GetProperty("lifecycle").GetProperty("hidden-behavior").GetString());
             AssertTrue(menu.RootElement.GetProperty("notifications").GetProperty("focus").GetBoolean());
         }
         finally

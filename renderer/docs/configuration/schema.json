@@ -44,6 +44,11 @@
       "minLength": 1,
       "description": "HTTP, HTTPS, or file URL. Bare host names become HTTPS URLs."
     },
+    "absoluteUrl": {
+      "type": "string",
+      "pattern": "^(https?://|file:)\\S+$",
+      "description": "Absolute HTTP, HTTPS, or file URL."
+    },
     "threadGroup": {
       "type": "string",
       "minLength": 1
@@ -130,36 +135,72 @@
     "genericWindow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "url", "width", "height"],
+      "required": ["id", "url", "geometry"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "url": { "$ref": "#/$defs/url" },
-        "thread-group": { "$ref": "#/$defs/threadGroup" },
-        "title": { "type": "string" },
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "width": { "type": "number", "exclusiveMinimum": 0 },
-        "height": { "type": "number", "exclusiveMinimum": 0 },
-        "monitor": { "type": "integer", "minimum": 1 },
-        "coordinate-space": { "enum": ["monitor", "work-area", "virtual-screen"] },
-        "anchor": { "$ref": "#/$defs/anchor" },
-        "x-unit": { "enum": ["pixels", "percent"] },
-        "y-unit": { "enum": ["pixels", "percent"] },
-        "width-unit": { "enum": ["pixels", "percent"] },
-        "height-unit": { "enum": ["pixels", "percent"] },
-        "framed": { "type": "boolean" },
-        "transparent": { "type": "boolean" },
-        "resizable": { "type": "boolean" },
-        "show-in-taskbar": { "type": "boolean" },
-        "placement": { "enum": ["desktop", "top-level", "toplevel", "window"] },
-        "z-order": { "enum": ["bottom", "below", "normal", "top", "above", "topmost", "topmost-when-focused", "focus"] },
-        "initial-visible": { "type": "boolean" },
-        "hidden-behavior": { "enum": ["retain", "none", "pause", "suspend", "unload"] },
-        "suspend-on-fullscreen": { "type": "boolean" },
+        "url": { "$ref": "#/$defs/absoluteUrl" },
+        "runtime-group": { "$ref": "#/$defs/threadGroup" },
+        "geometry": { "$ref": "#/$defs/windowGeometry" },
+        "surface": { "$ref": "#/$defs/windowSurface" },
+        "lifecycle": { "$ref": "#/$defs/windowLifecycle" },
         "input": { "$ref": "#/$defs/input" },
         "notifications": { "$ref": "#/$defs/notifications" },
-        "work-area": { "$ref": "#/$defs/workArea" },
         "bridge": { "$ref": "#/$defs/bridge" }
+      }
+    },
+    "windowGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "size"],
+      "properties": {
+        "coordinate-space": { "enum": ["monitor", "work-area", "virtual-screen"] },
+        "monitor": { "type": "integer", "minimum": 1 },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "position": { "$ref": "#/$defs/windowPosition" },
+        "size": { "$ref": "#/$defs/windowSize" }
+      }
+    },
+    "windowPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "unit"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "unit": { "enum": ["pixels", "percent"] }
+      }
+    },
+    "windowSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "unit"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "enum": ["pixels", "percent"] }
+      }
+    },
+    "windowSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["desktop", "top-level"] },
+        "title": { "type": "string" },
+        "z-order": { "enum": ["bottom", "normal", "top", "topmost", "topmost-when-focused"] },
+        "transparent": { "type": "boolean" },
+        "framed": { "type": "boolean" },
+        "resizable": { "type": "boolean" },
+        "show-in-taskbar": { "type": "boolean" },
+        "work-area": { "$ref": "#/$defs/workArea" }
+      }
+    },
+    "windowLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "initial-visibility": { "enum": ["visible", "hidden"] },
+        "hidden-behavior": { "enum": ["retain", "pause", "unload"] },
+        "suspend-on-fullscreen": { "type": "boolean" }
       }
     },
     "geometry": {
