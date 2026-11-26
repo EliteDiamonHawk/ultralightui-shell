@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace Aether;
 
 // WindowKind identifies the compatibility adapter which produced a window. The
-// runtime never uses it to select native behavior; placement and input policy
-// do that instead.
+// runtime never uses it to select native behavior; surface and input policy do
+// that instead.
 public enum WindowKind
 {
     Generic,
@@ -13,10 +13,16 @@ public enum WindowKind
     Widget
 }
 
-public enum WindowPlacement
+public enum WindowSurfaceKind
 {
     Desktop,
     TopLevel
+}
+
+public enum WindowInitialVisibility
+{
+    Visible,
+    Hidden
 }
 
 public enum WindowZOrder
@@ -67,42 +73,61 @@ public sealed record WorkAreaReservation(
     string Edge = "bottom",
     int Thickness = 0);
 
+public sealed record WindowGeometry(
+    double X,
+    double Y,
+    double Width,
+    double Height,
+    int Monitor = 1,
+    string CoordinateSpace = "monitor",
+    WidgetAnchor Anchor = WidgetAnchor.TopLeft,
+    string PositionUnit = "pixels",
+    string SizeUnit = "pixels");
+
+public sealed record WindowSurface(
+    WindowSurfaceKind Kind = WindowSurfaceKind.TopLevel,
+    string? Title = null,
+    WindowZOrder ZOrder = WindowZOrder.Normal,
+    bool Transparent = false,
+    bool Framed = false,
+    bool Resizable = false,
+    bool ShowInTaskbar = false,
+    WorkAreaReservation? WorkArea = null);
+
+public sealed record WindowLifecycle(
+    WindowInitialVisibility InitialVisibility = WindowInitialVisibility.Visible,
+    WindowHiddenBehavior HiddenBehavior = WindowHiddenBehavior.Retain,
+    bool SuspendOnFullscreen = true);
+
 public sealed record RendererWindowSpec(
     string LogicalId,
     string Url,
     Rectangle Bounds,
     Rectangle VirtualBounds,
-    string ThreadGroup,
+    string RuntimeGroup,
     WindowKind Kind,
-    bool Transparent = true,
-    int MonitorNumber = 0,
-    WindowHiddenBehavior HiddenBehavior = WindowHiddenBehavior.Retain,
+    WindowGeometry? Geometry = null,
+    WindowSurface? Surface = null,
+    WindowLifecycle? Lifecycle = null,
+    int Monitor = 0,
     BridgePolicy? Bridge = null,
     IReadOnlyDictionary<string, JsonElement>? Variables = null,
     IReadOnlyList<string>? Cues = null,
-    WindowPlacement Placement = WindowPlacement.TopLevel,
-    WindowZOrder ZOrder = WindowZOrder.Normal,
-    bool Framed = false,
-    bool Resizable = false,
-    bool ShowInTaskbar = false,
-    bool ActivateOnShow = false,
-    bool SuspendOnFullscreen = true,
-    string? Title = null,
     WindowInputPolicy? Input = null,
-    WindowNotificationPolicy? Notifications = null,
-    WorkAreaReservation? WorkArea = null,
-    bool InitialVisible = true)
+    WindowNotificationPolicy? Notifications = null)
 {
+    public WindowSurface EffectiveSurface => Surface ?? new();
+    public WindowLifecycle EffectiveLifecycle => Lifecycle ?? new();
     public WindowInputPolicy EffectiveInput => Input ?? new();
     public WindowNotificationPolicy EffectiveNotifications => Notifications ?? new();
-    public WorkAreaReservation EffectiveWorkArea => WorkArea ?? new();
-    public string EffectiveTitle => string.IsNullOrWhiteSpace(Title) ? $"Aether - {LogicalId}" : Title!;
+    public WorkAreaReservation EffectiveWorkArea => EffectiveSurface.WorkArea ?? new();
+    public string EffectiveTitle => string.IsNullOrWhiteSpace(EffectiveSurface.Title) ? $"Aether - {LogicalId}" : EffectiveSurface.Title!;
 }
 
 public sealed record WindowSnapshot(
     string Id,
     string Url,
-    string Group,
+    string RuntimeGroup,
     WindowKind Kind,
     Rectangle ConfiguredBounds,
     Rectangle CurrentBounds,
@@ -111,7 +136,7 @@ public sealed record WindowSnapshot(
     bool Focused,
     bool Suspended,
     AppWindowState State,
-    WindowPlacement Placement = WindowPlacement.TopLevel,
+    WindowSurfaceKind SurfaceKind = WindowSurfaceKind.TopLevel,
     WindowZOrder ZOrder = WindowZOrder.Normal);
 
 public sealed record BridgePolicy(

@@ -186,7 +186,7 @@ public sealed class RendererConfiguration
                     string url = profile.MonitorUrls.TryGetValue(monitorIndex + 1, out string? overrideUrl)
                         ? overrideUrl : profile.Url;
                     Add(CreateDesktopSpec(id, url, screens[monitorIndex].Bounds, virtualBounds,
-                        profile.ThreadGroup, WindowKind.Wallpaper, profile.Transparent,
+                        profile.RuntimeGroup, WindowKind.Wallpaper, profile.Transparent,
                         monitorIndex + 1, profile.Bridge, Variables, Cues));
                 }
                 continue;
@@ -196,7 +196,7 @@ public sealed class RendererConfiguration
             {
                 case WallpaperMode.Span:
                     Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}", profile.Url,
-                        virtualBounds, virtualBounds, profile.ThreadGroup, WindowKind.Wallpaper,
+                        virtualBounds, virtualBounds, profile.RuntimeGroup, WindowKind.Wallpaper,
                         profile.Transparent, 0, profile.Bridge, Variables, Cues));
                     break;
                 case WallpaperMode.All:
@@ -210,7 +210,7 @@ public sealed class RendererConfiguration
                                 : profile.Id is { } baseId
                                     ? $"{baseId}:monitor:{monitorIndex + 1}"
                                     : $"wallpaper-{profileIndex + 1}-monitor-{monitorIndex + 1}",
-                            url, screens[monitorIndex].Bounds, virtualBounds, profile.ThreadGroup,
+                            url, screens[monitorIndex].Bounds, virtualBounds, profile.RuntimeGroup,
                             WindowKind.Wallpaper, profile.Transparent, monitorIndex + 1, profile.Bridge,
                             Variables, Cues));
                     }
@@ -220,7 +220,7 @@ public sealed class RendererConfiguration
                     string singleUrl = profile.MonitorUrls.TryGetValue(profile.Monitor, out string? singleOverride)
                         ? singleOverride : profile.Url;
                     Add(CreateDesktopSpec(profile.Id ?? $"wallpaper-{profileIndex + 1}-monitor-{profile.Monitor}",
-                        singleUrl, screens[profile.Monitor - 1].Bounds, virtualBounds, profile.ThreadGroup,
+                        singleUrl, screens[profile.Monitor - 1].Bounds, virtualBounds, profile.RuntimeGroup,
                         WindowKind.Wallpaper, profile.Transparent, profile.Monitor, profile.Bridge,
                         Variables, Cues));
                     break;
@@ -232,10 +232,10 @@ public sealed class RendererConfiguration
         for (int index = 0; index < Widgets.Count; index++)
         {
             WidgetDefinition widget = Widgets[index];
-            ValidateMonitor(widget.MonitorNumber, screens.Length, $"Widget {index + 1}");
+            ValidateMonitor(widget.Monitor, screens.Length, $"Widget {index + 1}");
             Add(CreateDesktopSpec(widget.Id ?? $"widget-{index + 1}", widget.Url,
-                WidgetGeometry.Resolve(widget, screens[widget.MonitorNumber - 1].Bounds), virtualBounds,
-                widget.ThreadGroup, WindowKind.Widget, widget.Transparent, widget.MonitorNumber, widget.Bridge,
+                WidgetGeometry.Resolve(widget, screens[widget.Monitor - 1].Bounds), virtualBounds,
+                widget.RuntimeGroup, WindowKind.Widget, widget.Transparent, widget.Monitor, widget.Bridge,
                 Variables, Cues));
         }
 
@@ -254,11 +254,21 @@ public sealed class RendererConfiguration
         BridgePolicy? bridge,
         IReadOnlyDictionary<string, JsonElement> variables,
         IReadOnlyList<string> cues) => new(
-            id, url, bounds, virtualBounds, group, kind, transparent, monitor,
-            WindowHiddenBehavior.Retain, bridge, variables, cues, WindowPlacement.Desktop,
-            WindowZOrder.Bottom, false, false, false, false, true, null,
+            id,
+            url,
+            bounds,
+            virtualBounds,
+            group,
+            kind,
+            null,
+            new(WindowSurfaceKind.Desktop, null, WindowZOrder.Bottom, transparent),
+            new(WindowInitialVisibility.Visible, WindowHiddenBehavior.Retain, true),
+            monitor,
+            bridge,
+            variables,
+            cues,
             new(WindowInputMode.Forwarded, WindowInputMode.Forwarded, WindowFocusMode.OnClick),
-            new(), new(), true);
+            new());
 
     private static GenericWindowDefinition ParseGenericWindow(JsonElement element, int index)
     {
@@ -301,7 +311,7 @@ public sealed class RendererConfiguration
 
         JsonElement surface = TryGetExact(element, "surface", out JsonElement surfaceValue)
             ? surfaceValue : default;
-        WindowPlacement placement = WindowPlacement.TopLevel;
+        WindowSurfaceKind surfaceKind = WindowSurfaceKind.TopLevel;
         WindowZOrder zOrder = WindowZOrder.Normal;
         string? title = null;
         bool framed = false;
@@ -314,7 +324,7 @@ public sealed class RendererConfiguration
             RequireKind(surface, JsonValueKind.Object, $"{prefix} surface");
             ValidatePropertiesExact(surface, $"{prefix} surface",
                 "kind", "title", "z-order", "transparent", "framed", "resizable", "show-in-taskbar", "work-area");
-            placement = ParseSurfaceKind(GetOptionalStringExact(surface, "kind"), prefix);
+            surfaceKind = ParseSurfaceKind(GetOptionalStringExact(surface, "kind"), prefix);
             zOrder = ParseStrictZOrder(GetOptionalStringExact(surface, "z-order"), prefix);
             title = GetOptionalStringExact(surface, "title");
             transparent = GetOptionalBoolExact(surface, "transparent") ?? false;
@@ -326,7 +336,7 @@ public sealed class RendererConfiguration
 
         JsonElement lifecycle = TryGetExact(element, "lifecycle", out JsonElement lifecycleValue)
             ? lifecycleValue : default;
-        bool initialVisible = true;
+        WindowInitialVisibility initialVisibility = WindowInitialVisibility.Visible;
         WindowHiddenBehavior hidden = WindowHiddenBehavior.Retain;
         bool suspendOnFullscreen = true;
         if (lifecycle.ValueKind != JsonValueKind.Undefined)
@@ -334,7 +344,7 @@ public sealed class RendererConfiguration
             RequireKind(lifecycle, JsonValueKind.Object, $"{prefix} lifecycle");
             ValidatePropertiesExact(lifecycle, $"{prefix} lifecycle",
                 "initial-visibility", "hidden-behavior", "suspend-on-fullscreen");
-            initialVisible = ParseInitialVisibility(GetOptionalStringExact(lifecycle, "initial-visibility"), prefix);
+            initialVisibility = ParseInitialVisibility(GetOptionalStringExact(lifecycle, "initial-visibility"), prefix);
             hidden = ParseStrictHiddenBehavior(GetOptionalStringExact(lifecycle, "hidden-behavior"), prefix);
             suspendOnFullscreen = GetOptionalBoolExact(lifecycle, "suspend-on-fullscreen") ?? true;
         }
@@ -342,34 +352,39 @@ public sealed class RendererConfiguration
         WindowInputPolicy input = ParseStrictInputPolicy(element, prefix);
         WindowNotificationPolicy notifications = ParseStrictNotifications(element, prefix);
 
-        if (placement == WindowPlacement.Desktop &&
+        if (surfaceKind == WindowSurfaceKind.Desktop &&
             (framed || showInTaskbar || workArea.Enabled || zOrder is WindowZOrder.Topmost or WindowZOrder.TopmostWhenFocused))
             throw new RendererConfigurationException($"{prefix} desktop windows cannot be framed, taskbar-visible, work-area-reserving, or topmost.");
-        if (workArea.Enabled && placement != WindowPlacement.TopLevel)
-            throw new RendererConfigurationException($"{prefix} work-area reservation requires top-level placement.");
+        if (workArea.Enabled && surfaceKind != WindowSurfaceKind.TopLevel)
+            throw new RendererConfigurationException($"{prefix} work-area reservation requires a top-level surface.");
         if (input.Focus != WindowFocusMode.Never && input.Mouse == WindowInputMode.None && input.Keyboard == WindowInputMode.None)
             throw new RendererConfigurationException($"{prefix} focus policy requires an input permission.");
 
         return new GenericWindowDefinition(
-            id, url, GetStrictGroup(element, "runtime-group", "windows", prefix), title, x, y, width, height, monitor, coordinateSpace, anchor,
-            positionUnit, positionUnit, sizeUnit, sizeUnit, placement, zOrder, framed, transparent, resizable,
-            showInTaskbar, initialVisible, hidden, suspendOnFullscreen, input, notifications, workArea,
+            id,
+            url,
+            GetStrictGroup(element, "runtime-group", "windows", prefix),
+            new WindowGeometry(x, y, width, height, monitor, coordinateSpace, anchor, positionUnit, sizeUnit),
+            new WindowSurface(surfaceKind, title, zOrder, transparent, framed, resizable, showInTaskbar, workArea),
+            new WindowLifecycle(initialVisibility, hidden, suspendOnFullscreen),
+            input,
+            notifications,
             ParseStrictBridgePolicy(element, prefix));
     }
 
-    private static WindowPlacement ParseSurfaceKind(string? value, string prefix) =>
+    private static WindowSurfaceKind ParseSurfaceKind(string? value, string prefix) =>
         (value ?? "top-level").Trim().ToLowerInvariant() switch
         {
-            "desktop" => WindowPlacement.Desktop,
-            "top-level" => WindowPlacement.TopLevel,
+            "desktop" => WindowSurfaceKind.Desktop,
+            "top-level" => WindowSurfaceKind.TopLevel,
             _ => throw new RendererConfigurationException($"{prefix} surface kind must be desktop or top-level.")
         };
 
-    private static bool ParseInitialVisibility(string? value, string prefix) =>
+    private static WindowInitialVisibility ParseInitialVisibility(string? value, string prefix) =>
         (value ?? "visible").Trim().ToLowerInvariant() switch
         {
-            "visible" => true,
-            "hidden" => false,
+            "visible" => WindowInitialVisibility.Visible,
+            "hidden" => WindowInitialVisibility.Hidden,
             _ => throw new RendererConfigurationException($"{prefix} lifecycle initial-visibility must be visible or hidden.")
         };
 
@@ -569,99 +584,6 @@ public sealed class RendererConfiguration
             GetOptionalBool(element, "transparent") ?? true, GetGroup(element, "widgets"),
             GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
     }
-
-    private static WindowInputPolicy ParseInputPolicy(JsonElement element, string prefix)
-    {
-        if (!TryGet(element, "input", out JsonElement value))
-            return new(WindowInputMode.Native, WindowInputMode.Native, WindowFocusMode.Never);
-        RequireKind(value, JsonValueKind.Object, $"{prefix} input");
-        ValidateProperties(value, $"{prefix} input", "mouse", "keyboard", "focus", "click-through");
-        return new(ParseInputMode(GetOptionalString(value, "mouse"), $"{prefix} input mouse"),
-            ParseInputMode(GetOptionalString(value, "keyboard"), $"{prefix} input keyboard"),
-            ParseFocusMode(GetOptionalString(value, "focus"), $"{prefix} input focus"),
-            GetOptionalBool(value, "click-through") ?? false);
-    }
-
-    private static WindowNotificationPolicy ParseNotifications(JsonElement element, string prefix)
-    {
-        if (!TryGet(element, "notifications", out JsonElement value))
-            return new();
-        RequireKind(value, JsonValueKind.Object, $"{prefix} notifications");
-        ValidateProperties(value, $"{prefix} notifications", "focus", "visibility", "geometry", "lifecycle");
-        return new(GetOptionalBool(value, "focus") ?? false, GetOptionalBool(value, "visibility") ?? false,
-            GetOptionalBool(value, "geometry") ?? false, GetOptionalBool(value, "lifecycle") ?? false);
-    }
-
-    private static WorkAreaReservation ParseWorkArea(JsonElement element, string prefix)
-    {
-        if (!TryGet(element, "work-area", out JsonElement value))
-            return new();
-        RequireKind(value, JsonValueKind.Object, $"{prefix} work-area");
-        ValidateProperties(value, $"{prefix} work-area", "enabled", "edge", "thickness");
-        bool enabled = GetOptionalBool(value, "enabled") ?? false;
-        string edge = (GetOptionalString(value, "edge") ?? "bottom").Trim().ToLowerInvariant();
-        if (edge is not ("top" or "bottom" or "left" or "right"))
-            throw new RendererConfigurationException($"{prefix} work-area edge must be top, bottom, left, or right.");
-        int thickness = GetOptionalInt(value, "thickness") ?? 0;
-        if (enabled && thickness <= 0)
-            throw new RendererConfigurationException($"{prefix} work-area thickness must be positive when enabled.");
-        return new(enabled, edge, thickness);
-    }
-
-    private static string ParseUnit(JsonElement element, string name, string prefix)
-    {
-        string value = (GetOptionalString(element, name) ?? "pixels").Trim().ToLowerInvariant();
-        if (value is not ("pixels" or "percent"))
-            throw new RendererConfigurationException($"{prefix} {name} must be pixels or percent.");
-        return value;
-    }
-
-    private static WindowPlacement ParsePlacement(string? value, string prefix) =>
-        (value ?? "top-level").Trim().ToLowerInvariant() switch
-        {
-            "desktop" => WindowPlacement.Desktop,
-            "top-level" or "toplevel" or "window" => WindowPlacement.TopLevel,
-            _ => throw new RendererConfigurationException($"{prefix} placement must be desktop or top-level.")
-        };
-
-    private static WindowZOrder ParseZOrder(string? value, string prefix) =>
-        (value ?? "normal").Trim().ToLowerInvariant() switch
-        {
-            "bottom" or "below" => WindowZOrder.Bottom,
-            "normal" => WindowZOrder.Normal,
-            "top" or "above" => WindowZOrder.Top,
-            "topmost" => WindowZOrder.Topmost,
-            "topmost-when-focused" or "focus" => WindowZOrder.TopmostWhenFocused,
-            _ => throw new RendererConfigurationException($"{prefix} z-order is invalid.")
-        };
-
-    private static WindowHiddenBehavior ParseHiddenBehavior(string? value) =>
-        (value ?? "retain").Trim().ToLowerInvariant() switch
-        {
-            "retain" or "none" => WindowHiddenBehavior.Retain,
-            "pause" or "suspend" => WindowHiddenBehavior.Pause,
-            "unload" => WindowHiddenBehavior.Unload,
-            _ => throw new RendererConfigurationException("hidden-behavior must be retain, pause, suspend, or unload.")
-        };
-
-    private static WindowInputMode ParseInputMode(string? value, string prefix) =>
-        (value ?? "native").Trim().ToLowerInvariant() switch
-        {
-            "none" or "disabled" => WindowInputMode.None,
-            "native" => WindowInputMode.Native,
-            "forwarded" or "forward" => WindowInputMode.Forwarded,
-            _ => throw new RendererConfigurationException($"{prefix} must be none, native, or forwarded.")
-        };
-
-    private static WindowFocusMode ParseFocusMode(string? value, string prefix) =>
-        (value ?? "never").Trim().ToLowerInvariant() switch
-        {
-            "never" or "none" => WindowFocusMode.Never,
-            "on-show" or "show" => WindowFocusMode.OnShow,
-            "on-reveal" or "reveal" => WindowFocusMode.OnReveal,
-            "on-click" or "click" => WindowFocusMode.OnClick,
-            _ => throw new RendererConfigurationException($"{prefix} must be never, on-show, on-reveal, or on-click.")
-        };
 
     private static IReadOnlyDictionary<string, JsonElement> ParseVariables(JsonElement? element)
     {
@@ -962,47 +884,26 @@ public sealed class RendererConfiguration
 public sealed record GenericWindowDefinition(
     string Id,
     string Url,
-    string ThreadGroup,
-    string? Title,
-    double X,
-    double Y,
-    double Width,
-    double Height,
-    int Monitor,
-    string CoordinateSpace,
-    WidgetAnchor Anchor,
-    string XUnit,
-    string YUnit,
-    string WidthUnit,
-    string HeightUnit,
-    WindowPlacement Placement,
-    WindowZOrder ZOrder,
-    bool Framed,
-    bool Transparent,
-    bool Resizable,
-    bool ShowInTaskbar,
-    bool InitialVisible,
-    WindowHiddenBehavior HiddenBehavior,
-    bool SuspendOnFullscreen,
+    string RuntimeGroup,
+    WindowGeometry Geometry,
+    WindowSurface Surface,
+    WindowLifecycle Lifecycle,
     WindowInputPolicy Input,
     WindowNotificationPolicy Notifications,
-    WorkAreaReservation WorkArea,
     BridgePolicy Bridge)
 {
     public RendererWindowSpec Resolve(Screen[] screens, Rectangle virtualBounds,
         IReadOnlyDictionary<string, JsonElement> variables, IReadOnlyList<string> cues)
     {
-        if (Monitor <= 0 || Monitor > screens.Length)
-            throw new RendererConfigurationException($"Window '{Id}' selects monitor {Monitor}, but only {screens.Length} monitor(s) are available.");
-        Rectangle monitorBounds = screens[Monitor - 1].Bounds;
-        Rectangle reference = CoordinateSpace == "virtual-screen"
+        if (Geometry.Monitor <= 0 || Geometry.Monitor > screens.Length)
+            throw new RendererConfigurationException($"Window '{Id}' selects monitor {Geometry.Monitor}, but only {screens.Length} monitor(s) are available.");
+        Rectangle monitorBounds = screens[Geometry.Monitor - 1].Bounds;
+        Rectangle reference = Geometry.CoordinateSpace == "virtual-screen"
             ? virtualBounds
-            : CoordinateSpace == "work-area" ? screens[Monitor - 1].WorkingArea : monitorBounds;
+            : Geometry.CoordinateSpace == "work-area" ? screens[Geometry.Monitor - 1].WorkingArea : monitorBounds;
         Rectangle bounds = GenericWindowGeometry.Resolve(this, reference);
-        return new(Id, Url, bounds, virtualBounds, ThreadGroup, WindowKind.Generic, Transparent, Monitor,
-            HiddenBehavior, Bridge, variables, cues, Placement, ZOrder, Framed, Resizable, ShowInTaskbar,
-            Input.Focus is WindowFocusMode.OnShow, SuspendOnFullscreen, Title, Input, Notifications, WorkArea,
-            InitialVisible);
+        return new(Id, Url, bounds, virtualBounds, RuntimeGroup, WindowKind.Generic, Geometry, Surface, Lifecycle,
+            Geometry.Monitor, Bridge, variables, cues, Input, Notifications);
     }
 }
 
@@ -1010,16 +911,19 @@ public static class GenericWindowGeometry
 {
     public static Rectangle Resolve(GenericWindowDefinition definition, Rectangle reference)
     {
-        double xUnit = definition.XUnit == "percent" ? reference.Width / 100d : 1d;
-        double yUnit = definition.YUnit == "percent" ? reference.Height / 100d : 1d;
-        double widthUnit = definition.WidthUnit == "percent" ? reference.Width / 100d : 1d;
-        double heightUnit = definition.HeightUnit == "percent" ? reference.Height / 100d : 1d;
-        int width = checked(Math.Max(1, (int)Math.Round(definition.Width * widthUnit, MidpointRounding.AwayFromZero)));
-        int height = checked(Math.Max(1, (int)Math.Round(definition.Height * heightUnit, MidpointRounding.AwayFromZero)));
-        Point monitorAnchor = ResolveAnchor(definition.Anchor, reference);
-        Point windowAnchor = GetWindowAnchor(definition.Anchor, width, height);
-        int left = checked((int)Math.Round(monitorAnchor.X + definition.X * xUnit - windowAnchor.X, MidpointRounding.AwayFromZero));
-        int top = checked((int)Math.Round(monitorAnchor.Y + definition.Y * yUnit - windowAnchor.Y, MidpointRounding.AwayFromZero));
+        WindowGeometry geometry = definition.Geometry;
+        bool positionPercent = geometry.PositionUnit == "percent";
+        bool sizePercent = geometry.SizeUnit == "percent";
+        int width = checked(Math.Max(1, (int)Math.Round(
+            geometry.Width * (sizePercent ? reference.Width / 100d : 1d), MidpointRounding.AwayFromZero)));
+        int height = checked(Math.Max(1, (int)Math.Round(
+            geometry.Height * (sizePercent ? reference.Height / 100d : 1d), MidpointRounding.AwayFromZero)));
+        Point monitorAnchor = ResolveAnchor(geometry.Anchor, reference);
+        Point windowAnchor = GetWindowAnchor(geometry.Anchor, width, height);
+        double offsetX = positionPercent ? geometry.X * reference.Width / 100d : geometry.X;
+        double offsetY = positionPercent ? geometry.Y * reference.Height / 100d : geometry.Y;
+        int left = checked((int)Math.Round(monitorAnchor.X + offsetX - windowAnchor.X, MidpointRounding.AwayFromZero));
+        int top = checked((int)Math.Round(monitorAnchor.Y + offsetY - windowAnchor.Y, MidpointRounding.AwayFromZero));
         return new(left, top, width, height);
     }
 
@@ -1043,13 +947,13 @@ public static class GenericWindowGeometry
 
 public sealed record WallpaperProfile(
     string Url, WallpaperMode Mode, int Monitor, IReadOnlyDictionary<int, string> MonitorUrls,
-    IReadOnlyList<string> WindowIds, bool Transparent, string ThreadGroup, string? Id = null, BridgePolicy? Bridge = null);
+    IReadOnlyList<string> WindowIds, bool Transparent, string RuntimeGroup, string? Id = null, BridgePolicy? Bridge = null);
 
 public enum WallpaperMode { Span, All, Single }
 
 public sealed record WidgetDefinition(
-    double X, double Y, bool PosScaled, bool SizeScaled, WidgetAnchor Anchor, double Width, double Height,
-    int MonitorNumber, string Url, bool Transparent, string ThreadGroup, string? Id = null, BridgePolicy? Bridge = null);
+    double X, double Y, bool PositionScaled, bool SizeScaled, WidgetAnchor Anchor, double Width, double Height,
+    int Monitor, string Url, bool Transparent, string RuntimeGroup, string? Id = null, BridgePolicy? Bridge = null);
 
 public enum WidgetAnchor
 {
@@ -1060,8 +964,8 @@ public static class WidgetGeometry
 {
     public static Rectangle Resolve(WidgetDefinition widget, Rectangle monitor)
     {
-        double positionUnitX = widget.PosScaled ? monitor.Width / 100d : 1d;
-        double positionUnitY = widget.PosScaled ? monitor.Height / 100d : 1d;
+        double positionUnitX = widget.PositionScaled ? monitor.Width / 100d : 1d;
+        double positionUnitY = widget.PositionScaled ? monitor.Height / 100d : 1d;
         double sizeUnit = widget.SizeScaled ? Math.Min(monitor.Width, monitor.Height) / 100d : 1d;
         int width = ToDimension(widget.Width * sizeUnit);
         int height = ToDimension(widget.Height * sizeUnit);
@@ -1071,8 +975,8 @@ public static class WidgetGeometry
         // the monitor origin, while the anchor only controls how the widget
         // itself is attached to that position. Unscaled coordinates remain
         // offsets from the selected monitor anchor.
-        double placementX = (widget.PosScaled ? monitor.Left : monitorAnchor.X) + widget.X * positionUnitX;
-        double placementY = (widget.PosScaled ? monitor.Top : monitorAnchor.Y) + widget.Y * positionUnitY;
+        double placementX = (widget.PositionScaled ? monitor.Left : monitorAnchor.X) + widget.X * positionUnitX;
+        double placementY = (widget.PositionScaled ? monitor.Top : monitorAnchor.Y) + widget.Y * positionUnitY;
         int left = checked((int)Math.Round(placementX - widgetAnchor.X, MidpointRounding.AwayFromZero));
         int top = checked((int)Math.Round(placementY - widgetAnchor.Y, MidpointRounding.AwayFromZero));
         return new(left, top, width, height);

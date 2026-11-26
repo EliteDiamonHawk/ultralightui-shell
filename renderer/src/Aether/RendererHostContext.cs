@@ -117,7 +117,7 @@ public sealed class RendererHostContext : ApplicationContext
         IReadOnlyList<RendererWindowSpec> snapshot = specs.ToArray();
         try
         {
-            foreach (string groupName in snapshot.Select(spec => spec.ThreadGroup).Distinct(StringComparer.Ordinal))
+            foreach (string groupName in snapshot.Select(spec => spec.RuntimeGroup).Distinct(StringComparer.Ordinal))
             {
                 var group = new RuntimeGroupHost(groupName, _options, () => snapshot, _logger, _backendManager, _controlChannel, HandleCommand);
                 group.Start();
@@ -489,7 +489,7 @@ public sealed class RendererHostContext : ApplicationContext
                 return new ControlResponse(request.Id, 400, Error: new ControlError("window_definition_invalid", error));
             try
             {
-                RuntimeGroupHost host = EnsureGroup(spec!.ThreadGroup);
+                RuntimeGroupHost host = EnsureGroup(spec!.RuntimeGroup);
                 WindowSnapshot snapshot = host.InvokeCreateWindow(spec);
                 EmitWindowEvent("window.created", snapshot);
                 return new ControlResponse(request.Id, 201, snapshot);
@@ -521,7 +521,7 @@ public sealed class RendererHostContext : ApplicationContext
                 return new ControlResponse(request.Id, 400, Error: new ControlError("window_id_mismatch", "Definition ID must match the URL ID."));
             if (group != null)
                 group.InvokeDestroyWindow(id);
-            RuntimeGroupHost replacementGroup = EnsureGroup(replacement.ThreadGroup);
+            RuntimeGroupHost replacementGroup = EnsureGroup(replacement.RuntimeGroup);
             WindowSnapshot snapshot = replacementGroup.InvokeCreateWindow(replacement);
             EmitWindowEvent("window.updated", snapshot);
             return new ControlResponse(request.Id, 200, snapshot);

@@ -41,7 +41,7 @@ points to a Windows desktop-host or DPI interaction rather than a URL problem.
 
 ## Top-level window does not remain visible
 
-Check the generic window's `initial-visible`, `hidden-behavior`, focus policy,
+Check the generic window's `lifecycle.initial-visibility`, `lifecycle.hidden-behavior`, focus policy,
 and z-order. `pause` suspends a retained view and `unload` destroys it; the
 caller must recreate an unloaded window through the generic window API. When
 Chronos owns a menu, Chronos handles auto-hide and recreation.
@@ -55,4 +55,4 @@ Aether.exe --status-all
 
 Reload validates the complete candidate configuration before changing active
 windows. Fix the reported configuration error. If the edit adds or removes a
-`thread-group`, use `--reload-all`.
+`runtime-group`, use `--reload-all`.

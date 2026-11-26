@@ -87,7 +87,7 @@ public sealed class UltralightRuntime : IDisposable
             false,
             UltralightNative.WindowFlagsBorderless |
             UltralightNative.WindowFlagsHidden |
-            (spec.Transparent ? UltralightNative.WindowFlagsTransparent : 0));
+            (spec.EffectiveSurface.Transparent ? UltralightNative.WindowFlagsTransparent : 0));
 
         if (window == IntPtr.Zero)
             throw new InvalidOperationException($"Ultralight window could not be created: {spec.LogicalId}");
@@ -109,7 +109,7 @@ public sealed class UltralightRuntime : IDisposable
             try
             {
                 UltralightNative.ulViewConfigSetEnableHiddenTimerThrottling(viewConfig, true);
-                if (spec.Transparent)
+                if (spec.EffectiveSurface.Transparent)
                     UltralightNative.ulViewConfigSetIsTransparent(viewConfig, true);
                 panel = UltralightNative.ulWindowAddPanel(window, IntPtr.Zero, viewConfig);
             }
@@ -205,9 +205,9 @@ public sealed class UltralightRuntime : IDisposable
 
     private IntPtr ResolveMonitor(RendererWindowSpec spec)
     {
-        if (spec.MonitorNumber > 0)
+        if (spec.Monitor > 0)
         {
-            IntPtr monitor = UltralightNative.ulAppGetMonitor(_app, (uint)(spec.MonitorNumber - 1));
+            IntPtr monitor = UltralightNative.ulAppGetMonitor(_app, (uint)(spec.Monitor - 1));
             if (monitor != IntPtr.Zero)
                 return monitor;
         }
