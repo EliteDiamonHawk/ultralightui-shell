@@ -1,5 +1,5 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
-import { hasAetherBridge, readNyxTime } from "@khaosshell/widget-runtime/bridge.js";
+import { getAetherVariable, hasAetherBridge, readNyxTime } from "@khaosshell/widget-runtime/bridge.js";
 
 export function mount(root = globalThis.document, options = {}) {
   if (!root) throw new Error("KhaosShell widget mount requires a root element or document.");
@@ -17,8 +17,31 @@ export function mount(root = globalThis.document, options = {}) {
 
 const WIDGET_ID = "rainmeter-mond-clock";
 const SCALE = 1;
+const DEFAULT_SCALE = SCALE;
+const BASE_ZOOM = 1.2;
+const DEFAULT_PRIMARY = "#000000";
+const PRIMARY_VARIABLE = "widget.rainmeter-mond-clock.primary";
+const SCALE_VARIABLE = "widget.rainmeter-mond-clock.scale";
 
-document.documentElement.style.setProperty("--widget-scale", String(SCALE));
+const renderer = window?.renderer;
+const widgetNode = document.querySelector(".mond");
+const isCssColor = (value) => {
+  if (typeof value !== "string" || !value.trim()) return false;
+  if (typeof window?.CSS?.supports !== "function") return true;
+  try {
+    return window.CSS.supports("color", value.trim());
+  } catch {
+    return false;
+  }
+};
+const configuredPrimary = getAetherVariable(PRIMARY_VARIABLE, DEFAULT_PRIMARY, renderer);
+const primary = isCssColor(configuredPrimary) ? configuredPrimary.trim() : DEFAULT_PRIMARY;
+const configuredScale = Number(getAetherVariable(SCALE_VARIABLE, DEFAULT_SCALE, renderer));
+const scale = Number.isFinite(configuredScale) && configuredScale > 0 ? configuredScale : DEFAULT_SCALE;
+
+document.documentElement.style.setProperty("--widget-scale", String(scale));
+widgetNode.style.setProperty("--mond-color", primary);
+widgetNode.style.setProperty("--mond-zoom", String(BASE_ZOOM * scale));
 
 
 const weekdayNode = document.querySelector("[data-weekday]");
@@ -36,9 +59,9 @@ const render = () => {
 let epochOffset = 0;
 
 const syncTime = async () => {
-  if (!hasAetherBridge()) return;
+  if (!hasAetherBridge(renderer)) return;
   try {
-    const epoch = await readNyxTime();
+    const epoch = await readNyxTime(renderer);
     if (Number.isFinite(epoch)) epochOffset = epoch - Date.now();
   } catch {}
 };

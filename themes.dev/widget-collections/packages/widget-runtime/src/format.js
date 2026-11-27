@@ -15,6 +15,27 @@ export const formatBytes = (value) => {
   return scaled.toFixed(unit > 1 ? 1 : 0) + " " + units[unit];
 };
 
+const DURATION_TOKENS = /MM|HH|mm|ss|M|H|m|s/g;
+const isLetter = (value) => value !== undefined && /[A-Za-z]/.test(value);
+
+const formatDurationSyntax = (syntax, values) => {
+  const matches = [...syntax.matchAll(DURATION_TOKENS)];
+  let output = "";
+  let cursor = 0;
+  matches.forEach((match, index) => {
+    const start = match.index;
+    const end = start + match[0].length;
+    const previous = matches[index - 1];
+    const next = matches[index + 1];
+    const adjacentToPreviousToken = previous && previous.index + previous[0].length === start;
+    const adjacentToNextToken = next && end === next.index;
+    if ((isLetter(syntax[start - 1]) && !adjacentToPreviousToken) || (isLetter(syntax[end]) && !adjacentToNextToken)) return;
+    output += syntax.slice(cursor, start) + values[match[0]];
+    cursor = end;
+  });
+  return output + syntax.slice(cursor);
+};
+
 export const formatDuration = (milliseconds, syntax = "HH:mm:ss") => {
   const totalSeconds = Math.max(0, Math.floor(Number(milliseconds) / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -31,5 +52,5 @@ export const formatDuration = (milliseconds, syntax = "HH:mm:ss") => {
     ss: String(seconds).padStart(2, "0"),
     s: String(seconds),
   };
-  return String(syntax ?? "HH:mm:ss").replace(/MM|HH|mm|ss|M|H|m|s/g, (token) => values[token]);
+  return formatDurationSyntax(String(syntax ?? "HH:mm:ss"), values);
 };

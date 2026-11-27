@@ -1,73 +1,34 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
-import { hasAetherBridge, openNyxMetricsStream, readNyxMetrics } from "@khaosshell/widget-runtime/bridge.js";
-import { formatBytes, formatDuration, formatPercent } from "@khaosshell/widget-runtime/format.js";
+import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
+import { formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { enumSetting, integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
+
+const SCALE = 1;
 
 export function mount(root = globalThis.document, options = {}) {
   if (!root) throw new Error("KhaosShell widget mount requires a root element or document.");
-  const pageDocument = root.ownerDocument ?? root;
-  const queryRoot = root.querySelector ? root : pageDocument;
-  const document = new Proxy(pageDocument, {
-    get(target, property, receiver) {
-      if (property === "querySelector") return queryRoot.querySelector.bind(queryRoot);
-      if (property === "querySelectorAll") return queryRoot.querySelectorAll.bind(queryRoot);
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const window = options.window ?? pageDocument.defaultView ?? globalThis.window;
-
-const WIDGET_ID = "cpu-core-count";
-const SCALE = 1;
-
-document.documentElement.style.setProperty("--widget-scale", String(SCALE));
-
-
-const FIELD = "cpu.cores.logical";
-const PREVIEW_VALUE = 8;
-const valueNode = document.querySelector("[data-webskin-frame-part=\"value\"]");
-let closeStream = async () => {};
-
-const readPath = (value, path) => path.split(".").reduce((current, key) => current?.[key], value);
-const formatValue = (value) => {
-  
-  
-  
-  
-  
-  
-  return String(Math.round(Number(value)));
-};
-const render = (metrics, source) => {
-  const raw = source === "preview" ? PREVIEW_VALUE : readPath(metrics, FIELD);
-  const normalized = raw;
-  const value = Number(normalized);
-  if (!Number.isFinite(value)) {
-    valueNode.textContent = "--";
-    return;
-  }
-  valueNode.textContent = formatValue(value);
-};
-const start = async () => {
-  if (!hasAetherBridge()) {
-    render(null, "preview");
-    return;
-  }
-  try {
-    render(await readNyxMetrics([FIELD]), "nyx");
-    closeStream = await openNyxMetricsStream([FIELD], {
-      interval: 5,
-      onSnapshot: (metrics) => render(metrics, "nyx"),
-      onError: () => { valueNode.textContent = "--"; },
-    });
-  } catch {
-    render(null, "nyx");
-  }
-};
-void start();
-onPageCleanup(root, () => closeStream());
-
-void WIDGET_ID;
-
+  const { document, window, renderer } = widgetContext(root, options);
+  const WIDGET_ID = "cpu-core-count";
+  applyWidgetTheme(document, readWidgetTheme(WIDGET_ID, { primary: "#d6d6d6", secondary: "#2e2e2e", scale: SCALE }, renderer));
+  const coreType = resolveSetting({ root, widgetId: WIDGET_ID, options, renderer, key: "coreType", defaultValue: "logical", validate: enumSetting(["physical", "logical"]) });
+  const format = resolveSetting({ root, widgetId: WIDGET_ID, options, renderer, key: "format", defaultValue: `{${coreType}}`, validate: tokenFormatSetting(["physical", "phys", "logical", "logi"]) });
+  const digitLimit = resolveSetting({ root, widgetId: WIDGET_ID, options, renderer, key: "digitLimit", defaultValue: 5, validate: integerSetting({ minimum: 1 }) });
+  const label = resolveSetting({ root, widgetId: WIDGET_ID, options, renderer, key: "label", defaultValue: coreType === "physical" ? "Physical cores" : "Logical cores", validate: stringSetting() });
+  const { updateInterval = 60 } = metricSettings({ root, widgetId: WIDGET_ID, options, renderer, keys: ["updateInterval"], defaults: { updateInterval: 60 } });
+  const valueNode = document.querySelector('[data-webskin-frame-part="value"]');
+  const subtextNode = document.querySelector('[data-webskin-frame-part="subtext"]');
+  subtextNode.textContent = label;
+  const render = (metrics, phase) => {
+    const cores = phase === "preview" ? { physical: 4, logical: 8 } : metrics?.cpu?.cores;
+    valueNode.textContent = formatMetricTemplate(format, {
+      physical: formatMetricNumber(cores?.physical, 0, digitLimit),
+      phys: formatMetricNumber(cores?.physical, 0, digitLimit),
+      logical: formatMetricNumber(cores?.logical, 0, digitLimit),
+      logi: formatMetricNumber(cores?.logical, 0, digitLimit),
+    }, !Number.isFinite(Number(cores?.[coreType])));
+  };
+  const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields: ["cpu.cores"], interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });
+  onPageCleanup(root, () => close());
   return { destroy: () => destroyWidget(root) };
 }
 

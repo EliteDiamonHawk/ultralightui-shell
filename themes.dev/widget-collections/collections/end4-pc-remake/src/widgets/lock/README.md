@@ -1,6 +1,22 @@
-# Lock
+# lock
 
-WebSkin reference page. Legacy source: `lock`.
+## Aether variables
 
-This page keeps its markup, CSS, JavaScript, assets, and build entry local.
-Shared bridge, formatting, and cleanup helpers come from `@khaosshell/widget-runtime`.
+The widget reads optional top-level Aether variables when it mounts:
+
+```json
+{
+  "variables": {
+    "widget-collection.end4-pc-remake.primary": "#d6d6d6",
+    "widget-collection.end4-pc-remake.secondary": "#2e2e2e",
+    "widget.end4-pc-remake.lock.primary": "#ffffff",
+    "widget.end4-pc-remake.lock.secondary": "#202020",
+    "widget.end4-pc-remake.lock.scale": 1.1
+  }
+}
+```
+
+Widget-specific `primary` and `secondary` values override collection values.
+Missing or invalid colors use the widget family defaults. Scale is widget-only,
+must be positive, and otherwise uses the widget default. Changes take effect
+when the widget is mounted or reloaded.

@@ -1,11 +1,9 @@
 {
   "collection": "end4-pc-remake",
   "id": "gpu-temperature",
-  "title": "GPU temperature",
-  "source": "webskin",
-  "appearance": "puffy-diamond system card",
-  "function": "GPU temperature",
-  "legacyId": "gpu-temperature-prestyled",
+  "title": "GPU Temperature",
+  "function": "System Metric",
+  "settings": [{"key":"sensorId","type":"string","default":null},{"key":"gpuId","type":"string","default":null},{"key":"format","type":"string","default":"{core-temperature} °C"},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"GPU"},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

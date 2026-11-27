@@ -5,7 +5,12 @@
   "type": "module",
   "exports": {
     "./bridge.js": "./src/bridge.js",
+    "./calendar.js": "./src/calendar.js",
+    "./clock.js": "./src/clock.js",
     "./format.js": "./src/format.js",
-    "./lifecycle.js": "./src/lifecycle.js"
+    "./lifecycle.js": "./src/lifecycle.js",
+    "./metrics.js": "./src/metrics.js",
+    "./settings.js": "./src/settings.js",
+    "./theme.js": "./src/theme.js"
   }
 }

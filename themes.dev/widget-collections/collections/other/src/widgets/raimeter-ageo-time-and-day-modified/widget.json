@@ -1,0 +1,17 @@
+{
+  "collection": "other",
+  "id": "raimeter-ageo-time-and-day-modified",
+  "title": "Rainmeter Ageo time and day (modified)",
+  "source": "webskin",
+  "appearance": "blue typographic date and time composition",
+  "function": "date, time, weekday, and quote display",
+  "legacyId": "time-and-date",
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

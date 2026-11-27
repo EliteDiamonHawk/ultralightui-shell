@@ -11,17 +11,20 @@ export const onPageCleanup = (rootOrCleanup, maybeCleanup) => {
   const cleanup = typeof rootOrCleanup === "function" ? rootOrCleanup : maybeCleanup;
   const registry = registryFor(root);
   let active = true;
+  const pageDocument = root?.ownerDocument ?? globalThis.document;
+  const view = pageDocument?.defaultView ?? globalThis.window;
+  let pagehideListener;
   const run = async () => {
     if (!active) return;
     active = false;
     registry.delete(run);
+    view?.removeEventListener?.("pagehide", pagehideListener);
     await cleanup?.();
   };
   registry.add(run);
 
-  const pageDocument = root?.ownerDocument ?? globalThis.document;
-  const view = pageDocument?.defaultView ?? globalThis.window;
-  view?.addEventListener?.("pagehide", run, { once: true });
+  pagehideListener = run;
+  view?.addEventListener?.("pagehide", pagehideListener, { once: true });
   return run;
 };
 

@@ -1,0 +1,15 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "week",
+  "title": "Week",
+  "function": "Time",
+  "settings": [{"key":"date","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"locale","type":"string","default":"en-US"},{"key":"weekStartsOn","type":"integer","default":null,"minimum":0,"maximum":6},{"key":"daysBefore","type":"integer","default":null,"minimum":0,"maximum":6},{"key":"daysAfter","type":"integer","default":null,"minimum":0,"maximum":6},{"key":"highlightDate","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"updateInterval","type":"integer","default":60,"minimum":1,"description":"Refresh interval in seconds."}],
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

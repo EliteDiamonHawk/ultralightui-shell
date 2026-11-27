@@ -2,10 +2,7 @@
   "collection": "end4-pc-remake",
   "id": "lock",
   "title": "Lock",
-  "source": "webskin",
-  "appearance": "plain control button",
-  "function": "lock system action",
-  "legacyId": "lock",
+  "function": "System Control",
   "bridge": {
     "enabled": true,
     "backend-ids": [

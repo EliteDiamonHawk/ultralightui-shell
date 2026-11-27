@@ -1,6 +1,3 @@
-# Swap utilization
+# swap-utilization
 
-WebSkin reference page. Legacy source: `swap-memory-prestyled`.
-
-This page keeps its markup, CSS, JavaScript, assets, and build entry local.
-Shared bridge, formatting, and cleanup helpers come from `@khaosshell/widget-runtime`.
+Settings and runtime behavior are documented in the [end4-pc-remake collection README](../../../README.md#behavior-settings). The supported setting contract is declared in this widget's `widget.json` manifest.

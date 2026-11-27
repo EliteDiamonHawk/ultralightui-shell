@@ -1,11 +1,9 @@
 {
   "collection": "end4-pc-remake",
   "id": "cpu-frequency",
-  "title": "CPU frequency",
-  "source": "webskin",
-  "appearance": "cookie-4-sided system card",
-  "function": "CPU frequency",
-  "legacyId": "cpu-frequency-prestyled",
+  "title": "CPU Frequency",
+  "function": "System Metric",
+  "settings": [{"key":"core","type":"integer","default":-1,"minimum":-1},{"key":"digits","type":"integer","default":0,"minimum":0,"maximum":3},{"key":"format","type":"string","default":"{current} MHz"},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"CPU"},{"key":"updateInterval","type":"integer","default":30,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

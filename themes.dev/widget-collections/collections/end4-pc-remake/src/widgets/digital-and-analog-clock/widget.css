@@ -1,0 +1,104 @@
+.webskin-clock--digital-analog-prestyled {
+  -webkit-user-select: none;
+  user-select: none;
+  --webskin-combination-color: var(--widget-primary, #d6d6d6);
+  --webskin-combination-analog-color: var(--widget-secondary, #2e2e2e);
+  --webskin-combination-analog-face: var(--widget-primary, #d6d6d6);
+  --webskin-combination-surface: var(--widget-secondary, #2e2e2e);
+  align-items: center;
+  background: var(--webskin-combination-surface);
+  border: 1px solid var(--webskin-combination-surface);
+  border-radius: .75rem;
+  box-sizing: border-box;
+  box-shadow: 0 .75rem 2rem rgb(0 0 0 / .18);
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  justify-content: center;
+  overflow: hidden;
+  width: var(--webskin-clock-width, 22rem);
+  height: var(--webskin-clock-height, 10rem);
+  min-width: 0;
+  min-height: 0;
+  padding: .75rem 1rem;
+  zoom: var(--widget-scale, 1);
+}
+
+.webskin-clock--digital-analog-prestyled > .webskin-clock--analog-plain,
+.webskin-clock--digital-analog-prestyled > .webskin-clock--digital-plain {
+  flex: 0 0 auto;
+}
+
+.webskin-clock--digital-analog-prestyled > .webskin-clock--analog-plain { order: 1; }
+.webskin-clock--digital-analog-prestyled > .webskin-clock--digital-plain { order: 2; }
+
+.webskin-clock--digital-analog-prestyled > .webskin-clock--digital-plain {
+  align-items: center;
+  color: var(--webskin-combination-color);
+  display: inline-flex;
+  font: 600 var(--webskin-clock-font-size, clamp(1.5rem, 5vw, 3rem))/1 "Segoe Print", "Comic Sans MS", cursive;
+  font-variant-numeric: tabular-nums;
+  justify-content: center;
+  letter-spacing: .08em;
+  width: auto;
+  height: auto;
+  white-space: nowrap;
+}
+
+.webskin-clock--digital-analog-prestyled > .webskin-clock--analog-plain {
+  --webskin-analog-frame: var(--webskin-combination-analog-face);
+  --webskin-analog-face: var(--webskin-combination-analog-face);
+  --webskin-analog-ticks: var(--webskin-combination-analog-color);
+  --webskin-analog-hands: var(--webskin-combination-analog-color);
+  --webskin-analog-ticks-display: none;
+  background: var(--webskin-combination-analog-face);
+  border-radius: .75rem;
+  box-shadow: none;
+  color: var(--webskin-combination-analog-color);
+  display: block;
+  overflow: visible;
+  width: 7rem;
+  height: 7rem;
+  padding: .65rem;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="face"] {
+  fill: var(--webskin-analog-face);
+  stroke: var(--webskin-analog-frame);
+  stroke-width: 1.5;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="tick"] {
+  display: var(--webskin-analog-ticks-display, inline);
+  stroke: var(--webskin-analog-ticks);
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="hour-hand"] {
+  stroke: var(--webskin-analog-hands);
+  stroke-linecap: round;
+  stroke-width: 5;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="minute-hand"] {
+  stroke: var(--webskin-analog-hands);
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="second-hand"] {
+  stroke: var(--webskin-analog-hands);
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.webskin-clock--analog-plain [data-webskin-clock-part="pin"] {
+  fill: var(--webskin-analog-hands);
+}
+
+.webskin-clock--digital-analog-prestyled [data-webskin-clock-part="separator"],
+.webskin-clock--digital-analog-prestyled [data-webskin-clock-part="seconds-separator"] { opacity: .55; }
+.webskin-clock--digital-analog-prestyled [data-webskin-clock-part="seconds"] { font-size: .62em; opacity: .72; }
+.webskin-clock--digital-analog-prestyled [data-webskin-clock-part="period"] { font-size: .45em; letter-spacing: .04em; opacity: .72; }

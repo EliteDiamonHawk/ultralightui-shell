@@ -1,0 +1,15 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "memory-utilization",
+  "title": "Memory Utilization",
+  "function": "System Metric",
+  "settings": [{"key":"format","type":"string","default":"{usage}%"},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"RAM"},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

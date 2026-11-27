@@ -1,0 +1,119 @@
+@font-face {
+  font-family: "Ageo Gobold";
+  src: url("./assets/Gobold Bold.otf") format("opentype");
+  font-weight: 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Ageo Porter";
+  src: url("./assets/Porter.otf") format("opentype");
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Ageo Glacial";
+  src: url("./assets/Glacial Indifference.otf") format("opentype");
+  font-weight: 400;
+  font-display: block;
+}
+
+:root {
+  --widget-scale: 1.05;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#widget {
+  transform: scale(var(--widget-scale));
+  transform-origin: top left;
+}
+
+.ageo {
+  --ageo-primary: rgb(0 0 0);
+  --ageo-accent: rgb(255 187 64);
+  position: relative;
+  box-sizing: border-box;
+  width: 710px;
+  min-height: 498px;
+  color: var(--ageo-primary);
+  user-select: none;
+}
+
+.ageo__date,
+.ageo__month,
+.ageo__weekday,
+.ageo__time,
+.ageo__line,
+.ageo__quote {
+  position: absolute;
+  display: block;
+  margin: 0;
+}
+
+.ageo__date {
+  top: 0px;
+  left: 0px;
+  font: 700 420px/1.1 "Ageo Gobold", sans-serif;
+  letter-spacing: 0em;
+  line-height: 1.1;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ageo-accent) 86%, transparent) 0%,
+    color-mix(in srgb, var(--ageo-accent) 2%, transparent) 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.ageo__month {
+  top: 170px;
+  left: 120px;
+  font: 50 90px/1 "Ageo Porter", sans-serif;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+
+.ageo__weekday {
+  top: 495px;
+  left: 63px;
+  transform: rotate(-90deg);
+  transform-origin: left top;
+  font: 400 18px/1 "Ageo Porter", sans-serif;
+  letter-spacing: 25px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ageo__time {
+  top: 285px;
+  left: 128px;
+  font: 400 24px/1 "Ageo Porter", sans-serif;
+  white-space: nowrap;
+}
+
+.ageo__line {
+  top: 330px;
+  left: 128px;
+  width: 100px;
+  height: 2px;
+  background: var(--ageo-primary);
+}
+
+.ageo__quote {
+  top: 360px;
+  left: 128px;
+  width: 500px;
+  color: var(--ageo-primary);
+  font: 400 18px/1.15 "Ageo Glacial", sans-serif;
+  white-space: pre-line;
+}

@@ -1,0 +1,13 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "stopwatch",
+  "title": "Stopwatch",
+  "function": "Timer",
+  "settings": [{"key":"limit","type":"integer","default":3599000,"minimum":0,"maximum":3599000},{"key":"syntax","type":"string","default":"mm:ss"},{"key":"label","type":"string","default":"Stopwatch"},{"key":"buttons","type":"boolean","default":true}],
+  "bridge": {
+    "enabled": false,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

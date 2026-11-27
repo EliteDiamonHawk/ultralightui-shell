@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "verify": "node tooling/widget-cli.mjs verify",
+    "test": "node --test packages/widget-runtime/test/*.test.js",
     "build": "node tooling/widget-cli.mjs build-all",
     "widget:list": "node tooling/widget-cli.mjs list",
     "widget:verify": "node tooling/widget-cli.mjs verify",

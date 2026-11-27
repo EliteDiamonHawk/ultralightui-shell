@@ -2,10 +2,7 @@
   "collection": "end4-pc-remake",
   "id": "sleep",
   "title": "Sleep",
-  "source": "webskin",
-  "appearance": "plain control button",
-  "function": "sleep system action",
-  "legacyId": "sleep",
+  "function": "System Control",
   "bridge": {
     "enabled": true,
     "backend-ids": [

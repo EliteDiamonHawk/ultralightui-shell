@@ -1,0 +1,15 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "analog-clock",
+  "title": "Analog Clock",
+  "function": "Time",
+  "settings": [{"key":"offsetMinutes","type":"number","default":0},{"key":"smooth","type":"boolean","default":true},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"description":"Refresh interval in seconds."}],
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

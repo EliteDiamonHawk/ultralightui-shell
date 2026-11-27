@@ -177,8 +177,51 @@ const verifyWidget = (widget) => {
     if (!widget.collection?.id) throw new Error(`${widget.id}: invalid collection metadata.`);
     if (widget.id !== basename(widget.root)) throw new Error(`${widget.id}: manifest id mismatch.`);
     if (!/^[a-z0-9-]+$/.test(widget.id)) throw new Error(`${widget.id}: invalid widget id.`);
-    for (const field of ["title", "source", "appearance", "function", "legacyId"]) {
+    for (const field of ["title", "function"]) {
       if (!widget[field]) throw new Error(`${widget.id}: missing manifest field ${field}.`);
+    }
+    if (widget.settings !== undefined) {
+      if (!Array.isArray(widget.settings)) throw new Error(`${widget.id}: settings must be an array.`);
+      const keys = new Set();
+      for (const setting of widget.settings) {
+        if (!setting || typeof setting !== "object" || !/^[a-z][a-zA-Z0-9]*$/.test(setting.key ?? "")) {
+          throw new Error(`${widget.id}: each setting needs a camelCase key.`);
+        }
+        if (keys.has(setting.key)) throw new Error(`${widget.id}: duplicate setting ${setting.key}.`);
+        keys.add(setting.key);
+        if (!["string", "integer", "number", "boolean", "object"].includes(setting.type)) {
+          throw new Error(`${widget.id}/${setting.key}: unsupported setting type ${setting.type}.`);
+        }
+        if (setting.enum !== undefined && (!Array.isArray(setting.enum) || setting.enum.length === 0)) {
+          throw new Error(`${widget.id}/${setting.key}: enum must be a non-empty array.`);
+        }
+        if (setting.enum !== undefined) {
+          const enumMatchesType = setting.enum.every((value) => setting.type === "string" ? typeof value === "string"
+            : setting.type === "integer" ? Number.isInteger(value)
+              : setting.type === "number" ? typeof value === "number" && Number.isFinite(value)
+                : setting.type === "boolean" ? typeof value === "boolean"
+                  : value && typeof value === "object" && !Array.isArray(value));
+          if (!enumMatchesType) throw new Error(`${widget.id}/${setting.key}: enum values do not match type ${setting.type}.`);
+        }
+        if (setting.minimum !== undefined && (!["integer", "number"].includes(setting.type) || typeof setting.minimum !== "number" || !Number.isFinite(setting.minimum))) throw new Error(`${widget.id}/${setting.key}: minimum must be numeric for numeric settings.`);
+        if (setting.maximum !== undefined && (!["integer", "number"].includes(setting.type) || typeof setting.maximum !== "number" || !Number.isFinite(setting.maximum))) throw new Error(`${widget.id}/${setting.key}: maximum must be numeric for numeric settings.`);
+        if (setting.minimum !== undefined && setting.maximum !== undefined && setting.minimum > setting.maximum) throw new Error(`${widget.id}/${setting.key}: invalid range.`);
+        if (setting.properties !== undefined && (typeof setting.properties !== "object" || setting.properties === null || Array.isArray(setting.properties))) {
+          throw new Error(`${widget.id}/${setting.key}: properties must be an object.`);
+        }
+        if (setting.properties !== undefined && setting.type !== "object") throw new Error(`${widget.id}/${setting.key}: properties require object type.`);
+        if (setting.default !== undefined && setting.default !== null) {
+          const matchesType = setting.type === "string" ? typeof setting.default === "string"
+            : setting.type === "integer" ? Number.isInteger(setting.default)
+              : setting.type === "number" ? typeof setting.default === "number" && Number.isFinite(setting.default)
+                : setting.type === "boolean" ? typeof setting.default === "boolean"
+                  : typeof setting.default === "object" && !Array.isArray(setting.default);
+          if (!matchesType) throw new Error(`${widget.id}/${setting.key}: default does not match type ${setting.type}.`);
+          if (setting.minimum !== undefined && setting.default < setting.minimum) throw new Error(`${widget.id}/${setting.key}: default is below minimum.`);
+          if (setting.maximum !== undefined && setting.default > setting.maximum) throw new Error(`${widget.id}/${setting.key}: default is above maximum.`);
+          if (setting.enum !== undefined && !setting.enum.includes(setting.default)) throw new Error(`${widget.id}/${setting.key}: default is not in enum.`);
+        }
+      }
     }
     const html = await readFile(resolve(widget.root, "index.html"), "utf8");
     const script = await readFile(resolve(widget.root, "widget.js"), "utf8");

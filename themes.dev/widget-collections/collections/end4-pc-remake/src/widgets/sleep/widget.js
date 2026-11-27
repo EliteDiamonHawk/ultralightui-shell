@@ -1,3 +1,4 @@
+import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { callNyxControl, hasAetherBridge } from "@khaosshell/widget-runtime/bridge.js";
 
@@ -14,11 +15,13 @@ export function mount(root = globalThis.document, options = {}) {
     },
   });
   const window = options.window ?? pageDocument.defaultView ?? globalThis.window;
+  const renderer = window?.renderer;
 
 const WIDGET_ID = "sleep";
 const SCALE = 1;
 
-document.documentElement.style.setProperty("--widget-scale", String(SCALE));
+const theme = readWidgetTheme(WIDGET_ID, { primary: "CanvasText", secondary: "ButtonFace", scale: SCALE }, renderer);
+applyWidgetTheme(document, theme);
 
 
 const button = document.querySelector("[data-control]");

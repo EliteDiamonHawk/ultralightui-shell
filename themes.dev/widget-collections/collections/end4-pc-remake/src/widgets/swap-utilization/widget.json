@@ -1,11 +1,9 @@
 {
   "collection": "end4-pc-remake",
   "id": "swap-utilization",
-  "title": "Swap utilization",
-  "source": "webskin",
-  "appearance": "cookie-6-sided system card",
-  "function": "swap utilization",
-  "legacyId": "swap-memory-prestyled",
+  "title": "Swap Utilization",
+  "function": "System Metric",
+  "settings": [{"key":"metric","type":"string","default":"usage","enum":["total","used","free","usage"]},{"key":"format","type":"string","default":"{value}%"},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"Swap"},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

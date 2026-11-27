@@ -1,0 +1,15 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "digital-and-analog-clock",
+  "title": "Digital and Analog Clock",
+  "function": "Time",
+  "settings": [{"key":"format","type":"string","default":"24h","enum":["12h","24h"]},{"key":"seconds","type":"boolean","default":false},{"key":"showPeriod","type":"boolean","default":true},{"key":"syntax","type":"string","default":null},{"key":"offsetMinutes","type":"number","default":0},{"key":"smooth","type":"boolean","default":true},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"description":"Refresh interval in seconds."}],
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

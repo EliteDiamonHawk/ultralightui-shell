@@ -422,12 +422,9 @@
       "description": "end4-pc-remake WebSkin implementation references.",
       "widgets": [
         {
-          "id": "charcoal-month-grid",
-          "title": "Charcoal month grid",
-          "source": "webskin",
-          "appearance": "charcoal rounded month grid",
-          "function": "month calendar",
-          "legacyId": "month-prestyled",
+          "id": "analog-clock",
+          "title": "Analog Clock",
+          "function": "Time",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -438,12 +435,9 @@
           }
         },
         {
-          "id": "charcoal-tick-analog-clock",
-          "title": "Charcoal tick analog clock",
-          "source": "webskin",
-          "appearance": "charcoal analog face",
-          "function": "analog clock",
-          "legacyId": "analog-prestyled",
+          "id": "battery-percentage",
+          "title": "Battery Percentage",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -454,28 +448,20 @@
           }
         },
         {
-          "id": "clover-memory-meter",
-          "title": "1x1 memory utilization",
-          "source": "webskin",
-          "appearance": "clover-4-leaf system card",
-          "function": "memory utilization",
-          "legacyId": "memory-prestyled",
+          "id": "countdown",
+          "title": "Countdown",
+          "function": "Timer",
           "bridge": {
-            "enabled": true,
-            "backend-ids": [
-              "nyx"
-            ],
+            "enabled": false,
+            "backend-ids": [],
             "control-routes": [],
             "runtime-commands": []
           }
         },
         {
           "id": "cpu-core-count",
-          "title": "CPU core count",
-          "source": "webskin",
-          "appearance": "clover-8-leaf system card",
-          "function": "CPU core count",
-          "legacyId": "cpu-core-counts-prestyled",
+          "title": "CPU Core Count",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -487,11 +473,8 @@
         },
         {
           "id": "cpu-frequency",
-          "title": "CPU frequency",
-          "source": "webskin",
-          "appearance": "cookie-4-sided system card",
-          "function": "CPU frequency",
-          "legacyId": "cpu-frequency-prestyled",
+          "title": "CPU Frequency",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -502,12 +485,9 @@
           }
         },
         {
-          "id": "current-date",
-          "title": "Current date",
-          "source": "webskin",
-          "appearance": "charcoal square date card",
-          "function": "single current date",
-          "legacyId": "day-prestyled2",
+          "id": "cpu-utilization",
+          "title": "CPU Utilization",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -518,12 +498,35 @@
           }
         },
         {
-          "id": "digital-analog-clock",
-          "title": "Digital and analog clock",
-          "source": "webskin",
-          "appearance": "charcoal analog and script split card",
-          "function": "combined analog and digital clock",
-          "legacyId": "digital-analog-prestyled",
+          "id": "date",
+          "title": "Date",
+          "function": "Time",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "digital-and-analog-clock",
+          "title": "Digital and Analog Clock",
+          "function": "Time",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "digital-clock",
+          "title": "Digital Clock",
+          "function": "Time",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -535,57 +538,8 @@
         },
         {
           "id": "disk-usage",
-          "title": "Disk usage",
-          "source": "webskin",
-          "appearance": "soft-burst system card",
-          "function": "disk usage",
-          "legacyId": "disk-usage-prestyled",
-          "bridge": {
-            "enabled": true,
-            "backend-ids": [
-              "nyx"
-            ],
-            "control-routes": [],
-            "runtime-commands": []
-          }
-        },
-        {
-          "id": "flower-cpu-meter",
-          "title": "1x1 CPU utilization",
-          "source": "webskin",
-          "appearance": "flower system card",
-          "function": "CPU utilization",
-          "legacyId": "cpu-utilization-prestyled",
-          "bridge": {
-            "enabled": true,
-            "backend-ids": [
-              "nyx"
-            ],
-            "control-routes": [],
-            "runtime-commands": []
-          }
-        },
-        {
-          "id": "flower-stopwatch",
-          "title": "1x1 stopwatch timer",
-          "source": "webskin",
-          "appearance": "charcoal flower timer card",
-          "function": "stopwatch timer",
-          "legacyId": "stopwatch-prestyled",
-          "bridge": {
-            "enabled": false,
-            "backend-ids": [],
-            "control-routes": [],
-            "runtime-commands": []
-          }
-        },
-        {
-          "id": "formatted-date",
-          "title": "Formatted date",
-          "source": "webskin",
-          "appearance": "charcoal script date strip",
-          "function": "formatted current date",
-          "legacyId": "day-prestyled",
+          "title": "Disk Usage",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -597,11 +551,8 @@
         },
         {
           "id": "gpu-temperature",
-          "title": "GPU temperature",
-          "source": "webskin",
-          "appearance": "puffy-diamond system card",
-          "function": "GPU temperature",
-          "legacyId": "gpu-temperature-prestyled",
+          "title": "GPU Temperature",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -612,12 +563,9 @@
           }
         },
         {
-          "id": "last-boot",
-          "title": "Last boot",
-          "source": "webskin",
-          "appearance": "circle system card",
-          "function": "last boot time",
-          "legacyId": "last-boot-prestyled",
+          "id": "last-boot-time",
+          "title": "Last Boot Time",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -630,10 +578,7 @@
         {
           "id": "lock",
           "title": "Lock",
-          "source": "webskin",
-          "appearance": "plain control button",
-          "function": "lock system action",
-          "legacyId": "lock",
+          "function": "System Control",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -648,10 +593,7 @@
         {
           "id": "logout",
           "title": "Logout",
-          "source": "webskin",
-          "appearance": "plain control button",
-          "function": "log out system action",
-          "legacyId": "logout",
+          "function": "System Control",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -664,12 +606,35 @@
           }
         },
         {
+          "id": "memory-utilization",
+          "title": "Memory Utilization",
+          "function": "System Metric",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "month",
+          "title": "Month",
+          "function": "Time",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
+        {
           "id": "network-received",
-          "title": "Network received",
-          "source": "webskin",
-          "appearance": "arrow system card",
-          "function": "network received",
-          "legacyId": "network-prestyled",
+          "title": "Network Received",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -680,12 +645,9 @@
           }
         },
         {
-          "id": "puffy-battery-meter",
-          "title": "1x1 battery percentage",
-          "source": "webskin",
-          "appearance": "puffy system card",
-          "function": "battery percentage",
-          "legacyId": "battery-prestyled",
+          "id": "pixel-clock",
+          "title": "Pixel Clock",
+          "function": "Time",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -696,12 +658,9 @@
           }
         },
         {
-          "id": "radial-analog-clock",
-          "title": "Radial analog clock",
-          "source": "webskin",
-          "appearance": "charcoal inset analog face",
-          "function": "analog clock",
-          "legacyId": "analog-prestyled2",
+          "id": "radial-clock",
+          "title": "Radial Clock",
+          "function": "Time",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -714,10 +673,7 @@
         {
           "id": "restart",
           "title": "Restart",
-          "source": "webskin",
-          "appearance": "plain control button",
-          "function": "restart system action",
-          "legacyId": "restart",
+          "function": "System Control",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -726,48 +682,13 @@
             "control-routes": [
               "/v1/nyx/system/controls/:name"
             ],
-            "runtime-commands": []
-          }
-        },
-        {
-          "id": "script-digital-clock",
-          "title": "Script digital clock",
-          "source": "webskin",
-          "appearance": "charcoal script card",
-          "function": "digital clock",
-          "legacyId": "digital-prestyled",
-          "bridge": {
-            "enabled": true,
-            "backend-ids": [
-              "nyx"
-            ],
-            "control-routes": [],
-            "runtime-commands": []
-          }
-        },
-        {
-          "id": "sculpted-numeral-clock",
-          "title": "Sculpted numeral clock",
-          "source": "webskin",
-          "appearance": "freeform SVG numerals",
-          "function": "digital clock",
-          "legacyId": "digital-prestyled2",
-          "bridge": {
-            "enabled": true,
-            "backend-ids": [
-              "nyx"
-            ],
-            "control-routes": [],
             "runtime-commands": []
           }
         },
         {
           "id": "shutdown",
           "title": "Shutdown",
-          "source": "webskin",
-          "appearance": "plain control button",
-          "function": "shutdown system action",
-          "legacyId": "shutdown",
+          "function": "System Control",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -776,16 +697,26 @@
             "control-routes": [
               "/v1/nyx/system/controls/:name"
             ],
+            "runtime-commands": []
+          }
+        },
+        {
+          "id": "single-line-date",
+          "title": "Single Line Date",
+          "function": "Time",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
             "runtime-commands": []
           }
         },
         {
           "id": "sleep",
           "title": "Sleep",
-          "source": "webskin",
-          "appearance": "plain control button",
-          "function": "sleep system action",
-          "legacyId": "sleep",
+          "function": "System Control",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -798,12 +729,9 @@
           }
         },
         {
-          "id": "softburst-countdown",
-          "title": "1x1 countdown timer",
-          "source": "webskin",
-          "appearance": "charcoal softburst timer card",
-          "function": "countdown timer",
-          "legacyId": "countdown-prestyled",
+          "id": "stopwatch",
+          "title": "Stopwatch",
+          "function": "Timer",
           "bridge": {
             "enabled": false,
             "backend-ids": [],
@@ -813,11 +741,8 @@
         },
         {
           "id": "swap-utilization",
-          "title": "Swap utilization",
-          "source": "webskin",
-          "appearance": "cookie-6-sided system card",
-          "function": "swap utilization",
-          "legacyId": "swap-memory-prestyled",
+          "title": "Swap Utilization",
+          "function": "System Metric",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -828,12 +753,9 @@
           }
         },
         {
-          "id": "week-calendar",
-          "title": "Week calendar",
-          "source": "webskin",
-          "appearance": "charcoal seven-day strip",
-          "function": "week calendar",
-          "legacyId": "week-prestyled",
+          "id": "week",
+          "title": "Week",
+          "function": "Time",
           "bridge": {
             "enabled": true,
             "backend-ids": [
@@ -851,6 +773,22 @@
       "source": "webskin",
       "description": "Widgets outside the named visual collections.",
       "widgets": [
+        {
+          "id": "raimeter-ageo-time-and-day-modified",
+          "title": "Rainmeter Ageo time and day (modified)",
+          "source": "webskin",
+          "appearance": "blue typographic date and time composition",
+          "function": "date, time, weekday, and quote display",
+          "legacyId": "time-and-date",
+          "bridge": {
+            "enabled": true,
+            "backend-ids": [
+              "nyx"
+            ],
+            "control-routes": [],
+            "runtime-commands": []
+          }
+        },
         {
           "id": "rainmeter-mond-clock",
           "title": "Rainmeter-mond-clock",

@@ -1,0 +1,15 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "single-line-date",
+  "title": "Single Line Date",
+  "function": "Time",
+  "settings": [{"key":"date","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"locale","type":"string","default":"en-US"},{"key":"format","type":"string","default":null},{"key":"highlightDate","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"updateInterval","type":"integer","default":60,"minimum":1,"description":"Refresh interval in seconds."}],
+  "bridge": {
+    "enabled": true,
+    "backend-ids": [
+      "nyx"
+    ],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}

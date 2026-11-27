@@ -2,10 +2,7 @@
   "collection": "end4-pc-remake",
   "id": "logout",
   "title": "Logout",
-  "source": "webskin",
-  "appearance": "plain control button",
-  "function": "log out system action",
-  "legacyId": "logout",
+  "function": "System Control",
   "bridge": {
     "enabled": true,
     "backend-ids": [

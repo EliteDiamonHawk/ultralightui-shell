@@ -1,0 +1,13 @@
+{
+  "collection": "end4-pc-remake",
+  "id": "countdown",
+  "title": "Countdown",
+  "function": "Timer",
+  "settings": [{"key":"time","type":"integer","default":0,"minimum":0,"maximum":3600000},{"key":"syntax","type":"string","default":"MM:ss"},{"key":"label","type":"string","default":"Countdown"},{"key":"buttons","type":"boolean","default":true}],
+  "bridge": {
+    "enabled": false,
+    "backend-ids": [],
+    "control-routes": [],
+    "runtime-commands": []
+  }
+}
