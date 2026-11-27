@@ -47,6 +47,8 @@ internal static class Program
             (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
             (nameof(GifCompositorAppliesDisposalAndDirtyRegion), GifCompositorAppliesDisposalAndDirtyRegion),
             (nameof(GifDecoderReadsSingleFrame), GifDecoderReadsSingleFrame),
+            (nameof(GifDecoderReadsInterlacedFixtures), GifDecoderReadsInterlacedFixtures),
+            (nameof(GifCompositorMatchesGifReferenceFrames), GifCompositorMatchesGifReferenceFrames),
             (nameof(DesktopAdaptersPreserveSharedPageData), DesktopAdaptersPreserveSharedPageData),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
@@ -294,6 +296,141 @@ internal static class Program
         }
         finally { Delete(path); }
     }
+
+    private static void GifDecoderReadsInterlacedFixtures()
+    {
+        using GifAnimation small = LoadGifFixture("interlaced-small.gif");
+        AssertEqual(2, small.Width);
+        AssertEqual(2, small.Height);
+        AssertPixels(DecodeFrame(small, "interlaced-small.gif", 0), JoinPixels(
+            Bgra(0, 0, 255), Bgra(0, 255, 0),
+            Bgra(255, 0, 0), Bgra(0, 0, 255)));
+
+        using GifAnimation odd = LoadGifFixture("interlaced-odd-transparent.gif");
+        AssertEqual(3, odd.Width);
+        AssertEqual(5, odd.Height);
+        AssertPixels(DecodeFrame(odd, "interlaced-odd-transparent.gif", 0), JoinPixels(
+            Bgra(0, 0, 255), Transparent(), Bgra(0, 0, 255),
+            Transparent(), Bgra(0, 255, 0), Transparent(),
+            Bgra(255, 0, 0), Bgra(255, 0, 0), Transparent(),
+            Bgra(0, 255, 0), Transparent(), Bgra(0, 0, 255),
+            Transparent(), Bgra(255, 0, 0), Bgra(0, 255, 0)));
+
+        using GifAnimation eight = LoadGifFixture("interlaced-eight.gif");
+        AssertEqual(8, eight.Height);
+        AssertPixels(DecodeFrame(eight, "interlaced-eight.gif", 0), JoinPixels(
+            Bgra(0, 0, 0), Bgra(0, 0, 0),
+            Bgra(0, 0, 255), Bgra(0, 0, 255),
+            Bgra(0, 255, 0), Bgra(0, 255, 0),
+            Bgra(255, 0, 0), Bgra(255, 0, 0),
+            Bgra(0, 255, 255), Bgra(0, 255, 255),
+            Bgra(255, 0, 255), Bgra(255, 0, 255),
+            Bgra(255, 255, 0), Bgra(255, 255, 0),
+            Bgra(255, 255, 255), Bgra(255, 255, 255)));
+    }
+
+    private static void GifCompositorMatchesGifReferenceFrames()
+    {
+        using GifAnimation animation = LoadGifFixture("disposal-and-background.gif");
+        AssertEqual(-1, animation.RepeatCount);
+        AssertBytes(Bgra(255, 0, 0), animation.Background.Span);
+
+        var compositor = new GifCompositor(animation.Width, animation.Height, animation.Background.Span);
+        compositor.Compose(animation.DecodeFrame(0));
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255),
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255)));
+
+        compositor.Compose(animation.DecodeFrame(1));
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(0, 255, 0), Bgra(0, 0, 255), Bgra(0, 0, 255),
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255)));
+
+        compositor.Compose(animation.DecodeFrame(2));
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(0, 255, 0), Bgra(255, 255, 255), Bgra(0, 0, 255),
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255)));
+
+        compositor.Compose(animation.DecodeFrame(3));
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(0, 255, 0), Bgra(255, 0, 0), Bgra(0, 255, 255),
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255)));
+
+        compositor.Compose(animation.DecodeFrame(4));
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(0, 255, 0), Bgra(255, 0, 0), Bgra(0, 0, 255),
+            Bgra(0, 0, 255), Bgra(0, 0, 255), Bgra(0, 0, 255)));
+
+        compositor.ResetLoop();
+        AssertEqual(0, compositor.FrameIndex);
+        AssertCanvas(compositor, JoinPixels(
+            Bgra(255, 0, 0), Bgra(255, 0, 0), Bgra(255, 0, 0),
+            Bgra(255, 0, 0), Bgra(255, 0, 0), Bgra(255, 0, 0)));
+
+        using GifAnimation odd = LoadGifFixture("interlaced-odd-transparent.gif");
+        var oddCompositor = new GifCompositor(odd.Width, odd.Height, odd.Background.Span);
+        oddCompositor.Compose(odd.DecodeFrame(0));
+        AssertCanvas(oddCompositor, JoinPixels(
+            Bgra(0, 0, 255), Transparent(), Bgra(0, 0, 255),
+            Transparent(), Bgra(0, 255, 0), Transparent(),
+            Bgra(255, 0, 0), Bgra(255, 0, 0), Transparent(),
+            Bgra(0, 255, 0), Transparent(), Bgra(0, 0, 255),
+            Transparent(), Bgra(255, 0, 0), Bgra(0, 255, 0)));
+
+        using GifAnimation noGlobal = LoadGifFixture("transparent-no-global.gif");
+        AssertEqual((byte)0, noGlobal.Background.Span[3]);
+        var noGlobalCompositor = new GifCompositor(noGlobal.Width, noGlobal.Height, noGlobal.Background.Span);
+        noGlobalCompositor.Compose(noGlobal.DecodeFrame(0));
+        AssertCanvas(noGlobalCompositor, JoinPixels(Bgra(0, 0, 255), Transparent()));
+    }
+
+    private static GifAnimation LoadGifFixture(string name)
+    {
+        try { return GifAnimation.Load(Path.Combine(AppContext.BaseDirectory, "TestAssets", "Gif", name)); }
+        catch (Exception ex) { throw new InvalidOperationException($"Could not load GIF fixture '{name}'.", ex); }
+    }
+
+    private static GifFrame DecodeFrame(GifAnimation animation, string name, int index)
+    {
+        try { return animation.DecodeFrame(index); }
+        catch (Exception ex) { throw new InvalidOperationException($"Could not decode GIF fixture '{name}', frame {index}: {ex.Message}", ex); }
+    }
+
+    private static void AssertPixels(GifFrame frame, byte[] expected)
+    {
+        AssertEqual(expected.Length, frame.Pixels.Length);
+        AssertBytes(expected, frame.Pixels.Span);
+    }
+
+    private static void AssertCanvas(GifCompositor compositor, byte[] expected) =>
+        AssertBytes(expected, compositor.Canvas.Span);
+
+    private static void AssertBytes(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
+    {
+        AssertEqual(expected.Length, actual.Length);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            if (expected[index] != actual[index])
+                throw new InvalidOperationException($"Pixel byte {index}: expected '{expected[index]}', got '{actual[index]}'.");
+        }
+    }
+
+    private static byte[] JoinPixels(params byte[][] pixels)
+    {
+        byte[] result = new byte[pixels.Sum(pixel => pixel.Length)];
+        int offset = 0;
+        foreach (byte[] pixel in pixels)
+        {
+            pixel.CopyTo(result, offset);
+            offset += pixel.Length;
+        }
+        return result;
+    }
+
+    private static byte[] Bgra(byte blue, byte green, byte red, byte alpha = 255) =>
+        new[] { blue, green, red, alpha };
+
+    private static byte[] Transparent() => new byte[4];
 
     private static void ConfigurationParsesVariablesAndCues()
     {

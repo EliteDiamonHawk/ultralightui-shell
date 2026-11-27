@@ -206,7 +206,7 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
             _canvasWidth = asset.Width;
             _canvasHeight = asset.Height;
             if (asset.Animation != null)
-                _compositor = new GifCompositor(_canvasWidth, _canvasHeight);
+                _compositor = new GifCompositor(_canvasWidth, _canvasHeight, asset.Animation.Background.Span);
 
             bool topmost = spec.EffectiveSurface.ZOrder == WindowZOrder.Topmost;
             _runtime.CompositionDevice.CreateTargetForHwnd(Hwnd, topmost, out _target);

@@ -26,7 +26,8 @@ public readonly record struct GifCompositionResult(int FrameIndex, PixelRect Dir
 
 /// <summary>
 /// Composes GIF subframes into one persistent premultiplied-BGRA canvas.
-/// Transparent source pixels leave the existing canvas unchanged.
+/// Transparent source pixels leave the existing canvas unchanged. The logical
+/// GIF background is used for the initial canvas, loop resets, and disposal 2.
 /// </summary>
 public sealed class GifCompositor
 {
@@ -52,6 +53,7 @@ public sealed class GifCompositor
         _background = new byte[4];
         if (background.Length == 4)
             background.CopyTo(_background);
+        FillRegion(_canvas, _width, new PixelRect(0, 0, _width, _height), _background);
     }
 
     public int Width => _width;
@@ -86,7 +88,7 @@ public sealed class GifCompositor
     public PixelRect ResetLoop()
     {
         PixelRect dirty = new(0, 0, _width, _height);
-        Array.Clear(_canvas);
+        FillRegion(_canvas, _width, new PixelRect(0, 0, _width, _height), _background);
         _previousBounds = default;
         _previousDisposal = GifDisposalMethod.DoNotDispose;
         _restorePrevious = null;
@@ -125,8 +127,11 @@ public sealed class GifCompositor
             for (int x = 0; x < clipped.Width; x++)
             {
                 int sourcePixel = sourceOffset + x * 4;
+                Span<byte> target = _canvas.AsSpan(targetOffset + x * 4, 4);
                 if (frame.Pixels.Span[sourcePixel + 3] != 0)
-                    frame.Pixels.Span.Slice(sourcePixel, 4).CopyTo(_canvas.AsSpan(targetOffset + x * 4, 4));
+                    frame.Pixels.Span.Slice(sourcePixel, 4).CopyTo(target);
+                else if (_frameIndex == 0)
+                    target.Clear();
             }
         }
     }
