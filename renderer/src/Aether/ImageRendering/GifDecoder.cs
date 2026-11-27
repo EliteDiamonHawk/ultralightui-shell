@@ -6,13 +6,15 @@ internal sealed class GifAnimation : IDisposable
 {
     private readonly GifFrameDescriptor[] _frames;
     private readonly byte[]? _globalPalette;
+    private readonly byte[] _background;
 
     private GifAnimation(int width, int height, byte[]? globalPalette,
-        GifFrameDescriptor[] frames, int repeatCount)
+        byte[] background, GifFrameDescriptor[] frames, int repeatCount)
     {
         Width = width;
         Height = height;
         _globalPalette = globalPalette;
+        _background = background;
         _frames = frames;
         RepeatCount = repeatCount;
     }
@@ -20,6 +22,7 @@ internal sealed class GifAnimation : IDisposable
     public int Width { get; }
     public int Height { get; }
     public int FrameCount => _frames.Length;
+    public ReadOnlyMemory<byte> Background => _background;
 
     /// <summary>Number of complete plays, or -1 for an infinite animation.</summary>
     public int RepeatCount { get; }
@@ -40,6 +43,7 @@ internal sealed class GifAnimation : IDisposable
             throw new InvalidDataException("GIF dimensions exceed the native renderer limit.");
 
         byte packed = data[10];
+        byte backgroundIndex = data[11];
         int offset = 13;
         byte[]? globalPalette = null;
         if ((packed & 0x80) != 0)
@@ -47,6 +51,7 @@ internal sealed class GifAnimation : IDisposable
             int entries = 1 << ((packed & 0x07) + 1);
             globalPalette = ReadPalette(data, ref offset, entries);
         }
+        byte[] background = DecodeBackground(globalPalette, backgroundIndex);
 
         var frames = new List<GifFrameDescriptor>();
         int repeatCount = 1;
@@ -77,7 +82,7 @@ internal sealed class GifAnimation : IDisposable
 
         if (frames.Count == 0)
             throw new InvalidDataException("GIF does not contain an image frame.");
-        return new GifAnimation(width, height, globalPalette, frames.ToArray(), repeatCount);
+        return new GifAnimation(width, height, globalPalette, background, frames.ToArray(), repeatCount);
     }
 
     public GifFrame DecodeFrame(int index)
@@ -252,7 +257,10 @@ internal sealed class GifAnimation : IDisposable
         {
             int code = 0;
             for (int bit = 0; bit < codeSize; bit++)
-                code |= ((compressed[bitPosition >> 3] >> (bitPosition & 7)) & 1) << bit;
+            {
+                int absoluteBit = bitPosition + bit;
+                code |= ((compressed[absoluteBit >> 3] >> (absoluteBit & 7)) & 1) << bit;
+            }
             bitPosition += codeSize;
 
             if (code == clearCode)
@@ -315,19 +323,41 @@ internal sealed class GifAnimation : IDisposable
 
     private static int GetInterlacedRow(int sourceRow, int height)
     {
-        int row = sourceRow;
-        if (row < (height + 7) / 8)
-            return row * 8;
-        row -= (height + 7) / 8;
-        int secondPass = (height + 3) / 4;
-        if (row < secondPass)
-            return row * 4 + 4;
-        row -= secondPass;
-        int thirdPass = (height + 1) / 2;
-        if (row < thirdPass)
-            return row * 2 + 2;
-        row -= thirdPass;
-        return row * 2 + 1;
+        if ((uint)sourceRow >= (uint)height)
+            throw new ArgumentOutOfRangeException(nameof(sourceRow));
+
+        ReadOnlySpan<int> starts = stackalloc[] { 0, 4, 2, 1 };
+        ReadOnlySpan<int> strides = stackalloc[] { 8, 8, 4, 2 };
+        int remaining = sourceRow;
+        for (int pass = 0; pass < starts.Length; pass++)
+        {
+            int start = starts[pass];
+            int stride = strides[pass];
+            int rows = start >= height ? 0 : (height - 1 - start) / stride + 1;
+            if (remaining < rows)
+                return start + remaining * stride;
+            remaining -= rows;
+        }
+
+        throw new InvalidDataException("GIF interlace row is outside the frame.");
+    }
+
+    private static byte[] DecodeBackground(byte[]? globalPalette, byte backgroundIndex)
+    {
+        if (globalPalette == null)
+            return new byte[4];
+
+        int paletteOffset = backgroundIndex * 3;
+        if (paletteOffset + 2 >= globalPalette.Length)
+            throw new InvalidDataException("GIF background color index is outside the global palette.");
+
+        return new[]
+        {
+            globalPalette[paletteOffset + 2],
+            globalPalette[paletteOffset + 1],
+            globalPalette[paletteOffset],
+            (byte)255
+        };
     }
 
     private static int ReadUInt16(byte[] data, int offset) =>

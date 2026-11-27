@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Aether\Aether.csproj">
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
+    <None Include="TestAssets\Gif\*.gif" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
