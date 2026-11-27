@@ -5,9 +5,35 @@ using KhaosShell.Contracts;
 
 namespace Chronos;
 
-internal sealed record AetherCommandResult(bool Success, string Payload, string? Error = null, bool TransportFailure = false)
+internal sealed record AetherCommandResult(
+    bool Success,
+    string Payload,
+    string? Error = null,
+    bool TransportFailure = false,
+    int? Status = null,
+    string? ErrorCode = null)
 {
-    public static AetherCommandResult Failure(string message) => new(false, $"ERR {message}", message);
+    public static AetherCommandResult Failure(
+        string message,
+        int? status = null,
+        string? errorCode = null,
+        bool transportFailure = false) =>
+        new(false, $"ERR {message}", message, transportFailure, status, errorCode);
+
+    public static AetherCommandResult FromResponse(ControlResponse response, string fallback)
+    {
+        if (response.Status is >= 200 and < 300)
+        {
+            string payload = response.Body is { } body ? body.GetRawText() : "OK";
+            return new(true, payload, payload, false, response.Status, response.Error?.Code);
+        }
+
+        string message = response.Error?.Message ?? $"{fallback} (status {response.Status}).";
+        return new(false, $"ERR {message}", message, false, response.Status, response.Error?.Code);
+    }
+
+    public static AetherCommandResult Transport(string message) =>
+        Failure(message, transportFailure: true);
 }
 
 internal sealed class AetherCommandClient
@@ -37,11 +63,11 @@ internal sealed class AetherCommandClient
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return new AetherCommandResult(false, "ERR Aether command timed out.", "Aether command timed out.", true);
+            return AetherCommandResult.Transport("Aether command timed out.");
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
-            return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message, true);
+            return AetherCommandResult.Transport(ex.Message);
         }
     }
 
@@ -55,7 +81,7 @@ internal sealed class AetherCommandClient
         if (command.Kind == RendererCommandKind.Show && IsJsonObject(response))
             return new AetherCommandResult(true, response, response);
 
-        return new AetherCommandResult(false, $"ERR Invalid response from Aether: {response}", response, true);
+        return AetherCommandResult.Transport($"Invalid response from Aether: {response}");
     }
 
     private static bool IsJsonObject(string response)
@@ -154,14 +180,7 @@ internal sealed class RendererCommandService
         RendererCapabilities next = ParseCapabilities(config.Payload, windows.Payload, pipes.Payload);
         lock (_sync)
         {
-            if (_managedMenu is { } menu)
-            {
-                next = next with
-                {
-                    Windows = next.Windows.Append(menu).ToArray(),
-                    HasMenu = true
-                };
-            }
+            next = ReconcileManagedMenu(next, _managedMenu, keepWhenMissing: false);
             _capabilities = next;
             _connected = true;
         }
@@ -182,13 +201,7 @@ internal sealed class RendererCommandService
         lock (_sync)
         {
             _managedMenu = new RendererWindowCapability(id, "chronos-menu", "menu", visible);
-            _capabilities = _capabilities with
-            {
-                Windows = _capabilities.Windows.Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase))
-                    .Append(_managedMenu)
-                    .ToArray(),
-                HasMenu = true
-            };
+            _capabilities = ReconcileManagedMenu(_capabilities, _managedMenu, keepWhenMissing: true);
         }
     }
 
@@ -196,13 +209,77 @@ internal sealed class RendererCommandService
     {
         lock (_sync)
         {
+            string? id = _managedMenu?.Id;
             _managedMenu = null;
             _capabilities = _capabilities with
             {
-                Windows = _capabilities.Windows.Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase)).ToArray(),
+                Windows = _capabilities.Windows.Where(item =>
+                    !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase) &&
+                    (id == null || !string.Equals(item.Id, id, StringComparison.Ordinal))).ToArray(),
                 HasMenu = false
             };
         }
+    }
+
+    internal static RendererCapabilities ReconcileManagedMenu(
+        RendererCapabilities capabilities,
+        RendererWindowCapability? managedMenu,
+        bool keepWhenMissing)
+    {
+        if (managedMenu == null)
+        {
+            return capabilities with
+            {
+                Windows = capabilities.Windows
+                    .Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase))
+                    .ToArray(),
+                HasMenu = false
+            };
+        }
+
+        RendererWindowCapability? rendererWindow = capabilities.Windows.FirstOrDefault(item =>
+            string.Equals(item.Id, managedMenu.Id, StringComparison.Ordinal) &&
+            !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase));
+        if (rendererWindow == null && !keepWhenMissing)
+        {
+            return capabilities with
+            {
+                Windows = capabilities.Windows
+                    .Where(item => !string.Equals(item.Kind, "menu", StringComparison.OrdinalIgnoreCase))
+                    .ToArray(),
+                HasMenu = false
+            };
+        }
+
+        RendererWindowCapability classified = rendererWindow == null
+            ? managedMenu
+            : new RendererWindowCapability(
+                rendererWindow.Id,
+                rendererWindow.Group ?? managedMenu.Group,
+                "menu",
+                rendererWindow.Visible,
+                rendererWindow.Loaded);
+        bool inserted = false;
+        var windows = new List<RendererWindowCapability>();
+        foreach (RendererWindowCapability window in capabilities.Windows)
+        {
+            if (string.Equals(window.Kind, "menu", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (string.Equals(window.Id, managedMenu.Id, StringComparison.Ordinal))
+            {
+                if (!inserted)
+                {
+                    windows.Add(classified);
+                    inserted = true;
+                }
+                continue;
+            }
+            windows.Add(window);
+        }
+
+        if (!inserted && keepWhenMissing)
+            windows.Add(classified);
+        return capabilities with { Windows = windows, HasMenu = inserted || keepWhenMissing };
     }
 
     public async Task<AetherCommandResult> ApplyConfigAsync(
@@ -313,7 +390,7 @@ internal sealed class RendererCommandService
                 };
                 response = await control.SendAsync("GET", path, null, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
                 if (response.Status is >= 200 and < 300 && response.Body is { } body)
-                    return new AetherCommandResult(true, body.GetRawText(), body.GetRawText());
+                    return new AetherCommandResult(true, body.GetRawText(), body.GetRawText(), false, response.Status);
             }
             else
             {
@@ -327,15 +404,19 @@ internal sealed class RendererCommandService
                     body.ValueKind == JsonValueKind.Object &&
                     body.TryGetProperty("response", out JsonElement responseValue) &&
                     responseValue.ValueKind == JsonValueKind.String)
-                    return AetherCommandClient.ParseResponse(command, responseValue.GetString() ?? "");
+                    return AetherCommandClient.ParseResponse(command, responseValue.GetString() ?? "") with
+                    {
+                        Status = response.Status,
+                        ErrorCode = response.Error?.Code
+                    };
             }
 
             string message = response.Error?.Message ?? $"Aether control request failed with status {response.Status}.";
-            return new AetherCommandResult(false, $"ERR {message}", message);
+            return new AetherCommandResult(false, $"ERR {message}", message, false, response.Status, response.Error?.Code);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
-            return new AetherCommandResult(false, $"ERR {ex.Message}", ex.Message, true);
+            return AetherCommandResult.Transport(ex.Message);
         }
     }
 

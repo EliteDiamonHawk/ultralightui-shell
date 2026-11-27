@@ -822,12 +822,7 @@ public sealed class RendererConfiguration
     }
 
     private static void ValidateLogicalId(string id, string prefix)
-    {
-        if (id.Length == 0 || id.Length > 128 || id.Any(character =>
-                character is < 'A' or > 'Z' && character is < 'a' or > 'z' &&
-                character is < '0' or > '9' && character is not ('.' or '_' or ':' or '-')))
-            throw new RendererConfigurationException($"{prefix} must match [A-Za-z0-9._:-] and be at most 128 characters.");
-    }
+        => WindowIdValidation.Validate(id, prefix);
 
     private static bool TryGet(JsonElement element, string name, out JsonElement value)
     {
