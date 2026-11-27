@@ -15,7 +15,7 @@ internal static class Program
         (nameof(OptionsParseLaunchContract), OptionsParseLaunchContract),
         (nameof(CodecRejectsInvalidRequest), CodecRejectsInvalidRequest),
         (nameof(CodecRejectsOversizedFrame), CodecRejectsOversizedFrame),
-        (nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames),
+        ("BoundedLineReader", BoundedLineReaderTests.Run),
         (nameof(ProcessRoundTrip), ProcessRoundTrip)
     };
 
