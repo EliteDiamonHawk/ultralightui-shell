@@ -10,4 +10,4 @@ Each widget owns its markup, styling, behavior, manifest, and README. Workspace
 packages provide shared runtime code and assets.
 
 See the workspace [README](../../README.md) and
-[shared documentation](../../docs/DOCUMENTATION.md).
+[shared documentation](../../docs/ARCHITECTURE.md).

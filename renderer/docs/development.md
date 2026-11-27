@@ -112,7 +112,7 @@ through the pinned C API.
 ## Test style
 
 The test project runs as an executable harness. Add deterministic parser,
-geometry, policy, or lifecycle checks to `Aether.Tests/Program.cs`. Keep
+geometry, policy, or lifecycle checks to `tests/Aether.Tests/Program.cs`. Keep
 native-window tests separate from tests that can run without an SDK.
 
 Before submitting changes:

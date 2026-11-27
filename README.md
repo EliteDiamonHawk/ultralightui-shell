@@ -44,7 +44,14 @@ Pop-Location
 For parser and policy tests without native SDK files:
 
 ```powershell
-dotnet run --project .\renderer\Aether.Tests\Aether.Tests.csproj -p:IncludeUltralight=false
+dotnet run --project .\renderer\tests\Aether.Tests\Aether.Tests.csproj -p:IncludeUltralight=false
+```
+
+Check local documentation links and documented project paths from the repository
+root:
+
+```powershell
+.\scripts\check-docs.ps1
 ```
 
 Run controller tests from `controller/`:
@@ -59,7 +66,8 @@ Pop-Location
 
 Run Aether directly with one or more JSON files. Repeat `--config` for each
 file. Each top-level section may appear in one file only. Standalone Aether
-accepts `windows`, `wallpaper`, `widgets`, `variables`, and `cues`.
+accepts `windows`, `wallpaper`, `widgets`, `image-widgets`, `variables`, and
+`cues`.
 
 ```json
 {

@@ -8,4 +8,4 @@ Build from the workspace root:
     pnpm collection:build --collection other
 
 See the workspace [README](../../README.md) and
-[shared documentation](../../docs/DOCUMENTATION.md).
+[shared documentation](../../docs/ARCHITECTURE.md).
