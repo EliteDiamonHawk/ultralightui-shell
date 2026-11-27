@@ -18,7 +18,7 @@ Build and test:
 Manual launch:
 
 ```powershell
-.\bin\Debug\net9.0-windows\win-x64\Nyx.exe `
+.\src\Nyx\bin\Debug\net9.0-windows\win-x64\Nyx.exe `
   --chronos-pipe KhaosShell-Backend-manual `
   --backend-id nyx `
   --protocol 1 `
