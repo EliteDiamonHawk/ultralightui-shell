@@ -1,6 +1,6 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const isGpu = (record) => /gpu|video|graphics/i.test(`${record?.hardware_type ?? ""} ${record?.hardware_name ?? ""}`);
@@ -52,7 +52,7 @@ export function mount(root = globalThis.document, options = {}) {
       "fan-speed": formatMetricNumber(fan?.value, 0, digitLimit),
       fan: formatMetricNumber(fan?.value, 0, digitLimit),
       gpu: records[0]?.hardware_name ?? "--",
-    }, !Number.isFinite(Number(core?.value)));
+    }, !isMetricValueAvailable(core?.value));
   };
   const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields: ["sensors.readings"], interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });
   onPageCleanup(root, () => close());

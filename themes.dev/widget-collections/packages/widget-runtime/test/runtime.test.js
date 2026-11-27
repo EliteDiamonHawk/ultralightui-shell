@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { readFile } from "node:fs/promises";
+
 import { formatDuration } from "../src/format.js";
 import { onPageCleanup } from "../src/lifecycle.js";
 import { monthGrid, normalizeDate } from "../src/calendar.js";
@@ -9,6 +11,8 @@ import {
   formatMetricBytesParts,
   formatMetricNumber,
   formatMetricTemplate,
+  isMetricValueAvailable,
+  readPath,
   startNyxMetricWidget,
 } from "../src/metrics.js";
 import {
@@ -17,6 +21,7 @@ import {
   nyxIntervalSetting,
   resolveSetting,
 } from "../src/settings.js";
+import { defaultCpuUtilizationFormat } from "../../../collections/end4-pc-remake/src/widgets/cpu-utilization/defaults.js";
 
 const warningRoot = () => ({ documentElement: { dataset: {} } });
 
@@ -58,12 +63,47 @@ test("Nyx metric intervals are limited to the backend-supported range", () => {
 });
 
 test("unavailable metric values render as placeholders instead of zero", () => {
+  assert.equal(isMetricValueAvailable(null), false);
+  assert.equal(isMetricValueAvailable(undefined), false);
+  assert.equal(isMetricValueAvailable(Number.NaN), false);
+  assert.equal(isMetricValueAvailable(Number.POSITIVE_INFINITY), false);
+  assert.equal(isMetricValueAvailable(0), true);
   assert.equal(formatMetricNumber(null), "--");
   assert.equal(formatMetricNumber(undefined), "--");
   assert.deepEqual(formatMetricBytesParts(null), { value: "--", unit: "--" });
   assert.deepEqual(formatMetricBytesParts(undefined), { value: "--", unit: "--" });
   assert.equal(formatMetricTemplate("{value}%", { value: "--" }, true), "--");
   assert.equal(formatMetricTemplate("{value} °C", { value: "--" }, false), "-- °C");
+});
+
+test("Nyx-shaped null metric snapshots stay unavailable while zero stays valid", () => {
+  const unavailableSnapshots = [
+    [{ sensors: { battery: { percent: null } } }, "sensors.battery.percent"],
+    [{ memory: { virtual: { percent: null } } }, "memory.virtual.percent"],
+    [{ cpu: { utilization: { overall: null } } }, "cpu.utilization.overall"],
+    [{ cpu: { frequencies: { current_mhz: null } } }, "cpu.frequencies.current_mhz"],
+    [{ cpu: { cores: { physical: null } } }, "cpu.cores.physical"],
+    [{ disks: { usage: [{ percent: null }] } }, "disks.usage.0.percent"],
+    [{ sensors: { readings: [{ type: "temperature", value: null }] } }, "sensors.readings.0.value"],
+  ];
+
+  for (const [snapshot, path] of unavailableSnapshots) {
+    const value = readPath(snapshot, path);
+    assert.equal(isMetricValueAvailable(value), false, path);
+    assert.equal(formatMetricTemplate("{value}%", { value: formatMetricNumber(value) }, !isMetricValueAvailable(value)), "--", path);
+  }
+
+  assert.equal(isMetricValueAvailable(readPath({ cpu: { utilization: { overall: 0 } } }, "cpu.utilization.overall")), true);
+  assert.equal(formatMetricTemplate("{value}%", { value: formatMetricNumber(0) }, !isMetricValueAvailable(0)), "0.0%");
+  assert.equal(formatMetricTemplate("{value} °C", { value: formatMetricNumber(null) }, !isMetricValueAvailable(null)), "--");
+});
+
+test("CPU utilization manifest and runtime defaults stay aligned", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../../../collections/end4-pc-remake/src/widgets/cpu-utilization/widget.json", import.meta.url), "utf8"));
+  const formatSetting = manifest.settings.find((setting) => setting.key === "format");
+  assert.equal(formatSetting.default, defaultCpuUtilizationFormat(-1));
+  assert.equal(defaultCpuUtilizationFormat(0), "{core}: {value}%");
+  assert.match(formatSetting.description, /\{core\}: \{value\}%/);
 });
 
 test("duration formatting preserves literal words around timer tokens", () => {

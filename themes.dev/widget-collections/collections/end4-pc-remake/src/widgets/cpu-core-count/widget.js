@@ -1,6 +1,6 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { enumSetting, integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const SCALE = 1;
@@ -25,7 +25,7 @@ export function mount(root = globalThis.document, options = {}) {
       phys: formatMetricNumber(cores?.physical, 0, digitLimit),
       logical: formatMetricNumber(cores?.logical, 0, digitLimit),
       logi: formatMetricNumber(cores?.logical, 0, digitLimit),
-    }, !Number.isFinite(Number(cores?.[coreType])));
+    }, !isMetricValueAvailable(cores?.[coreType]));
   };
   const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields: ["cpu.cores"], interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });
   onPageCleanup(root, () => close());

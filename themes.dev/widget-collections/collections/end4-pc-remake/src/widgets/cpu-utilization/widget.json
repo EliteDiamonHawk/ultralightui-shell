@@ -3,7 +3,7 @@
   "id": "cpu-utilization",
   "title": "CPU Utilization",
   "function": "System Metric",
-  "settings": [{"key":"core","type":"integer","default":-1,"minimum":-1},{"key":"format","type":"string","default":"{value}%"},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"CPU"},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
+  "settings": [{"key":"core","type":"integer","default":-1,"minimum":-1},{"key":"format","type":"string","default":"{value}%","description":"Defaults to {value}% for overall utilization and {core}: {value}% when a core is selected."},{"key":"digitLimit","type":"integer","default":5,"minimum":1},{"key":"label","type":"string","default":"CPU"},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":3600,"description":"Nyx refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

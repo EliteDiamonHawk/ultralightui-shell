@@ -1,6 +1,6 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const TOKENS = ["curr", "current", "min", "minimum", "max", "maximum", "core", "zeroed-core"];
@@ -34,7 +34,7 @@ export function mount(root = globalThis.document, options = {}) {
       maximum: value("maximum_mhz", "--"),
       core: core < 0 ? "-1" : String(core + 1),
       "zeroed-core": String(core),
-    }, !Number.isFinite(Number(selected?.current_mhz)));
+    }, !isMetricValueAvailable(selected?.current_mhz));
   };
   const fields = core < 0 ? ["cpu.frequencies"] : ["cpu.frequencies.per_core"];
   const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields, interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });

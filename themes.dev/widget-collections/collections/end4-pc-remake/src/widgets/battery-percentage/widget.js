@@ -1,6 +1,6 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricNumber, formatMetricTemplate, metricSettings, readPath, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const SCALE = 1;
@@ -23,7 +23,7 @@ export function mount(root = globalThis.document, options = {}) {
       value: formatMetricNumber(battery?.percent, 1, digitLimit),
       plugged: typeof battery?.power_plugged === "boolean" ? String(battery.power_plugged) : "--",
       "time-left": formatMetricNumber(battery?.seconds_left, 0, digitLimit),
-    }, !Number.isFinite(Number(battery?.percent)));
+    }, !isMetricValueAvailable(battery?.percent));
   };
   const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields: ["sensors.battery"], interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });
   onPageCleanup(root, () => close());
