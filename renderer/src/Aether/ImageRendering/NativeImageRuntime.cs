@@ -18,6 +18,7 @@ internal sealed class NativeImageRuntime : IDisposable
 {
     private const string WindowClassName = "Aether.NativeImageWidget";
     private static readonly NativeMethods.WndProc WindowProcedure = WindowProc;
+    private static readonly object WindowClassSync = new();
     private static int _windowClassRegistered;
 
     private readonly GifDeadlineScheduler _scheduler = new();
@@ -28,39 +29,74 @@ internal sealed class NativeImageRuntime : IDisposable
     private readonly IDCompositionDevice _compositionDevice;
     private readonly Vortice.WIC.IWICImagingFactory _wicFactory;
     private readonly List<NativeImageWindow> _windows = new();
+    private readonly int _ownerThreadId;
     private bool _disposed;
 
-    public NativeImageRuntime()
+    public NativeImageRuntime() : this(forceWarp: false)
     {
+    }
+
+    internal NativeImageRuntime(bool forceWarp)
+    {
+        _ownerThreadId = Environment.CurrentManagedThreadId;
         EnsureWindowClass();
-        _d3dDevice = CreateD3DDevice();
-        _dxgiDevice = _d3dDevice.QueryInterface<IDXGIDevice>();
-        _d2dFactory = D2D1.D2D1CreateFactory<ID2D1Factory1>(FactoryType.SingleThreaded);
-        _d2dDevice = _d2dFactory.CreateDevice(_dxgiDevice);
-        _compositionDevice = DComp.DCompositionCreateDevice<IDCompositionDevice>(_dxgiDevice);
-        _wicFactory = new Vortice.WIC.IWICImagingFactory();
+        using var resources = new NativeResourceScope();
+        _d3dDevice = resources.Own(CreateD3DDevice(forceWarp));
+        _dxgiDevice = resources.Own(_d3dDevice.QueryInterface<IDXGIDevice>());
+        _d2dFactory = resources.Own(D2D1.D2D1CreateFactory<ID2D1Factory1>(FactoryType.SingleThreaded));
+        _d2dDevice = resources.Own(_d2dFactory.CreateDevice(_dxgiDevice));
+        // Associate DirectComposition with the D2D device so BeginDraw can
+        // return an ID2D1DeviceContext for the surface update.
+        _compositionDevice = resources.Own(DComp.DCompositionCreateDevice2<IDCompositionDevice>(_d2dDevice));
+        _wicFactory = resources.Own(new Vortice.WIC.IWICImagingFactory());
+        resources.Commit();
     }
 
     public AppWindow CreateWindow(RendererWindowSpec spec, TimeSpan timeout)
     {
-        var native = new NativeImageWindow(this, spec, timeout);
-        _windows.Add(native);
-        AppWindow appWindow = new(spec, timeout, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, native.Hwnd);
-        appWindow.NativeImage = native;
-        native.Attach(appWindow);
-        if (native.IsAnimationActive)
-            _scheduler.Schedule(native, native.NextDeadline);
-        return appWindow;
+        EnsureOwnerThread();
+        NativeImageWindow? native = null;
+        AppWindow? appWindow = null;
+        try
+        {
+            native = new NativeImageWindow(this, spec, timeout);
+            _windows.Add(native);
+            appWindow = new AppWindow(spec, timeout, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, native.Hwnd);
+            appWindow.NativeImage = native;
+            native.Attach(appWindow);
+            if (native.IsAnimationActive)
+                _scheduler.Schedule(native, native.NextDeadline);
+            return appWindow;
+        }
+        catch
+        {
+            if (native != null)
+            {
+                _scheduler.Remove(native);
+                _windows.Remove(native);
+                native.Dispose();
+            }
+
+            if (appWindow != null)
+            {
+                appWindow.NativeImage = null;
+                appWindow.Hwnd = IntPtr.Zero;
+            }
+
+            throw;
+        }
     }
 
     public void ShowWhenReady(AppWindow appWindow, TimeSpan timeout)
     {
+        EnsureOwnerThread();
         if (appWindow.NativeImage != null && appWindow.DesiredVisible)
             NativeMethods.ShowWindow(appWindow.Hwnd, 8);
     }
 
     public bool Pump()
     {
+        EnsureOwnerThread();
         if (_disposed)
             return false;
         _scheduler.PresentDue(Stopwatch.GetTimestamp());
@@ -71,6 +107,7 @@ internal sealed class NativeImageRuntime : IDisposable
 
     public bool TrySetPaused(AppWindow appWindow, bool paused)
     {
+        EnsureOwnerThread();
         NativeImageWindow? window = appWindow.NativeImage;
         if (window == null || appWindow.State is AppWindowState.Closed or AppWindowState.Failed)
             return false;
@@ -83,6 +120,7 @@ internal sealed class NativeImageRuntime : IDisposable
 
     public void DestroyWindow(AppWindow appWindow)
     {
+        EnsureOwnerThread();
         NativeImageWindow? native = appWindow.NativeImage;
         if (native == null)
             return;
@@ -97,11 +135,15 @@ internal sealed class NativeImageRuntime : IDisposable
 
     public void Dispose()
     {
+        EnsureOwnerThread();
         if (_disposed)
             return;
         _disposed = true;
         foreach (NativeImageWindow window in _windows.ToArray())
+        {
+            _scheduler.Remove(window);
             window.Dispose();
+        }
         _windows.Clear();
         _wicFactory.Dispose();
         _compositionDevice.Dispose();
@@ -114,18 +156,38 @@ internal sealed class NativeImageRuntime : IDisposable
     internal IDCompositionDevice CompositionDevice => _compositionDevice;
     internal Vortice.WIC.IWICImagingFactory WicFactory => _wicFactory;
 
+    internal void EnsureOwnerThread()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+            throw new InvalidOperationException("Native image resources must be accessed on their owning runtime thread.");
+    }
+
     private static void EnsureWindowClass()
     {
-        if (Interlocked.Exchange(ref _windowClassRegistered, 1) != 0)
+        if (Volatile.Read(ref _windowClassRegistered) != 0)
             return;
-        var windowClass = new NativeMethods.WNDCLASSEX
+
+        lock (WindowClassSync)
         {
-            Size = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
-            WindowProcedure = WindowProcedure,
-            Instance = NativeMethods.GetModuleHandleW(null),
-            ClassName = WindowClassName
-        };
-        NativeMethods.RegisterClassExW(ref windowClass);
+            if (_windowClassRegistered != 0)
+                return;
+
+            var windowClass = new NativeMethods.WNDCLASSEX
+            {
+                Size = (uint)Marshal.SizeOf<NativeMethods.WNDCLASSEX>(),
+                WindowProcedure = WindowProcedure,
+                Instance = NativeMethods.GetModuleHandleW(null),
+                ClassName = WindowClassName
+            };
+            if (NativeMethods.RegisterClassExW(ref windowClass) == 0 &&
+                Marshal.GetLastPInvokeError() != 1410) // ERROR_CLASS_ALREADY_EXISTS
+            {
+                throw new InvalidOperationException(
+                    $"Native image window class could not be registered: {Marshal.GetLastPInvokeError()}.");
+            }
+
+            Volatile.Write(ref _windowClassRegistered, 1);
+        }
     }
 
     private static IntPtr WindowProc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam) =>
@@ -159,9 +221,12 @@ internal sealed class NativeImageRuntime : IDisposable
             throw new InvalidOperationException($"Native image renderer failed to {operation}.");
     }
 
-    private static ID3D11Device CreateD3DDevice()
+    private static ID3D11Device CreateD3DDevice(bool forceWarp)
     {
         var levels = new[] { D3DFeatureLevel.Level_11_0, D3DFeatureLevel.Level_10_1, D3DFeatureLevel.Level_10_0 };
+        if (forceWarp)
+            return D3D11.D3D11CreateDevice(DriverType.Warp, DeviceCreationFlags.BgraSupport, levels);
+
         try
         {
             return D3D11.D3D11CreateDevice(DriverType.Hardware, DeviceCreationFlags.BgraSupport, levels);
@@ -193,11 +258,13 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
     private int _completedLoops;
     private long _nextDeadline;
 
+    private IntPtr _hwnd;
+
     public NativeImageWindow(NativeImageRuntime runtime, RendererWindowSpec spec, TimeSpan timeout)
     {
         _runtime = runtime;
         _spec = spec;
-        Hwnd = NativeImageRuntime.CreateNativeWindow(spec);
+        _hwnd = NativeImageRuntime.CreateNativeWindow(spec);
         try
         {
             _asset = NativeImageAsset.Load(spec.Image?.SourcePath ?? throw new InvalidOperationException("Native image source is missing."),
@@ -253,7 +320,7 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
         }
     }
 
-    public IntPtr Hwnd { get; }
+    public IntPtr Hwnd => _hwnd;
     public bool IsAnimationActive => !_paused && !_disposed && _asset?.Animation != null && _nextDeadline > 0;
     public long NextDeadline => _nextDeadline;
 
@@ -311,96 +378,107 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
             return;
         _disposed = true;
         _nextDeadline = 0;
-        if (Hwnd != IntPtr.Zero)
-            NativeMethods.DestroyWindow(Hwnd);
         _surface?.Dispose();
-        _target?.Dispose();
         _visual3?.Dispose();
         _visual?.Dispose();
+        _target?.Dispose();
         _asset?.Dispose();
+        if (_hwnd != IntPtr.Zero)
+        {
+            NativeMethods.DestroyWindow(_hwnd);
+            _hwnd = IntPtr.Zero;
+        }
     }
 
     private void Render(ReadOnlyMemory<byte> pixels, int sourceWidth, int sourceHeight, PixelRect dirty)
     {
         int width = Math.Max(1, _spec.Bounds.Width);
         int height = Math.Max(1, _spec.Bounds.Height);
-        PixelRect update = dirty.Clamp(sourceWidth, sourceHeight);
-        double threshold = _spec.Image?.DirtyRegionFullUpdateThreshold ?? .65;
-        bool fullUpdate = update.IsEmpty || update.Area > sourceWidth * (long)sourceHeight * threshold;
-        if (fullUpdate)
-            update = new PixelRect(0, 0, sourceWidth, sourceHeight);
+        // HighQualityCubic can sample outside the exact changed source region.
+        // Until the native path has a validated filter-footprint implementation,
+        // redraw the complete composition surface to preserve pixel equivalence.
+        _ = dirty.Clamp(sourceWidth, sourceHeight);
 
         (RawRectF fitDestination, RawRectF? fitSource) = GetFitRect(sourceWidth, sourceHeight, width, height);
-        RawRect updateRect = fullUpdate
-            ? new RawRect(0, 0, width, height)
-            : MapDirtyToTarget(update, sourceWidth, sourceHeight, fitDestination, fitSource, width, height);
+        RawRect updateRect = new RawRect(0, 0, width, height);
         if (updateRect.Right <= updateRect.Left || updateRect.Bottom <= updateRect.Top)
             return;
 
         IDCompositionSurface surface = _surface ?? throw new InvalidOperationException("Native image surface is not initialized.");
-        surface.BeginDraw(updateRect, out ID2D1DeviceContext? drawContext, out Int2 _);
-        if (drawContext == null)
-            throw new InvalidOperationException("DirectComposition did not return a Direct2D device context.");
+        ID2D1DeviceContext? drawContext = null;
+        bool surfaceDrawBegun = false;
         try
         {
-            drawContext.BeginDraw();
-            drawContext.PushAxisAlignedClip(
-                new RawRectF(updateRect.Left, updateRect.Top, updateRect.Right, updateRect.Bottom),
-                AntialiasMode.Aliased);
-            drawContext.Clear(new Color4(0, 0, 0, 0));
-            if (!MemoryMarshal.TryGetArray(pixels, out ArraySegment<byte> segment) || segment.Array == null)
-                throw new InvalidOperationException("Native image memory is not backed by an array.");
-            var handle = GCHandle.Alloc(segment.Array, GCHandleType.Pinned);
+            surface.BeginDraw(updateRect, out drawContext, out Int2 updateOffset);
+            surfaceDrawBegun = true;
+            if (drawContext == null)
+                throw new InvalidOperationException("DirectComposition did not return a Direct2D device context.");
+
+            Matrix3x2 updateTransform = CreateBeginDrawTransform(
+                updateRect.Left,
+                updateRect.Top,
+                updateOffset.X,
+                updateOffset.Y);
+            drawContext.Transform = updateTransform;
+            bool clipPushed = false;
             try
             {
-                var bitmapProperties = new BitmapProperties1(
-                    new Vortice.DCommon.PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied),
-                    96,
-                    96,
-                    BitmapOptions.None);
-                using ID2D1Bitmap bitmap = drawContext.CreateBitmap(
-                    new SizeI(sourceWidth, sourceHeight),
-                    IntPtr.Add(handle.AddrOfPinnedObject(), segment.Offset),
-                    (uint)(sourceWidth * 4),
-                    bitmapProperties);
-                drawContext.DrawBitmap(bitmap, fitDestination,
-                    (float)Math.Clamp(_spec.Image?.Opacity ?? 1, 0, 1),
-                    D2DInterpolationMode.HighQualityCubic, fitSource, null);
+                drawContext.PushAxisAlignedClip(
+                    new RawRectF(updateRect.Left, updateRect.Top, updateRect.Right, updateRect.Bottom),
+                    AntialiasMode.Aliased);
+                clipPushed = true;
+                drawContext.Clear(new Color4(0, 0, 0, 0));
+                if (!MemoryMarshal.TryGetArray(pixels, out ArraySegment<byte> segment) || segment.Array == null)
+                    throw new InvalidOperationException("Native image memory is not backed by an array.");
+                var handle = GCHandle.Alloc(segment.Array, GCHandleType.Pinned);
+                try
+                {
+                    var bitmapProperties = new BitmapProperties1(
+                        new Vortice.DCommon.PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied),
+                        96,
+                        96,
+                        BitmapOptions.None);
+                    using ID2D1Bitmap bitmap = drawContext.CreateBitmap(
+                        new SizeI(sourceWidth, sourceHeight),
+                        IntPtr.Add(handle.AddrOfPinnedObject(), segment.Offset),
+                        (uint)(sourceWidth * 4),
+                        bitmapProperties);
+                    drawContext.DrawBitmap(bitmap, fitDestination,
+                        (float)Math.Clamp(_spec.Image?.Opacity ?? 1, 0, 1),
+                        D2DInterpolationMode.HighQualityCubic, fitSource, null);
+                }
+                finally
+                {
+                    handle.Free();
+                }
             }
             finally
             {
-                handle.Free();
+                if (clipPushed)
+                    drawContext.PopAxisAlignedClip();
             }
-            drawContext.PopAxisAlignedClip();
-            drawContext.EndDraw();
         }
         finally
         {
-            drawContext.Dispose();
-            surface.EndDraw();
+            try
+            {
+                if (surfaceDrawBegun)
+                    surface.EndDraw();
+            }
+            finally
+            {
+                drawContext?.Dispose();
+            }
         }
         _runtime.CompositionDevice.Commit();
     }
 
-    private static RawRect MapDirtyToTarget(PixelRect dirty, int sourceWidth, int sourceHeight,
-        RawRectF destination, RawRectF? source, int targetWidth, int targetHeight)
-    {
-        RawRectF sourceRect = source ?? new RawRectF(0, 0, sourceWidth, sourceHeight);
-        float left = Math.Max(dirty.X, sourceRect.Left);
-        float top = Math.Max(dirty.Y, sourceRect.Top);
-        float right = Math.Min(dirty.X + dirty.Width, sourceRect.Right);
-        float bottom = Math.Min(dirty.Y + dirty.Height, sourceRect.Bottom);
-        if (right <= left || bottom <= top)
-            return new RawRect(0, 0, 0, 0);
-
-        float scaleX = (destination.Right - destination.Left) / (sourceRect.Right - sourceRect.Left);
-        float scaleY = (destination.Bottom - destination.Top) / (sourceRect.Bottom - sourceRect.Top);
-        int targetLeft = Math.Clamp((int)Math.Floor(destination.Left + (left - sourceRect.Left) * scaleX), 0, targetWidth);
-        int targetTop = Math.Clamp((int)Math.Floor(destination.Top + (top - sourceRect.Top) * scaleY), 0, targetHeight);
-        int targetRight = Math.Clamp((int)Math.Ceiling(destination.Left + (right - sourceRect.Left) * scaleX), 0, targetWidth);
-        int targetBottom = Math.Clamp((int)Math.Ceiling(destination.Top + (bottom - sourceRect.Top) * scaleY), 0, targetHeight);
-        return new RawRect(targetLeft, targetTop, targetRight, targetBottom);
-    }
+    internal static Matrix3x2 CreateBeginDrawTransform(
+        int requestedLeft,
+        int requestedTop,
+        int updateOffsetX,
+        int updateOffsetY) =>
+        Matrix3x2.CreateTranslation(updateOffsetX - requestedLeft, updateOffsetY - requestedTop);
 
     private (RawRectF Destination, RawRectF? Source) GetFitRect(int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
     {

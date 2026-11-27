@@ -10,7 +10,7 @@ namespace Aether.Tests;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         var tests = new List<(string Name, Action Test)>
         {
@@ -47,6 +47,9 @@ internal static class Program
             (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
             (nameof(GifCompositorAppliesDisposalAndDirtyRegion), GifCompositorAppliesDisposalAndDirtyRegion),
             (nameof(GifDecoderReadsSingleFrame), GifDecoderReadsSingleFrame),
+            (nameof(NativeResourceScopeDisposesInReverseOrder), NativeResourceScopeDisposesInReverseOrder),
+            (nameof(NativeResourceScopeCleansUpAfterEachAcquisitionFailure), NativeResourceScopeCleansUpAfterEachAcquisitionFailure),
+            (nameof(NativeImageBeginDrawTransformUsesReturnedOffset), NativeImageBeginDrawTransformUsesReturnedOffset),
             (nameof(DesktopAdaptersPreserveSharedPageData), DesktopAdaptersPreserveSharedPageData),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
@@ -71,6 +74,8 @@ internal static class Program
 
         if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Ultralight.dll")))
             tests.Add((nameof(UltralightDataBindingAbi), UltralightDataBindingAbi));
+        if (args.Contains("--native", StringComparer.OrdinalIgnoreCase))
+            tests.Add((nameof(NativeRuntimeCreatesAndDestroysWindow), NativeRuntimeCreatesAndDestroysWindow));
 
         int failures = 0;
         foreach ((string name, Action test) in tests)
@@ -293,6 +298,109 @@ internal static class Program
             AssertEqual(1, animation.RepeatCount);
         }
         finally { Delete(path); }
+    }
+
+    private static void NativeResourceScopeDisposesInReverseOrder()
+    {
+        var disposed = new List<int>();
+        using (var scope = new NativeResourceScope())
+        {
+            scope.Own(new TrackingDisposable(1, disposed));
+            scope.Own(new TrackingDisposable(2, disposed));
+            scope.Own(new TrackingDisposable(3, disposed));
+        }
+
+        AssertEqual(3, disposed.Count);
+        AssertEqual(3, disposed[0]);
+        AssertEqual(2, disposed[1]);
+        AssertEqual(1, disposed[2]);
+
+        disposed.Clear();
+        using (var scope = new NativeResourceScope())
+        {
+            scope.Own(new TrackingDisposable(1, disposed));
+            scope.Commit();
+        }
+        AssertEqual(0, disposed.Count);
+    }
+
+    private static void NativeImageBeginDrawTransformUsesReturnedOffset()
+    {
+        System.Numerics.Matrix3x2 transform = NativeImageWindow.CreateBeginDrawTransform(20, 30, 7, 11);
+        AssertEqual(-13f, transform.M31);
+        AssertEqual(-19f, transform.M32);
+    }
+
+    private static void NativeResourceScopeCleansUpAfterEachAcquisitionFailure()
+    {
+        for (int failureIndex = 0; failureIndex < 4; failureIndex++)
+        {
+            var disposed = new List<int>();
+            try
+            {
+                using var scope = new NativeResourceScope();
+                for (int resourceIndex = 0; resourceIndex < 4; resourceIndex++)
+                {
+                    scope.Own(new TrackingDisposable(resourceIndex, disposed));
+                    if (resourceIndex == failureIndex)
+                        throw new InvalidOperationException("injected acquisition failure");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Expected: construction failures must still release all prior resources.
+            }
+
+            AssertEqual(failureIndex + 1, disposed.Count);
+            for (int index = 0; index <= failureIndex; index++)
+                AssertEqual(failureIndex - index, disposed[index]);
+        }
+    }
+
+    private static void NativeRuntimeCreatesAndDestroysWindow()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"aether-native-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        string asset = Path.Combine(directory, "one-frame.gif");
+        File.WriteAllBytes(asset, Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
+
+        try
+        {
+            foreach (bool forceWarp in new[] { false, true })
+            {
+                using var runtime = new NativeImageRuntime(forceWarp);
+                var spec = new RendererWindowSpec(
+                    "native-test",
+                    new Uri(asset).AbsoluteUri,
+                    new Rectangle(20, 20, 64, 64),
+                    new Rectangle(0, 0, 1920, 1080),
+                    "native-test",
+                    WindowKind.ImageWidget,
+                    new WindowGeometry(20, 20, 64, 64),
+                    new WindowSurface(WindowSurfaceKind.TopLevel, "native-test"),
+                    new WindowLifecycle(),
+                    1,
+                    Input: new WindowInputPolicy(WindowInputMode.None, WindowInputMode.None),
+                    Backend: RendererBackend.NativeImage,
+                    Image: new ImageWidgetOptions(asset, ImageAssetType.Gif));
+
+                AppWindow window = runtime.CreateWindow(spec, TimeSpan.FromSeconds(1));
+                AssertTrue(window.Hwnd != IntPtr.Zero);
+                AssertTrue(NativeMethods.IsWindow(window.Hwnd));
+                runtime.DestroyWindow(window);
+                AssertEqual(IntPtr.Zero, window.Hwnd);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class TrackingDisposable(int id, List<int> disposed) : IDisposable
+    {
+        public void Dispose() => disposed.Add(id);
     }
 
     private static void ConfigurationParsesVariablesAndCues()
