@@ -1,7 +1,7 @@
 # Backend protocol template
 
 Minimal implements protocol version 1 from the
-[normative backend contract](../../../plans/backend-contract.md).
+[authoritative shared backend contract](../../../contracts/src/RendererContracts/BackendContract.cs).
 
 ## Transport
 

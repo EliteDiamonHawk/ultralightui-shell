@@ -34,14 +34,28 @@
       "items": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
     },
     "menu": { "$ref": "#/$defs/menu" },
-    "before": { "$ref": "#/$defs/hooks" },
-    "after": { "$ref": "#/$defs/hooks" }
+    "before": { "$ref": "#/$defs/beforeHooks" },
+    "after": { "$ref": "#/$defs/afterHooks" }
   },
   "$defs": {
     "menu": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["url", "x", "y", "width", "height"],
+      "required": ["url", "x", "y"],
+      "allOf": [
+        {
+          "anyOf": [
+            { "required": ["width"] },
+            { "required": ["w"] }
+          ]
+        },
+        {
+          "anyOf": [
+            { "required": ["height"] },
+            { "required": ["h"] }
+          ]
+        }
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "url": { "type": "string", "minLength": 1 },
@@ -61,16 +75,25 @@
         "bridge": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/bridge" }
       }
     },
-    "hooks": {
+    "beforeHooks": {
       "type": "array",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
-          { "$ref": "#/$defs/hook" }
+          { "$ref": "#/$defs/beforeHook" }
         ]
       }
     },
-    "hook": {
+    "afterHooks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          { "$ref": "#/$defs/afterHook" }
+        ]
+      }
+    },
+    "beforeHook": {
       "type": "object",
       "additionalProperties": false,
       "required": ["executable"],
@@ -80,6 +103,17 @@
         "waitForExit": { "type": "boolean" },
         "stall": { "type": "boolean" },
         "exitAfter": { "type": "boolean" }
+      }
+    },
+    "afterHook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable"],
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "array", "items": { "type": "string" } },
+        "waitForExit": { "type": "boolean" },
+        "stall": { "type": "boolean" }
       }
     }
   }

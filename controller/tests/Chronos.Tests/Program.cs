@@ -37,9 +37,12 @@ internal static class Program
             (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
             (nameof(ThemeConfigurationCanonicalizesImageSources), ThemeConfigurationCanonicalizesImageSources),
             (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
+            (nameof(ThemeConfigurationAcceptsMenuDimensionFixtures), ThemeConfigurationAcceptsMenuDimensionFixtures),
+            (nameof(ThemeConfigurationRejectsMissingMenuDimensions), ThemeConfigurationRejectsMissingMenuDimensions),
             (nameof(ThemeConfigurationRejectsMenuHiddenBehavior), ThemeConfigurationRejectsMenuHiddenBehavior),
             (nameof(ThemeConfigurationRejectsUnknownMenuFields), ThemeConfigurationRejectsUnknownMenuFields),
             (nameof(ThemeConfigurationRejectsInvalidMenuTypes), ThemeConfigurationRejectsInvalidMenuTypes),
+            (nameof(ThemeConfigurationRejectsAfterExitAfter), ThemeConfigurationRejectsAfterExitAfter),
             (nameof(ThemeHookRunnerTracksAndStalls), ThemeHookRunnerTracksAndStalls),
             (nameof(LogStoreDurablyDeduplicatesBatches), LogStoreDurablyDeduplicatesBatches),
             (nameof(BackendRegistryCreatesDefaultNyx), BackendRegistryCreatesDefaultNyx),
@@ -532,6 +535,37 @@ internal static class Program
         }
     }
 
+    private static void ThemeConfigurationAcceptsMenuDimensionFixtures()
+    {
+        foreach (string fixture in new[]
+        {
+            "menu-canonical.json",
+            "menu-aliases.json",
+            "menu-mixed-width-h.json",
+            "menu-mixed-w-height.json"
+        })
+        {
+            PreparedTheme prepared = LoadFixture(fixture);
+            AssertTrue(prepared.MenuJson != null);
+        }
+
+        PreparedTheme simultaneous = LoadFixture("menu-simultaneous.json");
+        using JsonDocument menu = JsonDocument.Parse(simultaneous.MenuJson!);
+        JsonElement size = menu.RootElement.GetProperty("geometry").GetProperty("size");
+        AssertEqual(200d, size.GetProperty("width").GetDouble());
+        AssertEqual(100d, size.GetProperty("height").GetDouble());
+
+        PreparedTheme beforeHook = LoadFixture("before-exit-after.json");
+        AssertEqual(1, beforeHook.Before.Count);
+        AssertTrue(beforeHook.Before[0].ExitAfter);
+    }
+
+    private static void ThemeConfigurationRejectsMissingMenuDimensions()
+    {
+        AssertThrows<InvalidOperationException>(() => LoadFixture("menu-missing-width.json"));
+        AssertThrows<InvalidOperationException>(() => LoadFixture("menu-missing-height.json"));
+    }
+
     private static void ThemeConfigurationRejectsMenuHiddenBehavior()
     {
         string root = Path.Combine(Path.GetTempPath(), $"chronos-menu-lifecycle-{Guid.NewGuid():N}");
@@ -578,6 +612,17 @@ internal static class Program
         {
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
+    }
+
+    private static void ThemeConfigurationRejectsAfterExitAfter()
+    {
+        AssertThrows<InvalidOperationException>(() => LoadFixture("after-exit-after.json"));
+    }
+
+    private static PreparedTheme LoadFixture(string name)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
+        return ThemeConfigurationLoader.Load(new[] { path });
     }
 
     private static void ThemeHookRunnerTracksAndStalls()

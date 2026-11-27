@@ -521,8 +521,8 @@ The backend may coalesce pending state updates. It must document when a stream
 does not guarantee every intermediate value. It must not emit stream events
 before Aether receives a successful subscription response.
 
-See [`BackendContract.cs`](src/RendererContracts/BackendContract.cs),
-[`plans/backend-contract.md`](../plans/backend-contract.md), and the
+See the [authoritative `BackendContract.cs`](src/RendererContracts/BackendContract.cs),
+[Minimal protocol reference](../backend/minimal/docs/protocol.md), and the
 [minimal backend example](../backend/minimal/docs/README.md) for the normative
 transport and a working reference.
 
