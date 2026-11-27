@@ -22,3 +22,9 @@ Nyx supports the `json` stream type and `nyx.system.metrics` data ID. Metric
 stream payloads use a fixed object with a `json` string that contains a
 serialized snapshot message. That envelope keeps the stream schema valid while
 metric fields remain nullable and dynamic.
+
+Metric events use latest-state delivery: when a client is slower than the
+producer, intermediate snapshots may be coalesced. The backend bounds pending
+event state per subscription and cancels pending writes when the client or
+backend shuts down. The backend pipe denies anonymous clients and verifies the
+connected client process SID against the launch SID before serving requests.

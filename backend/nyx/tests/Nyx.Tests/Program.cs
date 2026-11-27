@@ -11,24 +11,34 @@ namespace Nyx.Tests;
 
 internal static class Program
 {
-    private static readonly (string Name, Action Test)[] Tests =
+    private static readonly (string Name, Func<Task> Test)[] Tests =
     {
-        (nameof(OptionsParseLaunchContract), OptionsParseLaunchContract),
-        (nameof(SettingsDataScopeIsolated), SettingsDataScopeIsolated),
-        ("BoundedLineReader", BoundedLineReaderTests.Run),
-        (nameof(ProcessRoundTrip), ProcessRoundTrip),
+        (nameof(OptionsParseLaunchContract), () => RunSync(OptionsParseLaunchContract)),
+        (nameof(SettingsDataScopeIsolated), () => RunSync(SettingsDataScopeIsolated)),
+        ("BoundedLineReader", () => RunSync(BoundedLineReaderTests.Run)),
+        (nameof(SettingsDataScopeRejectsDotSegments), () => RunSync(SettingsDataScopeRejectsDotSegments)),
+        (nameof(PublicSettingsRoutesRejectDotSegments), PublicSettingsRoutesRejectDotSegments),
+        (nameof(LatestStateEventsAreCoalesced), LatestStateEventsAreCoalesced),
+        (nameof(SubscriptionDisposeCancelsBlockedSend), SubscriptionDisposeCancelsBlockedSend),
+        (nameof(ProcessRoundTrip), () => RunSync(ProcessRoundTrip)),
     };
 
-    private static int Main()
+    private static async Task<int> Main()
     {
         int failures = 0;
-        foreach ((string name, Action test) in Tests)
+        foreach ((string name, Func<Task> test) in Tests)
         {
-            try { test(); Console.WriteLine($"PASS {name}"); }
+            try { await test().ConfigureAwait(false); Console.WriteLine($"PASS {name}"); }
             catch (Exception ex) { failures++; Console.Error.WriteLine($"FAIL {name}: {ex}"); }
         }
         Console.WriteLine($"{Tests.Length - failures}/{Tests.Length} tests passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static Task RunSync(Action test)
+    {
+        test();
+        return Task.CompletedTask;
     }
 
     private static void OptionsParseLaunchContract()
@@ -57,6 +67,166 @@ internal static class Program
             AssertFalse(store.GetDataValue("nyx.system.time", "json", "interval", out _ ) is not null);
         }
         finally { TryDelete(root); }
+    }
+
+    private static void SettingsDataScopeRejectsDotSegments()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"Nyx-Settings-Dot-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new SettingsStore(root);
+            AssertThrows<ArgumentException>(() => store.SetDataValue("..", "json", "value", JsonValue(1)));
+            AssertThrows<ArgumentException>(() => store.SetDataValue("nyx.system.metrics", "..", "value", JsonValue(1)));
+            AssertFalse(File.Exists(Path.Combine(root, "settings", "json.json")));
+        }
+        finally { TryDelete(root); }
+    }
+
+    private static async Task PublicSettingsRoutesRejectDotSegments()
+    {
+        string sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("Current SID unavailable.");
+        string root = Path.Combine(Path.GetTempPath(), $"Nyx-Public-Dot-{Guid.NewGuid():N}");
+        BackendOptions options = BackendOptions.Parse(new[]
+        {
+            "--chronos-pipe", $"KhaosShell-Backend-Test-{Guid.NewGuid():N}",
+            "--backend-id", "nyx", "--protocol", "1", "--sid", sid,
+            "--data-root", root
+        });
+
+        try
+        {
+            using var runtime = new NyxRuntime(options);
+            foreach (string path in new[]
+            {
+                "/v1/nyx/settings/data/../json/interval",
+                "/v1/nyx/settings/data/%2E%2E/json/interval"
+            })
+            {
+                BackendRequest request = new(
+                    Guid.NewGuid().ToString("D"),
+                    "POST",
+                    "/v1/request",
+                    BackendCodec.SerializeBody(new { method = "GET", path, body = (object?)null }));
+                BackendResponse response = await runtime.HandleRequestAsync(request, CancellationToken.None).ConfigureAwait(false);
+                AssertEqual(400, response.Status);
+                AssertEqual("argument_invalid", response.Error?.Code);
+            }
+        }
+        finally { TryDelete(root); }
+    }
+
+    private static async Task LatestStateEventsAreCoalesced()
+    {
+        (BackendServer server, BackendServer.ClientSession owner, string root) = CreateTestSession();
+        var producer = new TestProducer();
+        var firstStarted = NewSignal();
+        var releaseFirst = NewSignal();
+        var secondDelivered = NewSignal();
+        var delivered = new List<int>();
+        var sendCount = 0;
+
+        async Task SendAsync(BackendEventFrame frame, CancellationToken cancellationToken)
+        {
+            int ordinal = Interlocked.Increment(ref sendCount);
+            int value = frame.Data!.Value.GetProperty("value").GetInt32();
+            if (ordinal == 1)
+            {
+                firstStarted.SetResult(null);
+                await releaseFirst.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            lock (delivered) delivered.Add(value);
+            if (ordinal == 2) secondDelivered.SetResult(null);
+        }
+
+        var subscription = new StreamSubscription("test-stream", "json", owner, producer, CancellationToken.None, SendAsync);
+        try
+        {
+            await subscription.StartAsync().ConfigureAwait(false);
+            producer.Publish(new { value = 1 });
+            await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            for (var value = 2; value <= 100; value++) producer.Publish(new { value });
+            releaseFirst.SetResult(null);
+            await secondDelivered.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            await Task.Delay(50).ConfigureAwait(false);
+
+            AssertEqual(2, Volatile.Read(ref sendCount));
+            lock (delivered) AssertEqual(100, delivered[^1]);
+        }
+        finally
+        {
+            await subscription.DisposeAsync().ConfigureAwait(false);
+            await owner.DisposeAsync().ConfigureAwait(false);
+            await server.DisposeAsync().ConfigureAwait(false);
+            TryDelete(root);
+        }
+    }
+
+    private static async Task SubscriptionDisposeCancelsBlockedSend()
+    {
+        (BackendServer server, BackendServer.ClientSession owner, string root) = CreateTestSession();
+        var producer = new TestProducer();
+        var sendStarted = NewSignal();
+
+        async Task SendAsync(BackendEventFrame _, CancellationToken cancellationToken)
+        {
+            sendStarted.SetResult(null);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+
+        var subscription = new StreamSubscription("test-stream", "json", owner, producer, CancellationToken.None, SendAsync);
+        try
+        {
+            await subscription.StartAsync().ConfigureAwait(false);
+            producer.Publish(new { value = 1 });
+            await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            await subscription.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            AssertTrue(producer.Disposed);
+        }
+        finally
+        {
+            await owner.DisposeAsync().ConfigureAwait(false);
+            await server.DisposeAsync().ConfigureAwait(false);
+            TryDelete(root);
+        }
+    }
+
+    private static (BackendServer Server, BackendServer.ClientSession Owner, string Root) CreateTestSession()
+    {
+        string sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("Current SID unavailable.");
+        string root = Path.Combine(Path.GetTempPath(), $"Nyx-Subscription-{Guid.NewGuid():N}");
+        BackendOptions options = BackendOptions.Parse(new[]
+        {
+            "--chronos-pipe", $"KhaosShell-Backend-Test-{Guid.NewGuid():N}",
+            "--backend-id", "nyx", "--protocol", "1", "--sid", sid,
+            "--data-root", root
+        });
+        var server = new BackendServer(options);
+        return (server, new BackendServer.ClientSession(server, new MemoryStream(), CancellationToken.None), root);
+    }
+
+    private static TaskCompletionSource<object?> NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class TestProducer : NyxStreamProducer
+    {
+        private Action<object?>? _publish;
+
+        public bool Disposed { get; private set; }
+
+        public override Task StartAsync(Action<object?> publish, CancellationToken cancellationToken)
+        {
+            _publish = publish;
+            return Task.CompletedTask;
+        }
+
+        public void Publish(object? data) => _publish?.Invoke(data);
+
+        public override ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static void ProcessRoundTrip()
@@ -88,7 +258,7 @@ internal static class Program
             AssertTrue(ready.RootElement.GetProperty("ready").GetBoolean());
             AssertEqual("nyx", ready.RootElement.GetProperty("backendId").GetString());
 
-            using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
             client.Connect(5000);
             using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
             using var reader = new StreamReader(client, new UTF8Encoding(false), false, 4096, true);
@@ -196,6 +366,19 @@ internal static class Program
 
     private static JsonNode JsonValue(int value) => System.Text.Json.Nodes.JsonValue.Create(value)!;
     private static void TryDelete(string path) { try { if (Directory.Exists(path)) Directory.Delete(path, true); } catch { } }
+    private static void AssertThrows<T>(Action action) where T : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (T)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Expected exception {typeof(T).Name}.");
+    }
     private static void AssertTrue(bool value) { if (!value) throw new InvalidOperationException("Expected true."); }
     private static void AssertFalse(bool value) { if (value) throw new InvalidOperationException("Expected false."); }
     private static void AssertEqual<T>(T expected, T? actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"Expected '{expected}', got '{actual}'."); }
