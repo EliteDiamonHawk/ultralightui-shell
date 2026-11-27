@@ -19,9 +19,9 @@ internal sealed class SettingsStore
 
     public SettingsStore(string dataRoot)
     {
-        _root = Path.Combine(dataRoot, "settings");
+        _root = Path.GetFullPath(Path.Combine(dataRoot, "settings"));
         _appPath = Path.Combine(_root, "app.json");
-        _dataRoot = Path.Combine(_root, "data");
+        _dataRoot = Path.GetFullPath(Path.Combine(_root, "data"));
         Initialize();
     }
 
@@ -138,11 +138,19 @@ internal sealed class SettingsStore
             throw new InvalidDataException("Data settings document has an unsupported format or version.");
     }
 
-    private string ScopePath(string dataId, string datatype) => Path.Combine(_dataRoot, Encode(dataId), Encode(datatype) + ".json");
+    private string ScopePath(string dataId, string datatype)
+    {
+        string path = Path.GetFullPath(Path.Combine(_dataRoot, Encode(dataId), Encode(datatype) + ".json"));
+        string relative = Path.GetRelativePath(_dataRoot, path);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException("Settings scope resolved outside the data root.");
+        return path;
+    }
 
     private static void ValidateScope(string dataId, string datatype)
     {
         if (string.IsNullOrWhiteSpace(dataId) || string.IsNullOrWhiteSpace(datatype) ||
+            dataId is "." or ".." || datatype is "." or ".." ||
             dataId.Contains('/') || dataId.Contains('\\') || dataId.Contains('\0') || dataId.Contains('?') || dataId.Contains('#') ||
             datatype.Contains('/') || datatype.Contains('\\') || datatype.Contains('\0'))
             throw new ArgumentException("Data ID or datatype is invalid.");

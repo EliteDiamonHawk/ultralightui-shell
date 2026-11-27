@@ -29,10 +29,10 @@ Run with Chronos-compatible arguments:
 
 Chronos supplies the random pipe name and current-user SID during normal use.
 The backend writes one readiness JSON line to stdout, then serves UTF-8 NDJSON
-over the named pipe. It writes diagnostics to stderr and verifies that its
-process SID matches `--sid`. The Minimal fixture uses the Chronos-generated pipe
-name as its local capability because the supported .NET client opens local pipe
-handles anonymously.
+over the named pipe. It writes diagnostics to stderr, verifies that its process
+SID matches `--sid`, denies anonymous pipe clients, and verifies the connected
+client process SID before serving requests. The random pipe name remains a
+defense in depth capability, not the sole cross-user boundary.
 
 Supported transport routes:
 

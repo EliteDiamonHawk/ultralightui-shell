@@ -48,6 +48,14 @@ internal sealed class BackendServer : IAsyncDisposable
                     break;
                 }
 
+                if (!IsAuthorizedClient(listener))
+                {
+                    listener.Dispose();
+                    listener = CreatePipe();
+                    lock (_listenerSync) _listener = listener;
+                    continue;
+                }
+
                 ClientSession client = new(this, listener, token);
                 _clients.TryAdd(client, 0);
                 _ = RunClientAsync(client);
@@ -121,11 +129,11 @@ internal sealed class BackendServer : IAsyncDisposable
         const uint securityDescriptorRevision = 1;
 
         if (!ConvertStringSecurityDescriptorToSecurityDescriptor(
-                // NamedPipeClientStream opens the local client handle anonymously on
-                // this Windows/.NET combination. The pipe name is the capability;
-                // Chronos supplies a fresh unpredictable name for every launch and
-                // the backend still verifies the launch SID above.
-                $"O:{_options.Sid}G:{_options.Sid}D:P(A;;GA;;;WD)",
+                // NamedPipeClientStream needs the pipe to be openable before the
+                // server can inspect the client process token. Anonymous clients
+                // are denied at the ACL, and authenticated clients are checked
+                // against the launch SID immediately after connection.
+                $"O:{_options.Sid}G:{_options.Sid}D:P(D;;GA;;;AN)(A;;GA;;;WD)",
                 securityDescriptorRevision,
                 out IntPtr securityDescriptor,
                 out _))
@@ -178,6 +186,31 @@ internal sealed class BackendServer : IAsyncDisposable
         }
     }
 
+    private bool IsAuthorizedClient(NamedPipeServerStream pipe)
+    {
+        try
+        {
+            if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint processId) || processId == 0)
+                return false;
+            IntPtr process = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+            if (process == IntPtr.Zero)
+                return false;
+            try
+            {
+                if (!OpenProcessToken(process, TokenQuery, out SafeAccessTokenHandle token))
+                    return false;
+                using (token)
+                using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
+                    return string.Equals(identity.User?.Value, _options.Sid, StringComparison.OrdinalIgnoreCase);
+            }
+            finally { CloseHandle(process); }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct SecurityAttributes
     {
@@ -186,6 +219,9 @@ internal sealed class BackendServer : IAsyncDisposable
         public int InheritHandle;
     }
 
+    private const uint ProcessQueryLimitedInformation = 0x1000;
+    private const uint TokenQuery = 0x0008;
+
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
@@ -193,6 +229,13 @@ internal sealed class BackendServer : IAsyncDisposable
         uint stringSDRevision,
         out IntPtr securityDescriptor,
         out uint securityDescriptorSize);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool OpenProcessToken(
+        IntPtr processHandle,
+        uint desiredAccess,
+        out SafeAccessTokenHandle tokenHandle);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafePipeHandle CreateNamedPipe(
@@ -204,6 +247,20 @@ internal sealed class BackendServer : IAsyncDisposable
         uint inBufferSize,
         uint defaultTimeOut,
         IntPtr securityAttributes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(
+        uint desiredAccess,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+        uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr LocalFree(IntPtr handle);
