@@ -1,7 +1,7 @@
 import { hasAetherBridge, readNyxTime } from "@khaosshell/widget-runtime/bridge.js";
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const SCALE = 1;
@@ -30,7 +30,7 @@ export function mount(root = globalThis.document, options = {}) {
     valueNode.textContent = formatMetricTemplate(format, {
       "boot-time": bootTime ? new Date(bootTime).toLocaleString() : "--",
       uptime: formatMetricNumber(uptime, 0, digitLimit),
-    }, !bootTime || !Number.isFinite(Number(uptime)));
+    }, !bootTime || !isMetricValueAvailable(uptime));
   };
   let disposed = false;
   const syncTime = async () => {

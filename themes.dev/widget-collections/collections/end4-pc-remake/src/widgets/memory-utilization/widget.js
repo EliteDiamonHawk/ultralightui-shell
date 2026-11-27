@@ -1,6 +1,6 @@
 import { destroyWidget, onPageCleanup } from "@khaosshell/widget-runtime/lifecycle.js";
 import { applyWidgetTheme, readWidgetTheme } from "@khaosshell/widget-runtime/theme.js";
-import { formatMetricBytesParts, formatMetricNumber, formatMetricTemplate, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
+import { formatMetricBytesParts, formatMetricNumber, formatMetricTemplate, isMetricValueAvailable, metricSettings, startNyxMetricWidget } from "@khaosshell/widget-runtime/metrics.js";
 import { integerSetting, resolveSetting, stringSetting, tokenFormatSetting, widgetContext } from "@khaosshell/widget-runtime/settings.js";
 
 const SCALE = 1;
@@ -36,7 +36,7 @@ export function mount(root = globalThis.document, options = {}) {
       "free-unit": free.unit,
       usage: formatMetricNumber(memory?.percent, 1, digitLimit),
       percent: formatMetricNumber(memory?.percent, 1, digitLimit),
-    }, !Number.isFinite(Number(memory?.percent)));
+    }, !isMetricValueAvailable(memory?.percent));
   };
   const close = startNyxMetricWidget({ root, window, renderer, widgetId: WIDGET_ID, fields: ["memory.virtual"], interval: updateInterval, render, preview: null, onError: () => { valueNode.textContent = "--"; } });
   onPageCleanup(root, () => close());

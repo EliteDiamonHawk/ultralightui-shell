@@ -3,6 +3,8 @@ import { nyxIntervalSetting, resolveSetting } from "./settings.js";
 
 export const readPath = (value, path) => path.split(".").reduce((current, key) => current?.[key], value);
 
+export const isMetricValueAvailable = (value) => value !== undefined && value !== null && Number.isFinite(Number(value));
+
 export const metricSettings = ({ root, widgetId, options, renderer, defaults = {}, keys = [] }) => Object.fromEntries(keys.map((key) => [
   key,
   resolveSetting({
@@ -54,9 +56,8 @@ export const startNyxMetricWidget = ({ root, window, renderer, widgetId, fields,
 };
 
 export const formatMetricNumber = (value, digits = 1, digitLimit) => {
-  if (value === undefined || value === null) return "--";
+  if (!isMetricValueAvailable(value)) return "--";
   const number = Number(value);
-  if (!Number.isFinite(number)) return "--";
   const rendered = number.toFixed(digits);
   if (!digitLimit || rendered.replace(/\D/g, "").length <= digitLimit) return rendered;
   const sign = rendered.startsWith("-") ? "-" : "";
@@ -87,9 +88,8 @@ const trimMetricDigits = (value, digitLimit) => {
 };
 
 export const formatMetricBytesParts = (value, digitLimit) => {
-  if (value === undefined || value === null) return { value: "--", unit: "--" };
+  if (!isMetricValueAvailable(value)) return { value: "--", unit: "--" };
   let number = Number(value);
-  if (!Number.isFinite(number)) return { value: "--", unit: "--" };
   const units = ["B", "KB", "MB", "GB", "TB"];
   let index = 0;
   while (number >= 1024 && index < units.length - 1) {
