@@ -7,8 +7,9 @@ internal readonly record struct BoundedLine(string? Text, bool EndOfStream, bool
 internal sealed class BoundedLineReader
 {
     private readonly Stream _stream;
+    private readonly UTF8Encoding _encoding = new(false, true);
     private readonly byte[] _buffer = new byte[4096];
-    private readonly List<byte> _line = new();
+    // Keep unread bytes so one read can contain multiple frames.
     private int _offset;
     private int _count;
 
@@ -16,77 +17,45 @@ internal sealed class BoundedLineReader
 
     public async Task<BoundedLine> ReadAsync(int maxBytes, CancellationToken cancellationToken)
     {
+        using var frame = new MemoryStream(Math.Min(maxBytes, _buffer.Length));
+        bool tooLarge = false;
+
         while (true)
         {
-            int newline = _line.IndexOf((byte)'\n');
-            if (newline >= 0)
+            if (_offset == _count)
             {
-                byte[] bytes = _line.Take(newline).ToArray();
-                _line.RemoveRange(0, newline + 1);
-                if (bytes.Length > 0 && bytes[^1] == (byte)'\r')
-                    Array.Resize(ref bytes, bytes.Length - 1);
-                return Decode(bytes, maxBytes);
-            }
-
-            if (_line.Count > maxBytes)
-            {
-                while (true)
+                _count = await _stream.ReadAsync(_buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                _offset = 0;
+                if (_count == 0)
                 {
-                    int index = _line.IndexOf((byte)'\n');
-                    if (index >= 0)
-                    {
-                        _line.RemoveRange(0, index + 1);
-                        break;
-                    }
-
-                    if (!await FillAsync(cancellationToken).ConfigureAwait(false))
-                    {
-                        return _line.Count == 0
-                            ? new BoundedLine(null, true, false)
-                            : new BoundedLine(null, false, true);
-                    }
+                    if (frame.Length == 0 && !tooLarge)
+                        return new BoundedLine(null, true, false);
+                    return tooLarge ? new BoundedLine(null, false, true) : Decode(frame);
                 }
-                return new BoundedLine(null, false, true);
             }
 
-            if (!await FillAsync(cancellationToken).ConfigureAwait(false))
+            int newline = Array.IndexOf(_buffer, (byte)'\n', _offset, _count - _offset);
+            int end = newline >= 0 ? newline : _count;
+            for (int index = _offset; index < end; index++)
             {
-                if (_line.Count == 0)
-                    return new BoundedLine(null, true, false);
-                byte[] bytes = _line.ToArray();
-                _line.Clear();
-                return Decode(bytes, maxBytes);
+                if (frame.Length >= maxBytes)
+                {
+                    tooLarge = true;
+                    break;
+                }
+                frame.WriteByte(_buffer[index]);
             }
+
+            _offset = newline >= 0 ? newline + 1 : _count;
+            if (newline >= 0)
+                return tooLarge ? new BoundedLine(null, false, true) : Decode(frame);
         }
     }
 
-    private async Task<bool> FillAsync(CancellationToken cancellationToken)
+    private BoundedLine Decode(MemoryStream frame)
     {
-        if (_offset >= _count)
-        {
-            _offset = 0;
-            _count = await _stream.ReadAsync(_buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
-            if (_count == 0)
-                return false;
-        }
-
-        int available = _count - _offset;
-        _line.AddRange(_buffer.AsSpan(_offset, available).ToArray());
-        _offset = _count;
-        return true;
-    }
-
-    private static BoundedLine Decode(byte[] bytes, int maxBytes)
-    {
-        if (bytes.Length > maxBytes)
-            return new BoundedLine(null, false, true);
-        try
-        {
-            return new BoundedLine(new UTF8Encoding(false, true).GetString(bytes), false, false);
-        }
-        catch (DecoderFallbackException)
-        {
-            return new BoundedLine(null, false, true);
-        }
+        byte[] bytes = frame.ToArray();
+        int length = bytes.Length > 0 && bytes[^1] == (byte)'\r' ? bytes.Length - 1 : bytes.Length;
+        return new BoundedLine(_encoding.GetString(bytes, 0, length), false, false);
     }
 }

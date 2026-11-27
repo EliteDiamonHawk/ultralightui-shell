@@ -15,6 +15,7 @@ internal static class Program
     {
         (nameof(OptionsParseLaunchContract), OptionsParseLaunchContract),
         (nameof(SettingsDataScopeIsolated), SettingsDataScopeIsolated),
+        ("BoundedLineReader", BoundedLineReaderTests.Run),
         (nameof(ProcessRoundTrip), ProcessRoundTrip),
     };
 

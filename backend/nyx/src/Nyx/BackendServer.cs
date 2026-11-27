@@ -238,7 +238,16 @@ internal sealed class BackendServer : IAsyncDisposable
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                BoundedLine frame = await _reader.ReadAsync(BackendCodec.MaxFrameBytes, _shutdown.Token).ConfigureAwait(false);
+                BoundedLine frame;
+                try
+                {
+                    frame = await _reader.ReadAsync(BackendCodec.MaxFrameBytes, _shutdown.Token).ConfigureAwait(false);
+                }
+                catch (DecoderFallbackException)
+                {
+                    await WriteLineAsync(BackendCodec.SerializeResponse(new BackendResponse(null, 400, Error: new BackendError("invalid_json", "Backend frame is not valid UTF-8 JSON."))), _shutdown.Token).ConfigureAwait(false);
+                    continue;
+                }
                 if (frame.EndOfStream) break;
                 if (frame.TooLarge)
                 {
