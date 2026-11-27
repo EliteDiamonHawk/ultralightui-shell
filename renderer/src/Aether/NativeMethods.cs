@@ -218,6 +218,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    [DllImport("shcore.dll")]
+    internal static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetMonitorInfoW(IntPtr monitor, ref MONITORINFO info);

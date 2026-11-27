@@ -11,12 +11,14 @@ public sealed class RendererConfiguration
         IReadOnlyList<GenericWindowDefinition> windows,
         IReadOnlyList<WallpaperProfile> wallpapers,
         IReadOnlyList<WidgetDefinition> widgets,
+        IReadOnlyList<ImageWidgetDefinition> imageWidgets,
         IReadOnlyDictionary<string, JsonElement> variables,
         IReadOnlyList<string> cues)
     {
         Windows = windows;
         Wallpapers = wallpapers;
         Widgets = widgets;
+        ImageWidgets = imageWidgets;
         Variables = variables;
         Cues = cues;
     }
@@ -24,6 +26,7 @@ public sealed class RendererConfiguration
     public IReadOnlyList<GenericWindowDefinition> Windows { get; }
     public IReadOnlyList<WallpaperProfile> Wallpapers { get; }
     public IReadOnlyList<WidgetDefinition> Widgets { get; }
+    public IReadOnlyList<ImageWidgetDefinition> ImageWidgets { get; }
     public IReadOnlyDictionary<string, JsonElement> Variables { get; }
     public IReadOnlyList<string> Cues { get; }
 
@@ -31,6 +34,7 @@ public sealed class RendererConfiguration
         Array.Empty<GenericWindowDefinition>(),
         Array.Empty<WallpaperProfile>(),
         Array.Empty<WidgetDefinition>(),
+        Array.Empty<ImageWidgetDefinition>(),
         new Dictionary<string, JsonElement>(StringComparer.Ordinal),
         Array.Empty<string>());
 
@@ -80,6 +84,8 @@ public sealed class RendererConfiguration
         JsonElement? windows = null;
         JsonElement? wallpaper = null;
         JsonElement? widgets = null;
+        JsonElement? imageWidgets = null;
+        string imageWidgetsSource = "inline";
         JsonElement? variables = null;
         JsonElement? cues = null;
         var seenSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -97,7 +103,7 @@ public sealed class RendererConfiguration
                         $"Configuration file '{source}' contains duplicate section '{property.Name}'.");
 
                 string section = property.Name.ToLowerInvariant();
-                if (section is not ("windows" or "wallpaper" or "widgets" or "variables" or "cues"))
+                if (section is not ("windows" or "wallpaper" or "widgets" or "image-widgets" or "variables" or "cues"))
                     throw new RendererConfigurationException(
                         $"Unknown top-level section '{property.Name}' in '{source}'.");
                 if (!seenSections.Add(section))
@@ -109,6 +115,7 @@ public sealed class RendererConfiguration
                     case "windows": windows = property.Value.Clone(); break;
                     case "wallpaper": wallpaper = property.Value.Clone(); break;
                     case "widgets": widgets = property.Value.Clone(); break;
+                    case "image-widgets": imageWidgets = property.Value.Clone(); imageWidgetsSource = source; break;
                     case "variables": variables = property.Value.Clone(); break;
                     case "cues": cues = property.Value.Clone(); break;
                 }
@@ -147,7 +154,16 @@ public sealed class RendererConfiguration
                 widgetDefinitions.Add(ParseWidget(item, ++index));
         }
 
-        return new RendererConfiguration(genericWindows, wallpapers, widgetDefinitions, variableValues, cueNames);
+        var imageWidgetDefinitions = new List<ImageWidgetDefinition>();
+        if (imageWidgets.HasValue)
+        {
+            RequireKind(imageWidgets.Value, JsonValueKind.Array, "image-widgets");
+            int index = 0;
+            foreach (JsonElement item in imageWidgets.Value.EnumerateArray())
+                imageWidgetDefinitions.Add(ParseImageWidget(item, ++index, imageWidgetsSource));
+        }
+
+        return new RendererConfiguration(genericWindows, wallpapers, widgetDefinitions, imageWidgetDefinitions, variableValues, cueNames);
     }
 
     public IReadOnlyList<RendererWindowSpec> ResolveWindowSpecs()
@@ -237,6 +253,13 @@ public sealed class RendererConfiguration
                 WidgetGeometry.Resolve(widget, screens[widget.Monitor - 1].Bounds), virtualBounds,
                 widget.RuntimeGroup, WindowKind.Widget, widget.Transparent, widget.Monitor, widget.Bridge,
                 Variables, Cues));
+        }
+
+        for (int index = 0; index < ImageWidgets.Count; index++)
+        {
+            ImageWidgetDefinition widget = ImageWidgets[index];
+            ValidateMonitor(widget.Monitor, screens.Length, $"Image widget {index + 1}");
+            Add(widget.Resolve(screens[widget.Monitor - 1].Bounds, virtualBounds));
         }
 
         return specs;
@@ -617,6 +640,76 @@ public sealed class RendererConfiguration
             GetOptionalId(element, "id", prefix), ParseBridgePolicy(element, prefix));
     }
 
+    private static ImageWidgetDefinition ParseImageWidget(JsonElement element, int index, string source)
+    {
+        string prefix = $"Image widget {index}";
+        RequireKind(element, JsonValueKind.Object, prefix);
+        ValidateProperties(element, prefix,
+            "id", "source", "type", "enabled", "pause-when-hidden", "playback-speed",
+            "fit", "opacity", "rotation", "placement", "thread-group");
+
+        string assetSource = GetRequiredString(element, "source", prefix).Trim();
+        string sourcePath = NormalizeImageSource(assetSource, source, prefix);
+        ImageAssetType assetType = ParseImageAssetType(GetOptionalString(element, "type"), prefix, sourcePath);
+        bool enabled = GetOptionalBool(element, "enabled") ?? true;
+        bool pauseWhenHidden = GetOptionalBool(element, "pause-when-hidden") ?? true;
+        double playbackSpeed = GetOptionalDouble(element, "playback-speed") ?? 1.0;
+        if (!double.IsFinite(playbackSpeed) || playbackSpeed < 0.05 || playbackSpeed > 8.0)
+            throw new RendererConfigurationException($"{prefix} playback-speed must be between 0.05 and 8.");
+
+        ImageFitMode fit = ParseImageFit(GetOptionalString(element, "fit"), prefix);
+        double opacity = GetOptionalDouble(element, "opacity") ?? 1.0;
+        double rotation = GetOptionalDouble(element, "rotation") ?? 0.0;
+        if (!double.IsFinite(opacity) || opacity < 0 || opacity > 1)
+            throw new RendererConfigurationException($"{prefix} opacity must be between 0 and 1.");
+        if (!double.IsFinite(rotation) || rotation < -3600 || rotation > 3600)
+            throw new RendererConfigurationException($"{prefix} rotation must be between -3600 and 3600 degrees.");
+
+        JsonElement placement = GetRequiredObject(element, "placement", prefix);
+        ValidateProperties(placement, $"{prefix} placement",
+            "mode", "monitor", "anchor", "offset-x", "offset-y", "width", "height",
+            "always-on-top", "click-through");
+        string mode = (GetOptionalString(placement, "mode") ?? "floating").Trim().ToLowerInvariant();
+        if (mode is not ("floating" or "desktop"))
+            throw new RendererConfigurationException($"{prefix} placement mode must be floating or desktop.");
+        int monitor = GetOptionalInt(placement, "monitor") ?? 1;
+        string anchorText = GetOptionalString(placement, "anchor") ?? "top-left";
+        if (!TryParseAnchor(anchorText, out WidgetAnchor anchor))
+            throw new RendererConfigurationException($"{prefix} placement anchor '{anchorText}' is invalid.");
+        double offsetX = GetOptionalDouble(placement, "offset-x") ?? 0;
+        double offsetY = GetOptionalDouble(placement, "offset-y") ?? 0;
+        double width = GetRequiredDouble(placement, "width", $"{prefix} placement");
+        double height = GetRequiredDouble(placement, "height", $"{prefix} placement");
+        bool alwaysOnTop = GetOptionalBool(placement, "always-on-top") ?? false;
+        bool clickThrough = GetOptionalBool(placement, "click-through") ?? true;
+        if (!double.IsFinite(offsetX) || !double.IsFinite(offsetY) ||
+            !double.IsFinite(width) || width <= 0 || !double.IsFinite(height) || height <= 0)
+            throw new RendererConfigurationException($"{prefix} placement dimensions and offsets must be finite; width and height must be positive.");
+        if (mode == "desktop" && alwaysOnTop)
+            throw new RendererConfigurationException($"{prefix} desktop placement cannot be always-on-top.");
+
+        return new ImageWidgetDefinition(
+            sourcePath,
+            assetType,
+            mode,
+            monitor,
+            anchor,
+            offsetX,
+            offsetY,
+            width,
+            height,
+            alwaysOnTop,
+            clickThrough,
+            enabled,
+            pauseWhenHidden,
+            playbackSpeed,
+            fit,
+            opacity,
+            rotation,
+            GetGroup(element, "image-widgets"),
+            GetOptionalId(element, "id", prefix) ?? $"image-widget-{index}");
+    }
+
     private static IReadOnlyDictionary<string, JsonElement> ParseVariables(JsonElement? element)
     {
         if (!element.HasValue)
@@ -767,6 +860,14 @@ public sealed class RendererConfiguration
         return value;
     }
 
+    private static JsonElement GetRequiredObject(JsonElement element, string name, string prefix)
+    {
+        if (!TryGet(element, name, out JsonElement value))
+            throw new RendererConfigurationException($"{prefix} requires '{name}'.");
+        RequireKind(value, JsonValueKind.Object, $"{prefix} {name}");
+        return value;
+    }
+
     private static string? GetOptionalStringExact(JsonElement element, string name) =>
         TryGetExact(element, name, out JsonElement value) ? GetStrictString(value, name) : null;
 
@@ -894,6 +995,68 @@ public sealed class RendererConfiguration
         return uri.AbsoluteUri;
     }
 
+    private static string NormalizeImageSource(string value, string configSource, string prefix)
+    {
+        if (value.Length == 0)
+            throw new RendererConfigurationException($"{prefix} source must not be empty.");
+
+        string path = value;
+        if (Path.IsPathRooted(value))
+        {
+            path = value;
+        }
+        else if (Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) && uri.Scheme == Uri.UriSchemeFile)
+            path = uri.LocalPath;
+        else if (Uri.TryCreate(value, UriKind.Absolute, out uri) && uri.Scheme.Length > 0)
+            throw new RendererConfigurationException($"{prefix} source must be a local path or file URL.");
+
+        if (!Path.IsPathRooted(path))
+        {
+            string baseDirectory = string.Equals(configSource, "inline", StringComparison.OrdinalIgnoreCase)
+                ? AppContext.BaseDirectory
+                : Path.GetDirectoryName(Path.GetFullPath(configSource)) ?? AppContext.BaseDirectory;
+            path = Path.Combine(baseDirectory, path);
+        }
+
+        try { path = Path.GetFullPath(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        { throw new RendererConfigurationException($"{prefix} source path is invalid: {value}", ex); }
+
+        if (!File.Exists(path))
+            throw new RendererConfigurationException($"{prefix} source file was not found: {path}");
+        if (Path.GetExtension(path).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif"))
+            throw new RendererConfigurationException($"{prefix} source must be PNG, JPEG, BMP, or GIF: {path}");
+        return path;
+    }
+
+    private static ImageAssetType ParseImageAssetType(string? value, string prefix, string sourcePath)
+    {
+        ImageAssetType type = (value ?? "auto").Trim().ToLowerInvariant() switch
+        {
+            "auto" => ImageAssetType.Auto,
+            "image" => ImageAssetType.Image,
+            "gif" => ImageAssetType.Gif,
+            _ => throw new RendererConfigurationException($"{prefix} type must be auto, image, or gif.")
+        };
+
+        if (type == ImageAssetType.Auto)
+            return Path.GetExtension(sourcePath).ToLowerInvariant() == ".gif" ? ImageAssetType.Gif : ImageAssetType.Image;
+        if (type == ImageAssetType.Gif && !string.Equals(Path.GetExtension(sourcePath), ".gif", StringComparison.OrdinalIgnoreCase))
+            throw new RendererConfigurationException($"{prefix} type gif requires a .gif source.");
+        if (type == ImageAssetType.Image && string.Equals(Path.GetExtension(sourcePath), ".gif", StringComparison.OrdinalIgnoreCase))
+            throw new RendererConfigurationException($"{prefix} type image cannot be used with a .gif source.");
+        return type;
+    }
+
+    private static ImageFitMode ParseImageFit(string? value, string prefix) =>
+        (value ?? "contain").Trim().ToLowerInvariant() switch
+        {
+            "contain" => ImageFitMode.Contain,
+            "cover" => ImageFitMode.Cover,
+            "stretch" => ImageFitMode.Stretch,
+            _ => throw new RendererConfigurationException($"{prefix} fit must be contain, cover, or stretch.")
+        };
+
     private static bool TryParseAnchor(string value, out WidgetAnchor anchor)
     {
         string normalized = value.Replace("-", "", StringComparison.Ordinal).Replace(" ", "", StringComparison.Ordinal);
@@ -1009,6 +1172,101 @@ public enum WallpaperMode { Span, All, Single }
 public sealed record WidgetDefinition(
     double X, double Y, bool PositionScaled, bool SizeScaled, WidgetAnchor Anchor, double Width, double Height,
     int Monitor, string Url, bool Transparent, string RuntimeGroup, string? Id = null, BridgePolicy? Bridge = null);
+
+public sealed record ImageWidgetDefinition(
+    string SourcePath,
+    ImageAssetType AssetType,
+    string Mode,
+    int Monitor,
+    WidgetAnchor Anchor,
+    double OffsetX,
+    double OffsetY,
+    double Width,
+    double Height,
+    bool AlwaysOnTop,
+    bool ClickThrough,
+    bool Enabled,
+    bool PauseWhenHidden,
+    double PlaybackSpeed,
+    ImageFitMode Fit,
+    double Opacity,
+    double RotationDegrees,
+    string RuntimeGroup,
+    string? Id = null)
+{
+    public RendererWindowSpec Resolve(Rectangle monitor, Rectangle virtualBounds)
+    {
+        double scale = GetDpiScale(monitor);
+        int width = ToDimension(Width * scale);
+        int height = ToDimension(Height * scale);
+        int offsetX = ToOffset(OffsetX * scale);
+        int offsetY = ToOffset(OffsetY * scale);
+        Point monitorAnchor = GenericWindowGeometry.ResolveAnchor(Anchor, monitor);
+        Point widgetAnchor = GetWidgetAnchor(Anchor, width, height);
+        Rectangle bounds = new(
+            checked(monitorAnchor.X + offsetX - widgetAnchor.X),
+            checked(monitorAnchor.Y + offsetY - widgetAnchor.Y),
+            width,
+            height);
+
+        WindowSurface surface = Mode == "desktop"
+            ? new(WindowSurfaceKind.Desktop, null, WindowZOrder.Bottom, true)
+            : new(WindowSurfaceKind.TopLevel, null, AlwaysOnTop ? WindowZOrder.Topmost : WindowZOrder.Normal, true);
+        WindowLifecycle lifecycle = !Enabled
+            ? new(WindowInitialVisibility.Hidden, WindowHiddenBehavior.Unload, true, WindowInitialRuntime.Unloaded)
+            : new(WindowInitialVisibility.Visible, PauseWhenHidden ? WindowHiddenBehavior.Pause : WindowHiddenBehavior.Retain, true);
+        WindowInputPolicy input = new(
+            ClickThrough ? WindowInputMode.None : WindowInputMode.Native,
+            WindowInputMode.None,
+            WindowFocusMode.Never,
+            ClickThrough);
+        string sourceUrl = new Uri(SourcePath).AbsoluteUri;
+        return new(
+            Id ?? throw new InvalidOperationException("Image widget definitions must have a stable logical ID."),
+            sourceUrl,
+            bounds,
+            virtualBounds,
+            RuntimeGroup,
+            WindowKind.ImageWidget,
+            new(bounds.X, bounds.Y, Width, Height, Monitor, "monitor", Anchor, "dip", "dip"),
+            surface,
+            lifecycle,
+            Monitor,
+            null,
+            null,
+            null,
+            input,
+            new(),
+            RendererBackend.NativeImage,
+            new ImageWidgetOptions(SourcePath, AssetType, Fit, Opacity, RotationDegrees, PauseWhenHidden, PlaybackSpeed));
+    }
+
+    private static double GetDpiScale(Rectangle monitor)
+    {
+        try
+        {
+            NativeMethods.POINT point = new() { X = monitor.Left + Math.Max(0, monitor.Width / 2), Y = monitor.Top + Math.Max(0, monitor.Height / 2) };
+            IntPtr handle = NativeMethods.MonitorFromPoint(point, NativeMethods.MONITOR_DEFAULTTONEAREST);
+            if (handle != IntPtr.Zero)
+            {
+                if (NativeMethods.GetDpiForMonitor(handle, 0, out uint dpiX, out _) == 0 && dpiX > 0)
+                    return dpiX / 96.0;
+            }
+        }
+        catch { }
+        return 1.0;
+    }
+
+    private static int ToDimension(double value) => checked(Math.Max(1, (int)Math.Round(value, MidpointRounding.AwayFromZero)));
+    private static int ToOffset(double value) => checked((int)Math.Round(value, MidpointRounding.AwayFromZero));
+    private static Point GetWidgetAnchor(WidgetAnchor anchor, int width, int height) => anchor switch
+    {
+        WidgetAnchor.TopLeft => new(0, 0), WidgetAnchor.Top => new(width / 2, 0), WidgetAnchor.TopRight => new(width, 0),
+        WidgetAnchor.Left => new(0, height / 2), WidgetAnchor.Center => new(width / 2, height / 2), WidgetAnchor.Right => new(width, height / 2),
+        WidgetAnchor.BottomLeft => new(0, height), WidgetAnchor.Bottom => new(width / 2, height), WidgetAnchor.BottomRight => new(width, height),
+        _ => throw new ArgumentOutOfRangeException(nameof(anchor))
+    };
+}
 
 public enum WidgetAnchor
 {

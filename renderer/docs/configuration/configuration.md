@@ -8,6 +8,7 @@ Use one top-level section per file. The loader combines sections across files; i
 - `windows`: an array of generic window definitions.
 - `wallpaper`: an array of wallpaper profiles. This is a lightweight desktop-window adapter.
 - `widgets`: an array of widget definitions. This is a lightweight desktop-window adapter.
+- `image-widgets`: an array of native PNG/JPEG/BMP/GIF widgets. These bypass Ultralight.
 - `variables`: an object of JSON values shared with bridge-enabled pages.
 - `cues`: an array of Chronos cue names accepted by bridge-enabled pages.
 
@@ -109,6 +110,52 @@ hyphens.
 
 Set `id` for stable window control. Add `bridge` when the page needs backend or
 control access.
+
+## Native image widgets
+
+Use `image-widgets` for low-overhead raster content. Static images do not start
+an animation timer; GIFs use frame delays and pause when hidden by default. The
+native backend accepts PNG, JPEG, BMP, and GIF files, and does not expose a JS
+bridge.
+
+```json
+{
+  "image-widgets": [{
+    "id": "character",
+    "source": "assets/character.gif",
+    "type": "auto",
+    "pause-when-hidden": true,
+    "playback-speed": 1.0,
+    "fit": "contain",
+    "opacity": 1.0,
+    "rotation": 0,
+    "thread-group": "image-widgets",
+    "placement": {
+      "mode": "floating",
+      "monitor": 1,
+      "anchor": "bottom-right",
+      "offset-x": -20,
+      "offset-y": -20,
+      "width": 240,
+      "height": 240,
+      "always-on-top": false,
+      "click-through": true
+    }
+  }]
+}
+```
+
+`source` is resolved relative to the configuration file. Absolute local paths
+and `file:` URLs are also accepted; HTTP and HTTPS sources are rejected. Width,
+height, and offsets are DIPs and are converted using the selected monitor's
+DPI. `mode: "floating"` uses Aether's normal top-level window path, while
+`mode: "desktop"` uses the existing WorkerW desktop embedding path. Click
+through is whole-window only; alpha-aware hit testing is not enabled.
+
+The GIF compositor honors frame rectangles, transparency, frame delays, loop
+counts, and disposal methods 0/1/2/3. It updates the DirectComposition surface
+using the incoming/disposal dirty region and falls back to a full update when
+the changed area is large.
 
 ## Generic windows
 

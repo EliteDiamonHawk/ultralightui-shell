@@ -22,6 +22,11 @@
       "description": "Desktop widget windows.",
       "items": { "$ref": "#/$defs/widget" }
     },
+    "image-widgets": {
+      "type": "array",
+      "description": "Native PNG/JPEG/BMP/GIF image widgets.",
+      "items": { "$ref": "#/$defs/imageWidget" }
+    },
     "variables": {
       "type": "object",
       "description": "JSON values exposed to bridge-enabled pages.",
@@ -272,6 +277,43 @@
         { "$ref": "#/$defs/geometry" }
       ],
       "unevaluatedProperties": false
+    },
+    "imageWidget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "placement"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative or absolute local path, or file URL."
+        },
+        "type": { "enum": ["auto", "image", "gif"] },
+        "enabled": { "type": "boolean" },
+        "pause-when-hidden": { "type": "boolean" },
+        "playback-speed": { "type": "number", "minimum": 0.05, "maximum": 8 },
+        "fit": { "enum": ["contain", "cover", "stretch"] },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rotation": { "type": "number", "minimum": -3600, "maximum": 3600 },
+        "thread-group": { "$ref": "#/$defs/runtimeGroup" },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "mode": { "enum": ["floating", "desktop"] },
+            "monitor": { "type": "integer", "minimum": 1 },
+            "anchor": { "$ref": "#/$defs/anchor" },
+            "offset-x": { "type": "number" },
+            "offset-y": { "type": "number" },
+            "width": { "type": "number", "exclusiveMinimum": 0 },
+            "height": { "type": "number", "exclusiveMinimum": 0 },
+            "always-on-top": { "type": "boolean" },
+            "click-through": { "type": "boolean" }
+          }
+        }
+      }
     },
     "wallpaper": {
       "type": "object",

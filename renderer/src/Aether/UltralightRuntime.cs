@@ -320,6 +320,7 @@ public sealed class AppWindow
     internal IntPtr UlWindow { get; set; }
     internal IntPtr UlPanel { get; set; }
     internal IntPtr UlView { get; set; }
+    internal NativeImageWindow? NativeImage { get; set; }
 
     public bool IsExpired(DateTimeOffset now) => now >= Deadline;
 

@@ -156,10 +156,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     private readonly Func<RendererCommand, string>? _runtimeCommandExecutor;
     private readonly Control _dispatcher = new();
     private readonly object _windowSync = new();
-    private readonly UltralightRuntime _runtime;
+    private UltralightRuntime? _runtime;
+    private NativeImageRuntime? _nativeRuntime;
     private readonly DesktopEmbedder _embedder;
     private readonly GenericWindowSurfaceController _windowController;
-    private readonly System.Windows.Forms.Timer _timer;
+    private System.Windows.Forms.Timer? _timer;
     private readonly List<AppWindow> _windows = new();
     private readonly Dictionary<string, RendererWindowSpec> _definitions = new(StringComparer.Ordinal);
     private WindowRegistry _registry = new();
@@ -189,14 +190,13 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         _runtimeCommandExecutor = runtimeCommandExecutor;
         _currentSpecs = specFactory().Where(spec => spec.RuntimeGroup == name).ToList();
         _dispatcher.CreateControl();
-        _runtime = new UltralightRuntime(options.UltralightRoot, _backends, _control, _runtimeCommandExecutor);
         _embedder = new DesktopEmbedder(options.Verbose);
         _windowController = new GenericWindowSurfaceController();
-        _timer = new System.Windows.Forms.Timer { Interval = 16 };
-        _timer.Tick += (_, _) => Tick();
+        EnsureRuntimes(_currentSpecs);
 
         ReplaceWindows(_currentSpecs);
-        _timer.Start();
+        UpdateTimerSchedule();
+        _timer?.Start();
     }
 
     public IReadOnlyList<WallpaperWindow> GetDesktopWindows() =>
@@ -425,7 +425,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
             ApplyPause(window);
             ApplyWindowVisibility(window, keepVisibleWhenPaused: true);
         }
-        _timer.Interval = paused ? 1000 : 16;
+        UpdateTimerSchedule();
     }
 
     public void SetFullscreenMonitor(IntPtr monitor)
@@ -438,7 +438,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 ApplyPause(window);
         }
         if (!_paused)
-            _timer.Interval = _windows.Any(window => !window.RendererPaused) ? 16 : 1000;
+            UpdateTimerSchedule();
     }
 
     public void Reload()
@@ -460,7 +460,11 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         try
         {
             if (!_paused)
-                _runtime.Pump();
+            {
+                _runtime?.Pump();
+                _nativeRuntime?.Pump();
+                UpdateTimerSchedule();
+            }
 
             if (_topologySignature != GetTopologySignature())
             {
@@ -486,6 +490,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 else
                     _windowController.Reconcile(window);
             }
+            UpdateTimerSchedule();
         }
         catch (Exception ex)
         {
@@ -500,6 +505,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private void ReplaceWindows(IReadOnlyList<RendererWindowSpec> specs)
     {
+        EnsureRuntimes(specs);
         var created = new List<AppWindow>();
         try
         {
@@ -535,7 +541,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private AppWindow CreateWindow(RendererWindowSpec spec)
     {
-        AppWindow window = _runtime.CreateWindow(spec, _options.StartupTimeout, PostOwner);
+        EnsureRuntimes(new[] { spec });
+        AppWindow window = spec.IsNativeImage
+            ? (_nativeRuntime ?? throw new InvalidOperationException("Native image runtime is not initialized.")).CreateWindow(spec, _options.StartupTimeout)
+            : (_runtime ?? throw new InvalidOperationException("Ultralight runtime is not initialized.")).CreateWindow(spec, _options.StartupTimeout, PostOwner);
         window.OwnerThreadId = Environment.CurrentManagedThreadId;
         window.OwnerInvoker = action => InvokeOwner(action);
         NativeMethods.POINT center = new()
@@ -561,7 +570,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
                 if (window.IsVisible)
                     _windowController.Show(window, spec.EffectiveInput.Focus == WindowFocusMode.OnShow);
             }
-            _runtime.ShowWhenReady(window, _options.StartupTimeout);
+            if (window.Spec.IsNativeImage)
+                _nativeRuntime!.ShowWhenReady(window, _options.StartupTimeout);
+            else
+                _runtime!.ShowWhenReady(window, _options.StartupTimeout);
             window.State = AppWindowState.Embedded;
             ApplyPause(window);
             return window;
@@ -653,7 +665,10 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         bool viewPaused = window.Spec.PauseOnFullscreen && window.FullscreenOccluded;
         bool paused = window.DesiredPaused || _paused || viewPaused;
-        if (_runtime.TrySetPaused(window, paused))
+        bool changed = window.Spec.IsNativeImage
+            ? _nativeRuntime?.TrySetPaused(window, paused) == true
+            : _runtime?.TrySetPaused(window, paused) == true;
+        if (changed)
             window.RendererPaused = paused;
     }
 
@@ -669,8 +684,12 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
 
     private void DestroyWindow(AppWindow window)
     {
-        if (window.State != AppWindowState.Closed)
-            _runtime.DestroyWindow(window);
+        if (window.State == AppWindowState.Closed)
+            return;
+        if (window.Spec.IsNativeImage)
+            _nativeRuntime?.DestroyWindow(window);
+        else
+            _runtime?.DestroyWindow(window);
     }
 
     private AppWindow? FindWindow(string id) =>
@@ -718,7 +737,7 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         if (_stopping)
             return;
         _stopping = true;
-        _timer.Stop();
+        _timer?.Stop();
         foreach (AppWindow window in _windows.ToArray())
             RemoveAndDestroy(window);
         lock (_windowSync) _windows.Clear();
@@ -732,8 +751,9 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
         _disposed = true;
         if (!_stopping)
             CloseAndExit();
-        _timer.Dispose();
-        _runtime.Dispose();
+        _timer?.Dispose();
+        _runtime?.Dispose();
+        _nativeRuntime?.Dispose();
         _dispatcher.Dispose();
         base.Dispose();
     }
@@ -745,5 +765,47 @@ internal sealed class RuntimeGroupContext : ApplicationContext, IDisposable
     {
         lock (_windowSync)
             return _windows.ToArray();
+    }
+
+    private void EnsureRuntimes(IReadOnlyList<RendererWindowSpec> specs)
+    {
+        if (specs.Any(spec => !spec.IsNativeImage) && _runtime == null)
+            _runtime = new UltralightRuntime(_options.UltralightRoot, _backends, _control, _runtimeCommandExecutor);
+        if (specs.Any(spec => spec.IsNativeImage) && _nativeRuntime == null)
+            _nativeRuntime = new NativeImageRuntime();
+        if (_timer == null && (_runtime != null || _nativeRuntime != null))
+        {
+            _timer = new System.Windows.Forms.Timer
+            {
+                Interval = _runtime != null ? 16 : Math.Max(1000, _options.ReconcileIntervalMs)
+            };
+            _timer.Tick += (_, _) => Tick();
+            _timer.Start();
+        }
+    }
+
+    private void UpdateTimerSchedule()
+    {
+        if (_timer == null)
+            return;
+        if (_runtime != null)
+        {
+            _timer.Interval = _paused ? 1000 : 16;
+            return;
+        }
+
+        long? deadline = _nativeRuntime?.NextDeadline;
+        if (_paused || deadline == null)
+        {
+            _timer.Interval = Math.Max(1000, _options.ReconcileIntervalMs);
+            return;
+        }
+
+        long remainingTicks = Math.Max(1, deadline.Value - System.Diagnostics.Stopwatch.GetTimestamp());
+        int milliseconds = (int)Math.Clamp(
+            Math.Ceiling(remainingTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency),
+            1,
+            Math.Max(1000, _options.ReconcileIntervalMs));
+        _timer.Interval = milliseconds;
     }
 }

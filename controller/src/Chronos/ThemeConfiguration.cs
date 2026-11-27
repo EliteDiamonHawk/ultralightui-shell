@@ -27,7 +27,7 @@ internal static class ThemeConfigurationLoader
 {
     private static readonly HashSet<string> AetherSections = new(StringComparer.OrdinalIgnoreCase)
     {
-        "windows", "wallpaper", "widgets", "variables", "cues"
+        "windows", "wallpaper", "widgets", "image-widgets", "variables", "cues"
     };
 
     public static PreparedTheme Load(IReadOnlyList<string> paths)
@@ -76,7 +76,10 @@ internal static class ThemeConfigurationLoader
                 if (!AetherSections.Contains(section))
                     throw new InvalidOperationException($"Unknown top-level section '{property.Name}'.");
                 hasAetherSection = true;
-                sanitizedSections.Add((property.Name, property.Value.Clone()));
+                JsonElement sectionValue = string.Equals(section, "image-widgets", StringComparison.OrdinalIgnoreCase)
+                    ? CanonicalizeImageWidgets(property.Value, path)
+                    : property.Value.Clone();
+                sanitizedSections.Add((property.Name, sectionValue));
             }
         }
 
@@ -398,6 +401,62 @@ internal static class ThemeConfigurationLoader
             writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static JsonElement CanonicalizeImageWidgets(JsonElement value, string configPath)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException($"'image-widgets' in '{configPath}' must be an array.");
+
+        string baseDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? AppContext.BaseDirectory;
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartArray();
+            foreach (JsonElement item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    item.WriteTo(writer);
+                    continue;
+                }
+
+                writer.WriteStartObject();
+                foreach (JsonProperty property in item.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    if (!string.Equals(property.Name, "source", StringComparison.OrdinalIgnoreCase) ||
+                        property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        property.Value.WriteTo(writer);
+                        continue;
+                    }
+
+                    string source = property.Value.GetString()?.Trim() ?? string.Empty;
+                    if (source.Length == 0)
+                    {
+                        writer.WriteStringValue(source);
+                        continue;
+                    }
+
+                    if (Uri.TryCreate(source, UriKind.Absolute, out Uri? uri) && uri.Scheme != Uri.UriSchemeFile)
+                    {
+                        writer.WriteStringValue(source);
+                        continue;
+                    }
+
+                    string sourcePath = uri?.LocalPath ?? source;
+                    if (!Path.IsPathRooted(sourcePath))
+                        sourcePath = Path.Combine(baseDirectory, sourcePath);
+                    writer.WriteStringValue(Path.GetFullPath(sourcePath));
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
+
+        using JsonDocument document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
     }
 }
 

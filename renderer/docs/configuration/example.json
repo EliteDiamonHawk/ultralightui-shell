@@ -4,6 +4,24 @@
     "refresh-ms": 1000
   },
   "cues": ["menu.toggle", "next"],
+  "image-widgets": [
+    {
+      "id": "character",
+      "source": "assets/character.gif",
+      "type": "auto",
+      "fit": "contain",
+      "placement": {
+        "mode": "floating",
+        "monitor": 1,
+        "anchor": "bottom-right",
+        "offset-x": -20,
+        "offset-y": -20,
+        "width": 240,
+        "height": 240,
+        "click-through": true
+      }
+    }
+  ],
   "wallpaper": [
     {
       "url": "https://example.com/wallpaper",

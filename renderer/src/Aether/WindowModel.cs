@@ -12,7 +12,38 @@ public enum WindowKind
 {
     Generic,
     Wallpaper,
-    Widget
+    Widget,
+    ImageWidget
+}
+
+public enum RendererBackend
+{
+    Ultralight,
+    NativeImage
+}
+
+public sealed record ImageWidgetOptions(
+    string SourcePath,
+    ImageAssetType AssetType = ImageAssetType.Auto,
+    ImageFitMode Fit = ImageFitMode.Contain,
+    double Opacity = 1.0,
+    double RotationDegrees = 0.0,
+    bool PauseWhenHidden = true,
+    double PlaybackSpeed = 1.0,
+    double DirtyRegionFullUpdateThreshold = 0.65);
+
+public enum ImageAssetType
+{
+    Auto,
+    Image,
+    Gif
+}
+
+public enum ImageFitMode
+{
+    Contain,
+    Cover,
+    Stretch
 }
 
 public enum WindowSurfaceKind
@@ -141,7 +172,9 @@ public sealed record RendererWindowSpec(
     IReadOnlyDictionary<string, JsonElement>? Variables = null,
     IReadOnlyList<string>? Cues = null,
     WindowInputPolicy? Input = null,
-    WindowNotificationPolicy? Notifications = null)
+    WindowNotificationPolicy? Notifications = null,
+    [property: JsonIgnore] RendererBackend Backend = RendererBackend.Ultralight,
+    [property: JsonIgnore] ImageWidgetOptions? Image = null)
 {
     public WindowSurface EffectiveSurface => Surface ?? new();
     public WindowLifecycle EffectiveLifecycle => Lifecycle ?? new();
@@ -165,6 +198,8 @@ public sealed record RendererWindowSpec(
     public bool Resizable => EffectiveSurface.Resizable;
     [JsonIgnore]
     public bool ShowInTaskbar => EffectiveSurface.ShowInTaskbar;
+    [JsonIgnore]
+    public bool IsNativeImage => Backend == RendererBackend.NativeImage;
     [JsonIgnore]
     public bool ActivateOnShow => EffectiveInput.Focus == WindowFocusMode.OnShow;
     [JsonIgnore]
@@ -209,6 +244,7 @@ internal static class RendererContractMapper
         {
             WindowKind.Wallpaper => "wallpaper",
             WindowKind.Widget => "widget",
+            WindowKind.ImageWidget => "image-widget",
             _ => "generic"
         },
         ToContract(snapshot.ConfiguredBounds),

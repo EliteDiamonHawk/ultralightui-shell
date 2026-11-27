@@ -34,6 +34,7 @@ internal static class Program
             (nameof(WindowsKeyMenuPolicyNormalizes), WindowsKeyMenuPolicyNormalizes),
             (nameof(ThemeRegistryRoundTrips), ThemeRegistryRoundTrips),
             (nameof(ThemeConfigurationExtractsHooks), ThemeConfigurationExtractsHooks),
+            (nameof(ThemeConfigurationCanonicalizesImageSources), ThemeConfigurationCanonicalizesImageSources),
             (nameof(ThemeConfigurationMovesMenuToGenericWindow), ThemeConfigurationMovesMenuToGenericWindow),
             (nameof(ThemeConfigurationRejectsMenuHiddenBehavior), ThemeConfigurationRejectsMenuHiddenBehavior),
             (nameof(ThemeConfigurationRejectsUnknownMenuFields), ThemeConfigurationRejectsUnknownMenuFields),
@@ -486,6 +487,25 @@ internal static class Program
             AssertEqual("active", lifecycle.GetProperty("initial").GetProperty("runtime").GetString());
             AssertFalse(lifecycle.GetProperty("pause-on-fullscreen").GetBoolean());
             AssertTrue(menu.RootElement.GetProperty("notifications").GetProperty("focus").GetBoolean());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void ThemeConfigurationCanonicalizesImageSources()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"chronos-image-config-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "assets"));
+        try
+        {
+            string path = Path.Combine(root, "theme.json");
+            File.WriteAllText(path, "{\"image-widgets\":[{\"source\":\"assets/character.gif\",\"placement\":{\"width\":64,\"height\":64}}]}");
+            PreparedTheme prepared = ThemeConfigurationLoader.Load(new[] { path });
+            using JsonDocument document = JsonDocument.Parse(prepared.AetherJson);
+            string? source = document.RootElement.GetProperty("image-widgets")[0].GetProperty("source").GetString();
+            AssertEqual(Path.GetFullPath(Path.Combine(root, "assets", "character.gif")), source);
         }
         finally
         {

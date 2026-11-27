@@ -26,6 +26,7 @@ internal static class Program
             (nameof(OptionsParseSystemTrayCommands), OptionsParseSystemTrayCommands),
             (nameof(RendererDataUsesLocalAppData), RendererDataUsesLocalAppData),
             (nameof(ConfigurationMergesDistinctSections), ConfigurationMergesDistinctSections),
+            (nameof(ConfigurationParsesNativeImageWidgets), ConfigurationParsesNativeImageWidgets),
             (nameof(ConfigurationParsesVariablesAndCues), ConfigurationParsesVariablesAndCues),
             (nameof(ConfigurationRejectsInvalidCues), ConfigurationRejectsInvalidCues),
             (nameof(ConfigurationLoadsInlineJson), ConfigurationLoadsInlineJson),
@@ -44,6 +45,8 @@ internal static class Program
             (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
             (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
             (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
+            (nameof(GifCompositorAppliesDisposalAndDirtyRegion), GifCompositorAppliesDisposalAndDirtyRegion),
+            (nameof(GifDecoderReadsSingleFrame), GifDecoderReadsSingleFrame),
             (nameof(DesktopAdaptersPreserveSharedPageData), DesktopAdaptersPreserveSharedPageData),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
@@ -232,6 +235,64 @@ internal static class Program
         string second = WriteTemp("{\"widgets\":[]}");
         try { AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { first, second })); }
         finally { Delete(first); Delete(second); }
+    }
+
+    private static void ConfigurationParsesNativeImageWidgets()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"aether-image-widget-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        string asset = Path.Combine(directory, "character.gif");
+        string config = Path.Combine(directory, "theme.json");
+        File.WriteAllBytes(asset, Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
+        File.WriteAllText(config, "{\"image-widgets\":[{\"source\":\"character.gif\",\"placement\":{\"width\":64,\"height\":64}}]}");
+        try
+        {
+            RendererConfiguration configuration = RendererConfiguration.Load(new[] { config });
+            ImageWidgetDefinition widget = configuration.ImageWidgets.Single();
+            AssertEqual("image-widget-1", widget.Id);
+            AssertEqual(Path.GetFullPath(asset), widget.SourcePath);
+            AssertEqual("image-widgets", widget.RuntimeGroup);
+            AssertEqual(ImageAssetType.Gif, widget.AssetType);
+            AssertTrue(widget.ClickThrough);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void GifCompositorAppliesDisposalAndDirtyRegion()
+    {
+        var compositor = new GifCompositor(2, 1);
+        var red = new GifFrame(new PixelRect(0, 0, 1, 1), new byte[] { 0, 0, 255, 255 },
+            GifDisposalMethod.RestoreBackground, 100);
+        GifCompositionResult first = compositor.Compose(red);
+        AssertEqual(new PixelRect(0, 0, 1, 1), first.DirtyRegion);
+
+        var blue = new GifFrame(new PixelRect(1, 0, 1, 1), new byte[] { 255, 0, 0, 255 },
+            GifDisposalMethod.DoNotDispose, 100);
+        GifCompositionResult second = compositor.Compose(blue);
+        AssertEqual(new PixelRect(0, 0, 2, 1), second.DirtyRegion);
+        AssertEqual((byte)0, compositor.Canvas.Span[3]);
+        AssertEqual((byte)255, compositor.Canvas.Span[4 + 3]);
+    }
+
+    private static void GifDecoderReadsSingleFrame()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"aether-test-{Guid.NewGuid():N}.gif");
+        File.WriteAllBytes(path, Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
+        try
+        {
+            using GifAnimation animation = GifAnimation.Load(path);
+            GifFrame frame = animation.DecodeFrame(0);
+            AssertEqual(1, animation.Width);
+            AssertEqual(1, animation.Height);
+            AssertEqual(1, animation.FrameCount);
+            AssertEqual(4, frame.Pixels.Length);
+            AssertEqual(255, frame.Pixels.Span[3]);
+            AssertEqual(1, animation.RepeatCount);
+        }
+        finally { Delete(path); }
     }
 
     private static void ConfigurationParsesVariablesAndCues()

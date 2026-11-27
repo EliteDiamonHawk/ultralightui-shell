@@ -19,6 +19,10 @@
       "type": "array",
       "items": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/widget" }
     },
+    "image-widgets": {
+      "type": "array",
+      "items": { "$ref": "../../renderer/docs/configuration/schema.json#/$defs/imageWidget" }
+    },
     "variables": {
       "type": "object",
       "propertyNames": { "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
