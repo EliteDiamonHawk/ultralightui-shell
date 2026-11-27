@@ -74,7 +74,10 @@ internal sealed class NativeImageRuntime : IDisposable
         NativeImageWindow? window = appWindow.NativeImage;
         if (window == null || appWindow.State is AppWindowState.Closed or AppWindowState.Failed)
             return false;
-        window.SetPaused(paused);
+        bool changed = window.SetPaused(paused);
+        if (!changed)
+            return true;
+
         _scheduler.Remove(window);
         if (window.IsAnimationActive)
             _scheduler.Schedule(window, window.NextDeadline);
@@ -186,12 +189,11 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
     private readonly int _canvasWidth;
     private readonly int _canvasHeight;
     private AppWindow? _appWindow;
-    private bool _paused;
+    private readonly GifAnimationTiming _timing = new();
     private bool _disposed;
     private bool _forceFullUpdate;
     private int _nextFrame;
     private int _completedLoops;
-    private long _nextDeadline;
 
     public NativeImageWindow(NativeImageRuntime runtime, RendererWindowSpec spec, TimeSpan timeout)
     {
@@ -236,8 +238,9 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
                 GifFrame firstFrame = asset.Animation.DecodeFrame(0);
                 _compositor!.Compose(firstFrame);
                 _nextFrame = 1;
-                _nextDeadline = Stopwatch.GetTimestamp() + GifDeadlineScheduler.MillisecondsToTicks(
-                    ScaleDelay(firstFrame.DelayMilliseconds));
+                _timing.Start(
+                    Stopwatch.GetTimestamp(),
+                    GifDeadlineScheduler.MillisecondsToTicks(ScaleDelay(firstFrame.DelayMilliseconds)));
                 Render(_compositor.Canvas, _compositor.Width, _compositor.Height, new PixelRect(0, 0, _canvasWidth, _canvasHeight));
             }
             else
@@ -254,26 +257,21 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
     }
 
     public IntPtr Hwnd { get; }
-    public bool IsAnimationActive => !_paused && !_disposed && _asset?.Animation != null && _nextDeadline > 0;
-    public long NextDeadline => _nextDeadline;
+    public bool IsAnimationActive => !_disposed && _asset?.Animation != null && _timing.IsActive;
+    public long NextDeadline => _timing.NextDeadline;
 
     public void Attach(AppWindow appWindow) => _appWindow = appWindow;
 
-    public void SetPaused(bool paused)
-    {
-        _paused = paused;
-        if (!paused && _asset?.Animation != null)
-            _nextDeadline = Stopwatch.GetTimestamp() + GifDeadlineScheduler.MillisecondsToTicks(10);
-    }
+    public bool SetPaused(bool paused) => _timing.SetPaused(paused, Stopwatch.GetTimestamp());
 
     public long PresentDueFrames(long nowTicks)
     {
         GifAnimation? animation = _asset?.Animation;
-        if (_paused || animation == null || _disposed)
+        if (!_timing.IsActive || animation == null || _disposed)
             return 0;
 
         int presented = 0;
-        while (_nextFrame < animation.FrameCount && nowTicks >= _nextDeadline && presented++ < 8)
+        while (_nextFrame < animation.FrameCount && nowTicks >= _timing.NextDeadline && presented++ < 8)
         {
             GifFrame frame = animation.DecodeFrame(_nextFrame++);
             GifCompositionResult result = _compositor!.Compose(frame);
@@ -282,24 +280,24 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
                 : result.DirtyRegion;
             Render(_compositor.Canvas, _compositor.Width, _compositor.Height, dirty);
             _forceFullUpdate = false;
-            _nextDeadline += GifDeadlineScheduler.MillisecondsToTicks(ScaleDelay(frame.DelayMilliseconds));
+            _timing.Advance(GifDeadlineScheduler.MillisecondsToTicks(ScaleDelay(frame.DelayMilliseconds)));
         }
 
-        if (_nextFrame >= animation.FrameCount && nowTicks >= _nextDeadline)
+        if (_nextFrame >= animation.FrameCount && nowTicks >= _timing.NextDeadline)
         {
             _completedLoops++;
             if (animation.RepeatCount >= 0 && _completedLoops >= animation.RepeatCount)
             {
-                _nextDeadline = 0;
+                _timing.Complete();
                 return 0;
             }
 
             _compositor!.ResetLoop();
             _forceFullUpdate = true;
             _nextFrame = 0;
-            _nextDeadline = nowTicks;
+            _timing.ResetLoop(nowTicks);
         }
-        return _nextDeadline;
+        return _timing.NextDeadline;
     }
 
     private long ScaleDelay(long milliseconds) =>
@@ -310,7 +308,7 @@ internal sealed class NativeImageWindow : IGifDeadlineClient, IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _nextDeadline = 0;
+        _timing.Complete();
         if (Hwnd != IntPtr.Zero)
             NativeMethods.DestroyWindow(Hwnd);
         _surface?.Dispose();

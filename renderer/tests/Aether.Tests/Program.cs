@@ -47,6 +47,11 @@ internal static class Program
             (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
             (nameof(GifCompositorAppliesDisposalAndDirtyRegion), GifCompositorAppliesDisposalAndDirtyRegion),
             (nameof(GifDecoderReadsSingleFrame), GifDecoderReadsSingleFrame),
+            (nameof(GifSchedulerInvalidatesRemovedGeneration), GifSchedulerInvalidatesRemovedGeneration),
+            (nameof(GifSchedulerCleansUpCompletedRegistration), GifSchedulerCleansUpCompletedRegistration),
+            (nameof(GifTimingPreservesActiveStartup), GifTimingPreservesActiveStartup),
+            (nameof(GifTimingPreservesPausedStartup), GifTimingPreservesPausedStartup),
+            (nameof(GifTimingPreservesRemainingOnResume), GifTimingPreservesRemainingOnResume),
             (nameof(DesktopAdaptersPreserveSharedPageData), DesktopAdaptersPreserveSharedPageData),
             (nameof(UrlBuilderNormalizesAndRejects), UrlBuilderNormalizesAndRejects),
             (nameof(RegistryTracksLifecycle), RegistryTracksLifecycle),
@@ -872,6 +877,78 @@ internal static class Program
         }
     }
 
+    private static void GifSchedulerInvalidatesRemovedGeneration()
+    {
+        var scheduler = new GifDeadlineScheduler();
+        var client = new FakeGifDeadlineClient();
+
+        scheduler.Schedule(client, 10);
+        scheduler.Remove(client);
+        scheduler.Schedule(client, 20);
+
+        AssertTrue(scheduler.HasEntries);
+        AssertEqual(20L, scheduler.NextDeadline);
+        AssertEqual(0, scheduler.PresentDue(19));
+        AssertEqual(0, client.PresentCount);
+        AssertEqual(1, scheduler.PresentDue(20));
+        AssertEqual(1, client.PresentCount);
+    }
+
+    private static void GifSchedulerCleansUpCompletedRegistration()
+    {
+        var scheduler = new GifDeadlineScheduler();
+        var client = new FakeGifDeadlineClient { NextDeadlineToReturn = 0 };
+
+        scheduler.Schedule(client, 10);
+        AssertTrue(scheduler.HasEntries);
+        AssertEqual(1, scheduler.PresentDue(10));
+        AssertFalse(scheduler.HasEntries);
+        AssertEqual(null, scheduler.NextDeadline);
+
+        scheduler.Schedule(client, 20);
+        AssertEqual(20L, scheduler.NextDeadline);
+    }
+
+    private static void GifTimingPreservesActiveStartup()
+    {
+        var timing = new GifAnimationTiming();
+        timing.Start(1_000, 500);
+
+        AssertEqual(1_500L, timing.NextDeadline);
+        AssertFalse(timing.SetPaused(false, 1_100));
+        AssertFalse(timing.IsPaused);
+        AssertEqual(1_500L, timing.NextDeadline);
+    }
+
+    private static void GifTimingPreservesPausedStartup()
+    {
+        var timing = new GifAnimationTiming();
+        timing.Start(1_000, 500);
+
+        AssertTrue(timing.SetPaused(true, 1_000));
+        AssertTrue(timing.IsPaused);
+        AssertFalse(timing.IsActive);
+        AssertTrue(timing.SetPaused(false, 5_000));
+        AssertEqual(5_500L, timing.NextDeadline);
+    }
+
+    private static void GifTimingPreservesRemainingOnResume()
+    {
+        var timing = new GifAnimationTiming();
+        timing.Start(1_000, 500);
+
+        AssertTrue(timing.SetPaused(true, 1_200));
+        AssertFalse(timing.SetPaused(true, 1_300));
+        AssertTrue(timing.SetPaused(false, 5_000));
+        AssertEqual(5_300L, timing.NextDeadline);
+        AssertFalse(timing.SetPaused(false, 6_000));
+        AssertEqual(5_300L, timing.NextDeadline);
+
+        timing.Complete();
+        AssertFalse(timing.IsActive);
+        AssertEqual(0L, timing.NextDeadline);
+    }
+
     private static double _abiWalkValue;
     private static readonly UltralightNative.DomDataSyncWalkCallback AbiWalkCallback = AbiWalk;
     private static readonly UltralightNative.DomDataAcquireCallback AbiAcquireCallback = AbiAcquire;
@@ -886,6 +963,19 @@ internal static class Program
     }
 
     private static IntPtr AbiAcquire(IntPtr holderState) => holderState;
+
+    private sealed class FakeGifDeadlineClient : IGifDeadlineClient
+    {
+        public bool IsAnimationActive { get; set; } = true;
+        public long NextDeadlineToReturn { get; set; }
+        public int PresentCount { get; private set; }
+
+        public long PresentDueFrames(long nowTicks)
+        {
+            PresentCount++;
+            return NextDeadlineToReturn;
+        }
+    }
 
     private sealed class FakeLogTransport : IRendererLogTransport
     {

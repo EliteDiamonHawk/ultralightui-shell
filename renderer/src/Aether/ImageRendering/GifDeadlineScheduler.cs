@@ -14,12 +14,13 @@ internal sealed class GifDeadlineScheduler
 
     private readonly PriorityQueue<Entry, long> _queue = new();
     private readonly Dictionary<IGifDeadlineClient, long> _generations = new();
+    private long _nextGeneration;
 
     public bool HasEntries => _generations.Count > 0;
 
     public void Schedule(IGifDeadlineClient client, long deadline)
     {
-        long generation = _generations.TryGetValue(client, out long current) ? current + 1 : 1;
+        long generation = checked(++_nextGeneration);
         _generations[client] = generation;
         _queue.Enqueue(new Entry(client, deadline, generation), deadline);
     }
@@ -45,12 +46,26 @@ internal sealed class GifDeadlineScheduler
                 return count;
 
             Entry entry = _queue.Dequeue();
-            if (!entry.Client.IsAnimationActive)
+            if (!_generations.TryGetValue(entry.Client, out long generation) || generation != entry.Generation)
                 continue;
 
+            if (!entry.Client.IsAnimationActive)
+            {
+                _generations.Remove(entry.Client);
+                continue;
+            }
+
             long next = entry.Client.PresentDueFrames(nowTicks);
-            if (next > 0 && _generations.TryGetValue(entry.Client, out long generation) && generation == entry.Generation)
+            if (!_generations.TryGetValue(entry.Client, out generation) || generation != entry.Generation)
+            {
+                count++;
+                continue;
+            }
+
+            if (next > 0 && entry.Client.IsAnimationActive)
                 _queue.Enqueue(new Entry(entry.Client, next, generation), next);
+            else
+                _generations.Remove(entry.Client);
             count++;
         }
     }
