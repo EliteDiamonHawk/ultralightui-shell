@@ -5,8 +5,7 @@ namespace Chronos;
 internal sealed class TrayController : IDisposable
 {
     private readonly RendererCommandService _commands;
-    private readonly Func<Task<AetherCommandResult>> _showMenu;
-    private readonly Func<Task<AetherCommandResult>> _hideMenu;
+    private readonly Func<string, bool, Task<AetherCommandResult>> _setWindowVisibility;
     private readonly WinMenuToggleController _winToggle;
     private readonly Action _openShell;
     private readonly Action _exit;
@@ -17,16 +16,14 @@ internal sealed class TrayController : IDisposable
 
     public TrayController(
         RendererCommandService commands,
-        Func<Task<AetherCommandResult>> showMenu,
-        Func<Task<AetherCommandResult>> hideMenu,
+        Func<string, bool, Task<AetherCommandResult>> setWindowVisibility,
         WinMenuToggleController winToggle,
         Action openShell,
         Action exit,
         Action<string> diagnostic)
     {
         _commands = commands;
-        _showMenu = showMenu;
-        _hideMenu = hideMenu;
+        _setWindowVisibility = setWindowVisibility;
         _winToggle = winToggle;
         _openShell = openShell;
         _exit = exit;
@@ -69,9 +66,6 @@ internal sealed class TrayController : IDisposable
         _menu.Items.Add(open);
         _menu.Items.Add(new ToolStripSeparator());
         RendererCapabilities capabilities = _commands.Capabilities;
-        AddAction("Show menu", _showMenu, !capabilities.HasMenu);
-        AddAction("Hide menu", _hideMenu, !capabilities.HasMenu);
-        _menu.Items.Add(new ToolStripSeparator());
 
         if (capabilities.Windows.Count == 0)
         {
@@ -84,7 +78,7 @@ internal sealed class TrayController : IDisposable
             foreach (RendererWindowCapability window in capabilities.Windows)
             {
                 var item = new ToolStripMenuItem(window.Id);
-                item.Click += (_, _) => Run(() => _commands.SetWindowVisibilityAsync(window.Id, window.Visible != true));
+                item.Click += (_, _) => Run(() => _setWindowVisibility(window.Id, window.Visible != true));
                 windows.DropDownItems.Add(item);
             }
             _menu.Items.Add(windows);
@@ -108,13 +102,6 @@ internal sealed class TrayController : IDisposable
         var exit = new ToolStripMenuItem("Exit KhaosShell");
         exit.Click += (_, _) => _exit();
         _menu.Items.Add(exit);
-    }
-
-    private void AddAction(string text, Func<Task<AetherCommandResult>> action, bool disabled)
-    {
-        var item = new ToolStripMenuItem(text) { Enabled = !disabled };
-        item.Click += (_, _) => Run(action);
-        _menu.Items.Add(item);
     }
 
     private void Run(Func<Task<AetherCommandResult>> action)

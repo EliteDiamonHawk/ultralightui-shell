@@ -24,6 +24,7 @@ internal static class Program
             (nameof(BoundedReaderPreservesFrames), BoundedReaderPreservesFrames),
             (nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame),
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
+            (nameof(ManagedMenuAppearsAsGenericWindow), ManagedMenuAppearsAsGenericWindow),
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
             (nameof(PersistenceFallbackRoundTrips), PersistenceFallbackRoundTrips),
@@ -189,6 +190,24 @@ internal static class Program
         AssertFalse(service.IsConnected);
         AssertEqual(0, capabilities.ConfigFiles.Count);
         AssertEqual("disconnected", capabilities.PipeState);
+    }
+
+    private static void ManagedMenuAppearsAsGenericWindow()
+    {
+        var service = new RendererCommandService(new AetherCommandClient());
+
+        service.SetManagedMenu("shell-menu", true);
+        RendererWindowCapability window = service.Capabilities.Windows.Single();
+        AssertEqual("shell-menu", window.Id);
+        AssertEqual(true, window.Visible);
+        AssertTrue(service.Capabilities.HasMenu);
+
+        service.SetManagedMenu("shell-menu", false);
+        AssertEqual(false, service.Capabilities.Windows.Single().Visible);
+
+        service.ClearManagedMenu();
+        AssertFalse(service.Capabilities.HasMenu);
+        AssertEqual(0, service.Capabilities.Windows.Count);
     }
 
     private static void PersistenceRoundTrips()

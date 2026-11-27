@@ -15,7 +15,14 @@ internal sealed record ShellUiSnapshot(
     string? RendererFailure,
     bool StatusPollingEnabled,
     bool Exiting,
-    PersistentSettings Settings);
+    PersistentSettings Settings,
+    bool RestoreStateEnabled,
+    bool RestoreStateOverridden,
+    string? EffectiveRendererPath,
+    bool RendererPathOverridden,
+    bool TrayOverridden,
+    bool StatusPollingOverridden,
+    bool WindowsKeyOverrideOverridden);
 
 [Flags]
 internal enum ShellRenderTarget
@@ -55,8 +62,12 @@ internal sealed class ShellForm : Form
     private readonly CheckBox _escapePanic = new();
     private readonly CheckBox _statusPollingEnabled = new();
     private readonly CheckBox _restoreState = new();
+    private readonly Label _traySource = new();
+    private readonly Label _statusPollingSource = new();
+    private readonly Label _restoreStateSource = new();
     private readonly TextBox _rendererPath = new();
     private readonly TextBox _ultralightRoot = new();
+    private readonly Label _effectiveRendererPath = new();
     private readonly TextBox _backendId = new();
     private readonly TextBox _backendExecutable = new();
     private readonly TextBox _keybindGesture = new();
@@ -673,12 +684,9 @@ internal sealed class ShellForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
-        var menuButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
-        menuButtons.Controls.Add(Button("Show menu", async (_, _) => await RunAsync(_host.ShowMenuAsync)));
-        menuButtons.Controls.Add(Button("Hide menu", async (_, _) => await RunAsync(_host.HideMenuAsync)));
-        menuButtons.Controls.Add(Button("Toggle menu", async (_, _) => await RunAsync(_host.ToggleMenuAsync)));
-        menuButtons.Controls.Add(Button("Refresh", async (_, _) => await RefreshAsync(true)));
-        layout.Controls.Add(menuButtons, 0, 0);
+        var commandButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
+        commandButtons.Controls.Add(Button("Refresh", async (_, _) => await RefreshAsync(true)));
+        layout.Controls.Add(commandButtons, 0, 0);
 
         layout.Controls.Add(BuildGroupPanel(), 0, 1);
         layout.Controls.Add(BuildWindowPanel(), 0, 2);
@@ -794,9 +802,17 @@ internal sealed class ShellForm : Form
         ultralightButtons.Controls.Add(Button("Browse", (_, _) => BrowseUltralightRoot()));
         ultralightButtons.Controls.Add(Button("Save", (_, _) => SaveUltralightRoot()));
         options.Controls.Add(_trayEnabled);
+        ConfigureOptionSource(_traySource);
+        options.Controls.Add(_traySource);
         options.Controls.Add(_statusPollingEnabled);
+        ConfigureOptionSource(_statusPollingSource);
+        options.Controls.Add(_statusPollingSource);
         options.Controls.Add(_restoreState);
+        ConfigureOptionSource(_restoreStateSource);
+        options.Controls.Add(_restoreStateSource);
         options.Controls.Add(rendererButtons);
+        ConfigureOptionSource(_effectiveRendererPath);
+        options.Controls.Add(_effectiveRendererPath);
         options.Controls.Add(ultralightButtons);
         options.Controls.Add(new Label
         {
@@ -821,6 +837,13 @@ internal sealed class ShellForm : Form
         reader.WordWrap = false;
         reader.ScrollBars = RichTextBoxScrollBars.Both;
         reader.BackColor = SystemColors.Window;
+    }
+
+    private static void ConfigureOptionSource(Label label)
+    {
+        label.AutoSize = true;
+        label.Margin = new Padding(20, 0, 3, 3);
+        label.ForeColor = SystemColors.GrayText;
     }
 
     private static void AddStatusCell(TableLayoutPanel table, int column, int row, string name, Label value)
@@ -999,7 +1022,7 @@ internal sealed class ShellForm : Form
                     : string.Join(Environment.NewLine, snapshot.Capabilities.ConfigFiles);
                 UpdateList(_groups, _groupItems, snapshot.Capabilities.Groups);
                 UpdateList(_windows, _windowItems, snapshot.Capabilities.Windows,
-                    window => $"{window.Id} [{window.Kind ?? "window"}] {(window.Visible == true ? "visible" : "hidden/unknown")}");
+                    window => $"{window.Id} {(window.Visible == true ? "visible" : "hidden/unknown")}");
             }
 
             if (target.HasFlag(ShellRenderTarget.Themes))
@@ -1039,6 +1062,9 @@ internal sealed class ShellForm : Form
             if (target.HasFlag(ShellRenderTarget.Keybinds))
             {
                 _windowsKeyOverride.Checked = snapshot.WindowsKeyOverrideEnabled;
+                _windowsKeyOverride.Text = snapshot.WindowsKeyOverrideOverridden
+                    ? "Override Windows Key to Toggle Menu (command line override)"
+                    : "Override Windows Key to Toggle Menu";
                 _windowsKeyHideMode.SelectedItem = snapshot.Settings.WindowsKeyMenuHideMode;
                 _windowsKeyHideCue.Text = snapshot.Settings.WindowsKeyMenuHideCue;
                 _windowsKeyShowCueEnabled.Checked = snapshot.Settings.WindowsKeyMenuShowCueEnabled;
@@ -1086,8 +1112,18 @@ internal sealed class ShellForm : Form
             {
                 _trayEnabled.Enabled = snapshot.TrayEnabled;
                 _trayEnabled.Checked = snapshot.TrayVisible;
-                _statusPollingEnabled.Checked = snapshot.Settings.StatusPollingEnabled;
+                _statusPollingEnabled.Checked = snapshot.StatusPollingEnabled;
                 _restoreState.Checked = snapshot.Settings.RestoreState;
+                _traySource.Text = snapshot.TrayOverridden ? "Startup source: command line override" : "Startup source: saved setting/default";
+                _statusPollingSource.Text = snapshot.StatusPollingOverridden ? "Startup source: command line override" : "Startup source: saved setting/default";
+                _restoreStateSource.Text = snapshot.RestoreStateOverridden
+                    ? $"Effective this launch: {(snapshot.RestoreStateEnabled ? "enabled" : "disabled")} (command line override)"
+                    : "Effective this launch: saved setting/default";
+                string effectiveRenderer = snapshot.EffectiveRendererPath ?? "not resolved";
+                string rendererSource = snapshot.RendererPathOverridden
+                    ? "command line override"
+                    : snapshot.Settings.RendererPath is null ? "default discovery" : "saved setting";
+                _effectiveRendererPath.Text = $"Effective renderer: {effectiveRenderer} ({rendererSource})";
                 if (!_rendererPath.Focused && !_rendererPath.Modified)
                 {
                     _rendererPath.Text = snapshot.Settings.RendererPath ?? string.Empty;
@@ -1140,10 +1176,10 @@ internal sealed class ShellForm : Form
             return;
         if (InvokeRequired)
         {
-            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Backends))); } catch (InvalidOperationException) { }
+            try { BeginInvoke((Action)(() => Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Options | ShellRenderTarget.Keybinds | ShellRenderTarget.Backends))); } catch (InvalidOperationException) { }
             return;
         }
-        Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Backends);
+        Render(_host.GetUiSnapshot(), ShellRenderTarget.Status | ShellRenderTarget.Renderer | ShellRenderTarget.Options | ShellRenderTarget.Keybinds | ShellRenderTarget.Backends);
     }
 
     private void SetOutput(string text) => _statusOutput.Text = text;

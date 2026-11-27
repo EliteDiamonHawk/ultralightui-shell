@@ -56,6 +56,11 @@ presence, and connection state from Aether inspection output. Inherited events
 update WinForms status; optional timer polling supplements them, and
 `--status-poll false` disables that timer.
 
+The controller UI does not expose menu-definition metadata. Menu configuration
+stays in the theme JSON, while the managed menu is listed and controlled through
+the same generic renderer-window surface as every other window. Windows Key
+Override and managed-menu keybinds remain controller-owned behavior.
+
 ## Shutdown
 
 Shutdown disables and unhooks the Windows-key policy and Escape panic listener,

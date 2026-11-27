@@ -22,6 +22,8 @@ internal sealed class ChronosHostContext : ApplicationContext
     private readonly KeybindController _keybinds;
     private readonly TrayController? _tray;
     private bool _statusPollingEnabled;
+    private bool _restoreStateEnabled;
+    private string? _effectiveRendererPath;
     private PersistentSettings _settings;
     private ThemeRegistryState _themes;
     private string _themeOrigin;
@@ -57,6 +59,7 @@ internal sealed class ChronosHostContext : ApplicationContext
 
         PersistentState state = _persistence.ReadState();
         bool restoreState = options.RestoreState ?? _settings.RestoreState;
+        _restoreStateEnabled = restoreState;
         ThemeDefinition? restoredTheme = null;
         if (restoreState)
         {
@@ -85,7 +88,7 @@ internal sealed class ChronosHostContext : ApplicationContext
         _escapePanic = new EscapePanicController(_settings.PanicEscapeEnabled, QueuePanicTrigger, Diagnostic);
         _escapePanic.StateChanged += OnEscapePanicChanged;
         _keybinds = new KeybindController(_settings.Keybinds ?? KeybindCatalog.DefaultBindings, DispatchKeybindAsync, Diagnostic);
-        _tray = trayEnabled ? new TrayController(_commands, ShowMenuAsync, HideMenuAsync, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
+        _tray = trayEnabled ? new TrayController(_commands, SetWindowVisibilityAsync, _winToggle, ShowShellForm, RequestExit, Diagnostic) : null;
 
         PreparedTheme? preparedTheme = configPaths.Count == 0 ? null : ThemeConfigurationLoader.Load(configPaths);
         StartRenderer(configPaths, options.RendererPath, _settings.RendererPath, preparedTheme: preparedTheme);
@@ -155,7 +158,14 @@ internal sealed class ChronosHostContext : ApplicationContext
             _rendererFailure,
             _statusPollingEnabled,
             _exiting,
-            _settings with { Keybinds = bindings });
+            _settings with { Keybinds = bindings },
+            _restoreStateEnabled,
+            _options.RestoreState.HasValue,
+            _effectiveRendererPath,
+            _options.RendererPath != null,
+            _options.Tray.HasValue,
+            _options.StatusPolling.HasValue,
+            _options.WindowsKeyOverride.HasValue);
     }
 
     public async Task RefreshUiAsync()
@@ -468,7 +478,10 @@ internal sealed class ChronosHostContext : ApplicationContext
             ? result
             : await SetManagedMenuVisibilityAsync(!visibility.Visible).ConfigureAwait(false);
     }
-    public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible) => _commands.SetWindowVisibilityAsync(id, visible);
+    public Task<AetherCommandResult> SetWindowVisibilityAsync(string id, bool visible) =>
+        string.Equals(id, _managedMenuId, StringComparison.Ordinal)
+            ? SetManagedMenuVisibilityAsync(visible)
+            : _commands.SetWindowVisibilityAsync(id, visible);
     public Task<AetherCommandResult> UnloadWindowAsync(string id) => _commands.UnloadWindowAsync(id);
     public Task<AetherCommandResult> ReloadWindowAsync(string id) => _commands.ReloadWindowAsync(id);
     public void RequestExitFromUi() => RequestExit();
@@ -721,6 +734,7 @@ internal sealed class ChronosHostContext : ApplicationContext
             string rendererSessionId = startupRendererSessionId ?? Guid.NewGuid().ToString("D");
             _pendingRendererSessionId = rendererSessionId;
             string rendererPath = ResolveRendererPath(explicitRendererPath, persistedRendererPath);
+            _effectiveRendererPath = rendererPath;
             _commands.BeginConnection();
             startedRenderer = RendererSession.Start(
                 rendererPath,

@@ -45,6 +45,8 @@ Chronos exposes no public command pipe. The existing `Aether.Commands` pipe
 remains available for direct renderer control. Tray and WinForms operations use
 Chronos's typed command service. Open KhaosShell with a tray double-click or its
 context menu. A registered theme contains a name and one or more theme paths.
+Menu configuration remains in the theme JSON; the controller UI presents the
+managed menu through the same generic renderer-window surface as other windows.
 
 ## Docs
 
