@@ -3,7 +3,7 @@
   "id": "pixel-clock",
   "title": "Pixel Clock",
   "function": "Time",
-  "settings": [{"key":"format","type":"string","default":"24h","enum":["12h","24h"]},{"key":"offsetMinutes","type":"number","default":0},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"description":"Refresh interval in seconds."}],
+  "settings": [{"key":"format","type":"string","default":"24h","enum":["12h","24h"]},{"key":"offsetMinutes","type":"number","default":0},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":2147483,"description":"Refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

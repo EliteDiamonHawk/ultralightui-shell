@@ -7,7 +7,9 @@ const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value ?? {},
 const settingKey = (widgetId, key) => `widget.${COLLECTION_ID}.${widgetId}.${key}`;
 
 export const markSettingWarning = (root, key) => {
-  const element = root?.documentElement ?? root?.ownerDocument?.documentElement;
+  const element = root?.nodeType === 1
+    ? root
+    : root?.documentElement ?? root?.ownerDocument?.documentElement;
   if (!element) return;
   const current = new Set(String(element.dataset.widgetConfigWarning ?? "").split(",").filter(Boolean));
   current.add(key);
@@ -83,7 +85,9 @@ export const dateSetting = (value, key) => {
   return value;
 };
 
-export const positiveIntervalSetting = integerSetting({ minimum: 1 });
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+export const MAX_INTERVAL_SECONDS = Math.floor(MAX_TIMER_DELAY_MS / 1000);
+export const positiveIntervalSetting = integerSetting({ minimum: 1, maximum: MAX_INTERVAL_SECONDS });
 export const nyxIntervalSetting = integerSetting({ minimum: 1, maximum: 3600 });
 
 export const tokenFormatSetting = (tokens) => (value, key) => {
@@ -105,8 +109,10 @@ export const readWidgetSettings = (root, widgetId, options, renderer, descriptor
 export const widgetContext = (root, options = {}) => {
   const pageDocument = root?.ownerDocument ?? root ?? globalThis.document;
   const queryRoot = root?.querySelector ? root : pageDocument;
+  const scopeElement = root?.nodeType === 1 ? root : pageDocument?.documentElement;
   const document = new Proxy(pageDocument, {
     get(target, property, receiver) {
+      if (property === "documentElement") return scopeElement;
       if (property === "querySelector") return queryRoot.querySelector.bind(queryRoot);
       if (property === "querySelectorAll") return queryRoot.querySelectorAll.bind(queryRoot);
       const value = Reflect.get(target, property, receiver);

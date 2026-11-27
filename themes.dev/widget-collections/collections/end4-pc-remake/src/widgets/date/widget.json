@@ -3,7 +3,7 @@
   "id": "date",
   "title": "Date",
   "function": "Time",
-  "settings": [{"key":"date","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"locale","type":"string","default":"en-US"},{"key":"highlightDate","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"updateInterval","type":"integer","default":60,"minimum":1,"description":"Refresh interval in seconds."}],
+  "settings": [{"key":"date","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"locale","type":"string","default":"en-US"},{"key":"highlightDate","type":"string","default":null,"format":"YYYY-MM-DD"},{"key":"updateInterval","type":"integer","default":60,"minimum":1,"maximum":2147483,"description":"Refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

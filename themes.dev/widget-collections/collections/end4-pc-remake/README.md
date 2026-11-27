@@ -45,7 +45,8 @@ column `x` and row `y`.
 - `pixel-clock`: `format`, `offsetMinutes`, `updateInterval`
 
 Clock offsets are fixed numeric minute offsets. IANA timezone names are not
-supported in this version.
+supported in this version. Clock and calendar refresh intervals are limited to
+1–2147483 seconds so their millisecond timers remain within the host limit.
 
 ### Timers
 
