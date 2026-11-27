@@ -124,3 +124,21 @@ Before submitting changes:
 4. Exercise generic window show/hide, focus, ID-based actions, pause/resume, status, reload, and exit commands. Chronos-specific menu behavior is tested from the controller.
 
 Pipe changes also require oversized-frame, peer-EOF, pending-request, and reconnect checks in the executable test harness.
+
+## Native image validation matrix
+
+Native image rendering uses one STA-owned DirectComposition runtime per runtime
+group. Keep creation, drawing, pause/resume, reload, and disposal on that owner
+thread; cross-thread commands must use the runtime group's dispatcher.
+
+When a Windows desktop and graphics device are available, validate the native
+image path with both hardware rendering and the existing WARP fallback. Use
+animated images with small subframes away from the origin and compare updates
+with a full redraw under `contain`, `cover`, and `stretch`, including rotation
+and transparent pixels. The first draw must cover the complete surface.
+
+Also repeat create/destroy/reload and shutdown cycles while checking that HWNDs
+are destroyed and native resource counts remain stable. Repeat the scenarios on
+one monitor and multiple monitors, move windows across mixed-DPI monitors,
+resize/reload them, and record unavailable desktop, GPU, device-loss, or DPI
+checks explicitly rather than treating them as passing.
