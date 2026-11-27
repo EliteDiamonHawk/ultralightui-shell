@@ -13,7 +13,7 @@
     <RootNamespace>KhaosShell.Aether</RootNamespace>
     <Company>KhaosShell</Company>
     <UltralightSdkRoot Condition="'$(ULTRALIGHT_SDK_ROOT)' != ''">$(ULTRALIGHT_SDK_ROOT)</UltralightSdkRoot>
-    <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\third_party\ultralight</UltralightSdkRoot>
+    <UltralightSdkRoot Condition="'$(UltralightSdkRoot)' == ''">$(MSBuildProjectDirectory)\..\..\third_party\ultralight</UltralightSdkRoot>
     <IncludeUltralight Condition="'$(IncludeUltralight)' == ''">true</IncludeUltralight>
   </PropertyGroup>
 
