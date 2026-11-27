@@ -173,9 +173,24 @@ internal static class Program
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null && !string.Equals(directory.Name, "nyx", StringComparison.OrdinalIgnoreCase)) directory = directory.Parent;
         if (directory is null) throw new FileNotFoundException("Could not locate nyx directory.");
-        string path = Path.Combine(directory.FullName, "bin", "Debug", "net9.0-windows", "win-x64", "Nyx.exe");
+        string configuration = LocateBuildConfiguration();
+        string path = Path.Combine(directory.FullName, "src", "Nyx", "bin", configuration, "net9.0-windows", "win-x64", "Nyx.exe");
         if (!File.Exists(path)) throw new FileNotFoundException("Build Nyx before running integration tests.", path);
         return path;
+    }
+
+    private static string LocateBuildConfiguration()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (string.Equals(directory.Name, "Debug", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(directory.Name, "Release", StringComparison.OrdinalIgnoreCase))
+                return directory.Name;
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not determine the test build configuration from the test output path.");
     }
 
     private static JsonNode JsonValue(int value) => System.Text.Json.Nodes.JsonValue.Create(value)!;

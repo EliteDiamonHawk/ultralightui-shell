@@ -238,10 +238,25 @@ internal static class Program
         if (directory == null)
             throw new FileNotFoundException("Could not locate backend directory.");
 
-        string path = Path.Combine(directory.FullName, "minimal", "minimal", "bin", "Debug", "net9.0-windows", "win-x64", "MinimalBackend.exe");
+        string configuration = LocateBuildConfiguration();
+        string path = Path.Combine(directory.FullName, "minimal", "src", "MinimalBackend", "bin", configuration, "net9.0-windows", "win-x64", "MinimalBackend.exe");
         if (!File.Exists(path))
             throw new FileNotFoundException("Build MinimalBackend before running process integration test.", path);
         return path;
+    }
+
+    private static string LocateBuildConfiguration()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            if (string.Equals(directory.Name, "Debug", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(directory.Name, "Release", StringComparison.OrdinalIgnoreCase))
+                return directory.Name;
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not determine the test build configuration from the test output path.");
     }
 
     private static void AssertTrue(bool condition)

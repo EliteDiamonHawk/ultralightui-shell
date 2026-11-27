@@ -12,10 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\minimal\MinimalBackend.csproj">
+    <ProjectReference Include="..\..\src\MinimalBackend\MinimalBackend.csproj">
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\contracts\RendererContracts.csproj">
+    <ProjectReference Include="..\..\..\..\contracts\src\RendererContracts\RendererContracts.csproj">
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
   </ItemGroup>
