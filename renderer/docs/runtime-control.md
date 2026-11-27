@@ -70,7 +70,10 @@ and policy, using the inherited generic window routes.
 Specific-window unload and reload are available through the inherited control
 route as `POST /v1/renderer/windows/{id}/actions` with `{ "action": "unload" }`
 or `{ "action": "reload" }`. Unloaded definitions remain queryable and can be
-reloaded by ID; `show` does not implicitly reload them.
+reloaded by ID; `show` does not implicitly reload them. IDs in inherited
+window routes are URI path-segment encoded and decoded once by Aether, so IDs
+such as `menu:clock` are valid while malformed encodings and decoded path
+separators are rejected.
 
 `--system-tray show` and `--system-tray hide` set system-tray visibility. Bare `--system-tray` toggles visibility. With no running instance, the action controls initial startup visibility; bare toggle starts hidden from the default-visible state.
 

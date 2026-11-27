@@ -42,6 +42,8 @@ internal static class Program
             (nameof(ConfigurationRejectsMenuSection), ConfigurationRejectsMenuSection),
             (nameof(ConfigurationRejectsInvalidRuntimeCommands), ConfigurationRejectsInvalidRuntimeCommands),
             (nameof(RuntimeCommandPayloadsMapAndValidate), RuntimeCommandPayloadsMapAndValidate),
+            (nameof(RendererWindowRoutesDecodeColonIds), RendererWindowRoutesDecodeColonIds),
+            (nameof(RendererWindowRoutesRejectInvalidEncodedIds), RendererWindowRoutesRejectInvalidEncodedIds),
             (nameof(ConfigurationRejectsNonAsciiIds), ConfigurationRejectsNonAsciiIds),
             (nameof(GeometryPreservesNegativeCoordinates), GeometryPreservesNegativeCoordinates),
             (nameof(GeometryPreservesScaledWidgetAnchorSemantics), GeometryPreservesScaledWidgetAnchorSemantics),
@@ -517,6 +519,46 @@ internal static class Program
         string path = WriteTemp("{\"widgets\":[{\"id\":\"café\",\"x\":0,\"y\":0,\"pos-scaled\":false,\"size-scaled\":false,\"anchor\":\"top-left\",\"width\":100,\"height\":100,\"monitor\":1,\"url\":\"example.test\"}]}");
         try { AssertThrows<RendererConfigurationException>(() => RendererConfiguration.Load(new[] { path })); }
         finally { Delete(path); }
+    }
+
+    private static void RendererWindowRoutesDecodeColonIds()
+    {
+        foreach (string path in new[]
+        {
+            "/v1/renderer/windows/menu%3Aclock",
+            "/v1/renderer/windows/menu%3Aclock/actions",
+            "/v1/renderer/windows/menu:clock",
+            "/v1/renderer/windows/menu:clock/actions/"
+        })
+        {
+            AssertTrue(RendererWindowRouteParser.TryParse(path, out RendererWindowRoute route, out string error));
+            AssertEqual("menu:clock", route.Id);
+            AssertEqual(path.Contains("/actions", StringComparison.Ordinal), route.IsAction);
+            AssertEqual("", error);
+        }
+
+        using JsonDocument document = JsonDocument.Parse("""
+            {"windows":[{"id":"menu:clock","url":"https://example.test/","geometry":{
+              "position":{"x":0,"y":0,"unit":"pixels"},
+              "size":{"width":100,"height":100,"unit":"pixels"}}}]}
+            """);
+        RendererWindowSpec spec = RendererConfiguration.LoadJson(document.RootElement).ResolveWindowSpecs().Single();
+        AssertEqual("menu:clock", spec.LogicalId);
+    }
+
+    private static void RendererWindowRoutesRejectInvalidEncodedIds()
+    {
+        foreach (string path in new[]
+        {
+            "/v1/renderer/windows/menu%ZZ",
+            "/v1/renderer/windows/menu%2Fclock",
+            "/v1/renderer/windows/menu%00clock",
+            "/v1/renderer/windows/menu%3Aclock/other"
+        })
+        {
+            AssertFalse(RendererWindowRouteParser.TryParse(path, out _, out string error));
+            AssertTrue(error.Length > 0);
+        }
     }
 
     private static void GeometryPreservesNegativeCoordinates()

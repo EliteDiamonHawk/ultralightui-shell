@@ -25,6 +25,8 @@ internal static class Program
             (nameof(BoundedReaderRejectsOversizedFrame), BoundedReaderRejectsOversizedFrame),
             (nameof(RendererCommandsStayUnavailableWithoutRenderer), RendererCommandsStayUnavailableWithoutRenderer),
             (nameof(ManagedMenuAppearsAsGenericWindow), ManagedMenuAppearsAsGenericWindow),
+            (nameof(ManagedMenuRefreshReconcilesById), ManagedMenuRefreshReconcilesById),
+            (nameof(RendererResultsDistinguishNotFoundAndTransport), RendererResultsDistinguishNotFoundAndTransport),
             (nameof(MissingPersistenceFilesCreateDefaults), MissingPersistenceFilesCreateDefaults),
             (nameof(PersistenceRoundTrips), PersistenceRoundTrips),
             (nameof(PersistenceFallbackRoundTrips), PersistenceFallbackRoundTrips),
@@ -208,6 +210,58 @@ internal static class Program
         service.ClearManagedMenu();
         AssertFalse(service.Capabilities.HasMenu);
         AssertEqual(0, service.Capabilities.Windows.Count);
+    }
+
+    private static void ManagedMenuRefreshReconcilesById()
+    {
+        var capabilities = new RendererCapabilities(
+            Array.Empty<string>(),
+            new RendererWindowCapability[]
+            {
+                new("menu:clock", "menu", "generic", false),
+                new("widget", "widgets", "widget", true)
+            },
+            new[] { "menu", "widgets" },
+            false,
+            "connected",
+            Array.Empty<string>());
+
+        RendererCapabilities reconciled = RendererCommandService.ReconcileManagedMenu(
+            capabilities,
+            new RendererWindowCapability("menu:clock", "chronos-menu", "menu", true),
+            keepWhenMissing: false);
+
+        RendererWindowCapability menu = reconciled.Windows.Single(window => window.Id == "menu:clock");
+        AssertEqual(2, reconciled.Windows.Count);
+        AssertEqual("menu", menu.Kind);
+        AssertEqual(false, menu.Visible);
+        AssertEqual("menu", menu.Group);
+        AssertTrue(reconciled.HasMenu);
+
+        RendererCapabilities missing = RendererCommandService.ReconcileManagedMenu(
+            capabilities with { Windows = new[] { capabilities.Windows[1] } },
+            new RendererWindowCapability("menu:clock", "chronos-menu", "menu", true),
+            keepWhenMissing: false);
+        AssertFalse(missing.HasMenu);
+        AssertFalse(missing.Windows.Any(window => window.Id == "menu:clock"));
+    }
+
+    private static void RendererResultsDistinguishNotFoundAndTransport()
+    {
+        ControlResponse response = new(
+            Guid.NewGuid().ToString("D"),
+            404,
+            Error: new ControlError("window_not_found", "Unknown window ID."));
+        AetherCommandResult notFound = AetherCommandResult.FromResponse(response, "Menu query failed");
+        AssertFalse(notFound.Success);
+        AssertEqual(404, notFound.Status);
+        AssertEqual("window_not_found", notFound.ErrorCode);
+        AssertFalse(notFound.TransportFailure);
+
+        AetherCommandResult transport = AetherCommandResult.Transport("pipe closed");
+        AssertFalse(transport.Success);
+        AssertTrue(transport.TransportFailure);
+        AssertEqual<int?>(null, transport.Status);
     }
 
     private static void PersistenceRoundTrips()

@@ -518,12 +518,11 @@ public sealed class RendererHostContext : ApplicationContext
 
     private ControlResponse HandleWindowRequest(ControlRequest request)
     {
-        const string prefix = "/v1/renderer/windows";
-        string suffix = request.Path.Length == prefix.Length ? "" : request.Path[prefix.Length..].Trim('/');
-        string? id = suffix.Length == 0 ? null : suffix.Split('/', StringSplitOptions.RemoveEmptyEntries)[0];
-        bool actionRoute = suffix.EndsWith("/actions", StringComparison.OrdinalIgnoreCase);
-        if (actionRoute)
-            id = suffix[..^"/actions".Length].Trim('/');
+        if (!RendererWindowRouteParser.TryParse(request.Path, out RendererWindowRoute route, out string routeError))
+            return new ControlResponse(request.Id, 400, Error: new ControlError("window_route_invalid", routeError));
+
+        string? id = route.Id;
+        bool actionRoute = route.IsAction;
 
         if (request.Method == "GET")
         {
