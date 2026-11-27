@@ -3,7 +3,7 @@
   "id": "digital-clock",
   "title": "Digital Clock",
   "function": "Time",
-  "settings": [{"key":"format","type":"string","default":"12h","enum":["12h","24h"]},{"key":"seconds","type":"boolean","default":true},{"key":"showPeriod","type":"boolean","default":true},{"key":"syntax","type":"string","default":null},{"key":"offsetMinutes","type":"number","default":0},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"description":"Refresh interval in seconds."}],
+  "settings": [{"key":"format","type":"string","default":"12h","enum":["12h","24h"]},{"key":"seconds","type":"boolean","default":true},{"key":"showPeriod","type":"boolean","default":true},{"key":"syntax","type":"string","default":null},{"key":"offsetMinutes","type":"number","default":0},{"key":"updateInterval","type":"integer","default":5,"minimum":1,"maximum":2147483,"description":"Refresh interval in seconds."}],
   "bridge": {
     "enabled": true,
     "backend-ids": [

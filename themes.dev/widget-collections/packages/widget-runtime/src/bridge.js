@@ -1,6 +1,7 @@
 const BACKEND_ID = "nyx";
 const METRICS_DATA_ID = "nyx.system.metrics";
 const METRICS_STREAM_TYPE = "json";
+const MAX_PENDING_STREAM_EVENTS = 32;
 
 const renderer = (explicitRenderer) => explicitRenderer ?? globalThis.window?.renderer;
 
@@ -63,13 +64,8 @@ export async function openNyxMetricsStream(fields, { interval = 5, onSnapshot, o
   const encodedFields = encodeURIComponent(JSON.stringify(fields));
   const dataId = METRICS_DATA_ID + "?fields=" + encodedFields + "&interval=" + encodeURIComponent(interval);
   let subscription;
-  const stop = current.aether.onEvent((event) => {
-    if (
-      event?.source !== "stream"
-      || event.backendId !== BACKEND_ID
-      || event.streamId !== subscription?.streamId
-    ) return;
-
+  let pendingEvents = [];
+  const dispatch = (event) => {
     try {
       const message = JSON.parse(event.data?.json ?? "{}");
       if (message.type === "snapshot") onSnapshot?.(message.data);
@@ -77,6 +73,21 @@ export async function openNyxMetricsStream(fields, { interval = 5, onSnapshot, o
     } catch (error) {
       onError?.(error);
     }
+  };
+  const stop = current.aether.onEvent((event) => {
+    if (
+      event?.source !== "stream"
+      || event.backendId !== BACKEND_ID
+      || !event.streamId
+    ) return;
+
+    if (!subscription) {
+      if (pendingEvents.length >= MAX_PENDING_STREAM_EVENTS) pendingEvents.shift();
+      pendingEvents.push(event);
+      return;
+    }
+
+    if (event.streamId === subscription.streamId) dispatch(event);
   });
 
   try {
@@ -85,12 +96,19 @@ export async function openNyxMetricsStream(fields, { interval = 5, onSnapshot, o
       dataId,
       type: METRICS_STREAM_TYPE,
     });
+    const earlyEvents = pendingEvents;
+    pendingEvents = [];
+    earlyEvents.forEach((event) => {
+      if (event.streamId === subscription.streamId) dispatch(event);
+    });
   } catch (error) {
+    pendingEvents = [];
     stop?.();
     throw error;
   }
 
   return async () => {
+    pendingEvents = [];
     stop?.();
     if (subscription?.streamId) {
       await current.closeStream({ backendId: BACKEND_ID, streamId: subscription.streamId });
